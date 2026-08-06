@@ -1,0 +1,96 @@
+.navbar {
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+  
+    background: rgba(255, 255, 255, 0.94);
+    backdrop-filter: blur(14px);
+  
+    border-bottom: 1px solid #e2e8f0;
+  }
+  
+  .wrapper {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  
+    min-height: 82px;
+  }
+  
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  
+    text-decoration: none;
+  }
+  
+  .logoIcon {
+    width: 48px;
+    height: 48px;
+  
+    border-radius: 50%;
+  
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  
+    font-size: 24px;
+  
+    background: linear-gradient(
+      135deg,
+      #2563eb,
+      #14b8a6
+    );
+  
+    color: white;
+  
+    flex-shrink: 0;
+  }
+  
+  .logoText {
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .logoTitle {
+    font-size: 22px;
+    font-weight: 800;
+    color: #0f172a;
+  }
+  
+  .logoSubtitle {
+    font-size: 13px;
+    color: #64748b;
+  }
+  
+  .navigation {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+  }
+  
+  .link {
+    text-decoration: none;
+    color: #475569;
+    font-weight: 600;
+    transition: color 0.25s ease;
+  }
+  
+  .link:hover {
+    color: #2563eb;
+  }
+  
+  @media (max-width: 900px) {
+    .logoSubtitle {
+      display: none;
+    }
+  
+    .navigation {
+      gap: 16px;
+    }
+  
+    .link {
+      display: none;
+    }
+  }

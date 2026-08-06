@@ -1,0 +1,43 @@
+.section {
+    background: linear-gradient(135deg, #2563eb 0%, #14b8a6 100%);
+    padding: 110px 24px;
+  }
+  
+  .wrapper {
+    max-width: 900px;
+    margin: 0 auto;
+    text-align: center;
+    color: white;
+  }
+  
+  .title {
+    font-size: 52px;
+    font-weight: 800;
+    margin-bottom: 24px;
+  }
+  
+  .text {
+    font-size: 24px;
+    line-height: 1.8;
+    color: rgba(255,255,255,.92);
+  
+    max-width: 760px;
+    margin: 0 auto 50px;
+  }
+  
+  .button {
+    display: inline-block;
+    text-decoration: none;
+  }
+  
+  @media (max-width:900px){
+  
+  .title{
+      font-size:40px;
+  }
+  
+  .text{
+      font-size:20px;
+  }
+  
+  }

@@ -1,0 +1,38 @@
+.section {
+    background: #ffffff;
+    padding: 110px 24px;
+  }
+  
+  .wrapper {
+    max-width: 900px;
+    margin: 0 auto;
+    text-align: center;
+  }
+  
+  .title {
+    font-size: 48px;
+    font-weight: 800;
+    color: #0f172a;
+    margin-bottom: 32px;
+  }
+  
+  .text {
+    font-size: 24px;
+    line-height: 1.9;
+    color: #475569;
+  }
+  
+  .highlight {
+    color: #2563eb;
+    font-weight: 700;
+  }
+  
+  @media (max-width: 900px) {
+    .title {
+      font-size: 38px;
+    }
+  
+    .text {
+      font-size: 20px;
+    }
+  }

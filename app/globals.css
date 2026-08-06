@@ -1,27 +1,155 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* ===========================================
+   AUTISM JOURNEY NAVIGATOR DESIGN SYSTEM
+=========================================== */
 
 :root {
-  --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 214, 219, 220;
-  --background-end-rgb: 255, 255, 255;
+  /* Colors */
+
+  --primary: #2563eb;
+  --primary-dark: #1d4ed8;
+  --secondary: #14b8a6;
+
+  --background: #f8fafc;
+  --surface: #ffffff;
+
+  --border: #e2e8f0;
+
+  --text: #0f172a;
+  --text-light: #64748b;
+
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+
+  /* Radius */
+
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+
+  /* Shadows */
+
+  --shadow-sm: 0 4px 12px rgba(15, 23, 42, 0.05);
+
+  --shadow-md: 0 10px 25px rgba(15, 23, 42, 0.08);
+
+  --shadow-lg: 0 18px 40px rgba(15, 23, 42, 0.12);
+
+  /* Width */
+
+  --page-width: 1200px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --foreground-rgb: 255, 255, 255;
-    --background-start-rgb: 0, 0, 0;
-    --background-end-rgb: 0, 0, 0;
-  }
+/* ===========================================
+   RESET
+=========================================== */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
+  margin: 0;
+
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+
+  background: var(--background);
+
+  color: var(--text);
+
+  line-height: 1.6;
+
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ===========================================
+   TYPOGRAPHY
+=========================================== */
+
+h1 {
+  font-size: 3.5rem;
+  line-height: 1.1;
+  font-weight: 800;
+}
+
+h2 {
+  font-size: 2.25rem;
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+h3 {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+p {
+  color: var(--text-light);
+  font-size: 1.1rem;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* ===========================================
+   IMAGES
+=========================================== */
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+/* ===========================================
+   BUTTONS
+=========================================== */
+
+button {
+  font: inherit;
+}
+
+/* ===========================================
+   SELECTION
+=========================================== */
+
+::selection {
+  background: var(--primary);
+  color: white;
+}
+
+/* ===========================================
+   SCROLLBAR
+=========================================== */
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #eef2f7;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
