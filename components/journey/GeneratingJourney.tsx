@@ -1,82 +1,132 @@
 "use client";
 
-import { useEffect } from "react";
-
-interface GeneratingJourneyProps {
-  onComplete: () => void;
-}
-
-export default function GeneratingJourney({
-  onComplete,
-}: GeneratingJourneyProps) {
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      onComplete();
-    }, 3000);
-
-    return () => clearTimeout(timer);
-  }, [onComplete]);
-
-  const steps = [
-    "Reviewing your child's information",
-    "Understanding your family's priorities",
-    "Finding state-specific guidance",
-    "Building personalized milestones",
-    "Preparing your Family Journey",
-  ];
-
+export default function GeneratingJourney() {
   return (
     <div
       style={{
-        maxWidth: "700px",
-        margin: "80px auto",
-        padding: "50px",
-        background: "#ffffff",
-        borderRadius: "24px",
-        boxShadow: "0 20px 50px rgba(15,23,42,.08)",
-        textAlign: "center",
+        minHeight: "60vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "60px 20px",
       }}
     >
-      <h1
-        style={{
-          fontSize: "40px",
-          marginBottom: "20px",
-          color: "#0F172A",
-        }}
-      >
-        Creating Your Family Journey
-      </h1>
-
-      <p
-        style={{
-          color: "#64748B",
-          fontSize: "20px",
-          marginBottom: "40px",
-        }}
-      >
-        Please wait while we build a personalized roadmap for your family.
-      </p>
-
       <div
         style={{
-          textAlign: "left",
-          maxWidth: "500px",
-          margin: "0 auto",
+          maxWidth: "650px",
+          width: "100%",
+          textAlign: "center",
         }}
       >
-        {steps.map((step) => (
-          <div
-            key={step}
+        <div
+          style={{
+            width: "80px",
+            height: "80px",
+            margin: "0 auto 30px",
+            borderRadius: "50%",
+            background:
+              "linear-gradient(135deg, #2563EB, #14B8A6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            animation: "pulse 2s ease-in-out infinite",
+          }}
+        >
+          <span
             style={{
-              padding: "14px 0",
-              fontSize: "18px",
-              color: "#334155",
+              fontSize: "36px",
             }}
           >
-            ✓ {step}
-          </div>
-        ))}
+            ✨
+          </span>
+        </div>
+
+        <h1
+          style={{
+            fontSize: "38px",
+            fontWeight: 800,
+            color: "#0F172A",
+            marginBottom: "16px",
+          }}
+        >
+          Creating Your Personalized Journey
+        </h1>
+
+        <p
+          style={{
+            fontSize: "19px",
+            lineHeight: 1.7,
+            color: "#64748B",
+            maxWidth: "560px",
+            margin: "0 auto",
+          }}
+        >
+          We're looking at your family's answers and
+          identifying the most meaningful next steps
+          for your journey.
+        </p>
+
+        <div
+          style={{
+            marginTop: "35px",
+            height: "8px",
+            background: "#E2E8F0",
+            borderRadius: "999px",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              height: "100%",
+              width: "45%",
+              background:
+                "linear-gradient(90deg, #2563EB, #14B8A6)",
+              borderRadius: "999px",
+              animation:
+                "loading 1.8s ease-in-out infinite",
+            }}
+          />
+        </div>
+
+        <p
+          style={{
+            marginTop: "18px",
+            fontSize: "14px",
+            color: "#94A3B8",
+          }}
+        >
+          This may take a few moments.
+        </p>
       </div>
+
+      <style jsx>{`
+        @keyframes pulse {
+          0%,
+          100% {
+            transform: scale(1);
+            opacity: 1;
+          }
+
+          50% {
+            transform: scale(1.05);
+            opacity: 0.85;
+          }
+        }
+
+        @keyframes loading {
+          0% {
+            transform: translateX(-100%);
+          }
+
+          50% {
+            transform: translateX(100%);
+          }
+
+          100% {
+            transform: translateX(220%);
+          }
+        }
+      `}</style>
     </div>
   );
 }
