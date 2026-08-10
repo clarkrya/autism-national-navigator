@@ -14,6 +14,29 @@ interface JourneyDashboardProps {
   familyProfile: FamilyProfile;
 }
 
+/*
+ * Format questionnaire values for display only.
+ *
+ * This does NOT change the underlying values sent
+ * to the AI. It only makes the dashboard easier
+ * for families to read.
+ *
+ * Examples:
+ * financial -> Financial
+ * private -> Private
+ * school-services -> School Services
+ * occupational -> Occupational
+ */
+function formatDisplayValue(value: string) {
+  if (!value) return "";
+
+  return value
+    .replace(/[-_]/g, " ")
+    .replace(/\b\w/g, (letter) =>
+      letter.toUpperCase()
+    );
+}
+
 export default function JourneyDashboard({
   personalizedJourney,
   familyProfile,
@@ -171,30 +194,38 @@ export default function JourneyDashboard({
           <SnapshotItem
             label="Location"
             value={
-              familyProfile.state ||
-              "Not provided"
+              familyProfile.state
+                ? formatDisplayValue(
+                    familyProfile.state
+                  )
+                : "Not provided"
             }
           />
 
           <SnapshotItem
             label="Journey Stage"
             value={
-              familyProfile.journeyStage ||
-              "Not provided"
+              familyProfile.journeyStage
+                ? formatDisplayValue(
+                    familyProfile.journeyStage
+                  )
+                : "Not provided"
             }
           />
 
           <SnapshotItem
             label="Insurance"
             value={
-              familyProfile.insurance ||
-              "Not provided"
+              familyProfile.insurance
+                ? formatDisplayValue(
+                    familyProfile.insurance
+                  )
+                : "Not provided"
             }
           />
         </div>
 
-        {familyProfile.supports.length >
-          0 && (
+        {familyProfile.supports.length > 0 && (
           <div
             style={{
               marginTop: "26px",
@@ -226,22 +257,19 @@ export default function JourneyDashboard({
                   <span
                     key={support}
                     style={{
-                      padding:
-                        "8px 14px",
-                      borderRadius:
-                        "999px",
-                      background:
-                        "#FFFFFF",
+                      padding: "8px 14px",
+                      borderRadius: "999px",
+                      background: "#FFFFFF",
                       border:
                         "1px solid #CBD5E1",
-                      color:
-                        "#334155",
-                      fontSize:
-                        "14px",
+                      color: "#334155",
+                      fontSize: "14px",
                       fontWeight: 600,
                     }}
                   >
-                    {support}
+                    {formatDisplayValue(
+                      support
+                    )}
                   </span>
                 )
               )}
@@ -273,7 +301,9 @@ export default function JourneyDashboard({
                 color: "#0F172A",
               }}
             >
-              {familyProfile.priority}
+              {formatDisplayValue(
+                familyProfile.priority
+              )}
             </div>
           </div>
         )}
@@ -292,36 +322,36 @@ export default function JourneyDashboard({
           style={{
             background:
               "linear-gradient(135deg, #EFF6FF, #F0FDFA)",
-          border: "1px solid #BFDBFE",
-          borderRadius: "24px",
-          padding: "34px",
-        }}
-      >
-        <div
-          style={{
-            color: "#2563EB",
-            fontSize: "13px",
-            fontWeight: 800,
-            letterSpacing: "0.08em",
-            textTransform: "uppercase",
-            marginBottom: "14px",
+            border: "1px solid #BFDBFE",
+            borderRadius: "24px",
+            padding: "34px",
           }}
         >
-          What We See
-        </div>
+          <div
+            style={{
+              color: "#2563EB",
+              fontSize: "13px",
+              fontWeight: 800,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              marginBottom: "14px",
+            }}
+          >
+            What We See
+          </div>
 
-        <p
-          style={{
-            margin: 0,
-            fontSize: "20px",
-            lineHeight: 1.75,
-            color: "#334155",
-            maxWidth: "900px",
-          }}
-        >
-          {personalizedJourney.summary}
-        </p>
-      </div>
+          <p
+            style={{
+              margin: 0,
+              fontSize: "20px",
+              lineHeight: 1.75,
+              color: "#334155",
+              maxWidth: "900px",
+            }}
+          >
+            {personalizedJourney.summary}
+          </p>
+        </div>
       </section>
 
       {/* =====================================================
@@ -694,8 +724,7 @@ export default function JourneyDashboard({
                     style={{
                       color:
                         "#64748B",
-                      lineHeight:
-                        1.6,
+                      lineHeight: 1.6,
                       margin:
                         "10px 0 18px",
                     }}

@@ -16,9 +16,43 @@ export type AIPriority = {
  */
 export type AIResource = {
   id: string;
+
   title: string;
+
+  type:
+    | "grant"
+    | "government"
+    | "insurance"
+    | "therapy"
+    | "school"
+    | "financial"
+    | "support"
+    | "other";
+
   description: string;
+
+  whyItMayHelp: string;
+
+  eligibility?: string[];
+
+  whatItMayCover?: string[];
+
+  applicationSteps?: string[];
+
+  documentsNeeded?: string[];
+
   url?: string;
+
+  sourceName?: string;
+
+  sourceType?:
+    | "government"
+    | "nonprofit"
+    | "foundation"
+    | "healthcare"
+    | "other";
+
+  lastVerified?: string;
 };
 
 /**
