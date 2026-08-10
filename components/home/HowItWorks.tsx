@@ -17,7 +17,7 @@ const steps = [
     number: "3",
     title: "Move Forward With Confidence",
     description:
-      "Complete one step at a time and revisit your roadmap whenever your child's needs or goals change.",
+      "Review your roadmap, focus on one step at a time, and save your journey when you're ready.",
   },
 ];
 
@@ -31,8 +31,9 @@ export default function HowItWorks() {
           </h2>
 
           <p className={styles.subtitle}>
-            Three simple steps to help your family navigate the autism
-            journey with clarity and confidence.
+            Three simple steps to help your family
+            navigate the autism journey with clarity
+            and confidence.
           </p>
         </div>
 
@@ -56,6 +57,17 @@ export default function HowItWorks() {
             </div>
           ))}
         </div>
+
+        <p
+          style={{
+            marginTop: "36px",
+            textAlign: "center",
+            color: "#64748B",
+            fontSize: "15px",
+          }}
+        >
+          Start exploring your journey today — no account required.
+        </p>
       </div>
     </section>
   );

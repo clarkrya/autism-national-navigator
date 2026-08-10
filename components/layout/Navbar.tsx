@@ -10,12 +10,17 @@ import styles from "../home/styles/Navbar.module.css";
 export default function Navbar() {
   return (
     <header className={styles.navbar}>
-      <Container size="large">
+      <Container>
         <div className={styles.wrapper}>
-          <Link href="/" className={styles.logo}>
-            <div className={styles.logoIcon}>
+          {/* LOGO */}
+
+          <Link
+            href="/"
+            className={styles.logo}
+          >
+            <span className={styles.logoIcon}>
               🧭
-            </div>
+            </span>
 
             <div className={styles.logoText}>
               <span className={styles.logoTitle}>
@@ -28,18 +33,32 @@ export default function Navbar() {
             </div>
           </Link>
 
+          {/* NAVIGATION */}
+
           <nav className={styles.navigation}>
-            <Link href="/" className={styles.link}>
+            <Link
+              href="/"
+              className={styles.link}
+            >
               Home
             </Link>
 
-            <Link href="/about" className={styles.link}>
-              About
+            {/* Returning users */}
+
+            <Link
+              href="/login"
+              className={styles.link}
+            >
+              Login
             </Link>
+
+            {/* New users */}
 
             <Link
               href="/journey"
-              style={{ textDecoration: "none" }}
+              style={{
+                textDecoration: "none",
+              }}
             >
               <Button>
                 Start My Journey

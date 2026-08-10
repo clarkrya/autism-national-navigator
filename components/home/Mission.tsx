@@ -9,8 +9,9 @@ export default function Mission() {
         </h2>
 
         <p className={styles.text}>
-          Every autism journey is unique. Our mission is to help families
-          navigate each stage with confidence by providing{" "}
+          Every autism journey is unique. Our mission is
+          to help families navigate each stage with
+          confidence by providing{" "}
           <span className={styles.highlight}>
             personalized guidance
           </span>

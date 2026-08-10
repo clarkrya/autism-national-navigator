@@ -5,34 +5,34 @@ import Section from "../ui/Section";
 
 const reasons = [
   {
-    title: "Personalized Guidance",
+    title: "Personalized to Your Family",
     description:
-      "Every family receives recommendations based on their child's age, journey stage, location, and priorities.",
+      "Your roadmap considers your child's age, journey stage, location, and family's priorities.",
   },
   {
-    title: "Trusted Resources",
+    title: "Trusted Information",
     description:
-      "We organize reliable information from healthcare organizations, state programs, and autism experts.",
+      "We organize reliable information from healthcare organizations, state programs, and autism resources.",
   },
   {
-    title: "One Step at a Time",
+    title: "Focused on What Comes Next",
     description:
-      "Instead of overwhelming families with hundreds of resources, we focus on the next best action.",
+      "Rather than overwhelming you with hundreds of options, we help identify meaningful next steps.",
   },
   {
-    title: "Designed for Families",
+    title: "Built With Families in Mind",
     description:
-      "Built with empathy to reduce stress and provide confidence throughout the autism journey.",
+      "The experience is designed to make navigating the autism journey easier, clearer, and less overwhelming.",
   },
 ];
 
 export default function WhyChooseUs() {
   return (
-    <Section spacing="large">
-      <Container size="large">
+    <Section>
+      <Container>
         <Heading
           title="Why Families Choose Autism Journey Navigator"
-          subtitle="Designed to provide clarity, confidence, and practical guidance every step of the way."
+          subtitle="A simpler way to understand what comes next and find guidance that fits your family's journey."
         />
 
         <div
@@ -41,6 +41,7 @@ export default function WhyChooseUs() {
             gridTemplateColumns:
               "repeat(auto-fit, minmax(280px, 1fr))",
             gap: "24px",
+            marginTop: "40px",
           }}
         >
           {reasons.map((reason) => (

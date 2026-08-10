@@ -13,10 +13,10 @@ export default function CallToAction() {
         </h2>
 
         <p className={styles.text}>
-          Every family's autism journey is unique. Take a few minutes to
-          tell us about your child and your priorities, and we'll create
-          a personalized roadmap designed to help you move forward with
-          confidence.
+          Take a few minutes to tell us about your child,
+          your family's priorities, and where you are in
+          your journey. We'll create a personalized roadmap
+          to help you understand what comes next.
         </p>
 
         <Link
@@ -27,6 +27,17 @@ export default function CallToAction() {
             Start My Family Journey
           </Button>
         </Link>
+
+        <p
+          style={{
+            marginTop: "18px",
+            marginBottom: 0,
+            color: "#64748B",
+            fontSize: "14px",
+          }}
+        >
+          No account required to get started.
+        </p>
       </div>
     </section>
   );

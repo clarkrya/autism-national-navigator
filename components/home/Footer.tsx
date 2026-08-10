@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import Container from "../ui/Container";
 
 export default function Footer() {
@@ -6,11 +8,10 @@ export default function Footer() {
       style={{
         background: "#0F172A",
         color: "#CBD5E1",
-        padding: "40px 20px",
-        marginTop: "60px",
+        padding: "56px 20px 32px",
       }}
     >
-      <Container size="large">
+      <Container>
         <div
           style={{
             textAlign: "center",
@@ -18,8 +19,10 @@ export default function Footer() {
         >
           <h3
             style={{
-              color: "white",
-              marginBottom: "14px",
+              color: "#FFFFFF",
+              margin: "0 0 14px",
+              fontSize: "24px",
+              fontWeight: 800,
             }}
           >
             Autism Journey Navigator
@@ -28,20 +31,77 @@ export default function Footer() {
           <p
             style={{
               color: "#CBD5E1",
-              marginBottom: "18px",
+              margin: "0 auto 24px",
+              maxWidth: "600px",
+              lineHeight: 1.7,
             }}
           >
-            Personalized guidance. Trusted resources. One step at a time.
+            Personalized guidance. Trusted resources.
+            One step at a time.
           </p>
 
-          <p
+          <div
             style={{
-              fontSize: "14px",
-              color: "#94A3B8",
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              gap: "24px",
+              flexWrap: "wrap",
+              marginBottom: "32px",
             }}
           >
-            © {new Date().getFullYear()} Autism Journey Navigator. All rights reserved.
-          </p>
+            <Link
+              href="/"
+              style={{
+                color: "#CBD5E1",
+                textDecoration: "none",
+                fontWeight: 600,
+              }}
+            >
+              Home
+            </Link>
+
+            <Link
+              href="/login"
+              style={{
+                color: "#CBD5E1",
+                textDecoration: "none",
+                fontWeight: 600,
+              }}
+            >
+              Login
+            </Link>
+
+            <Link
+              href="/journey"
+              style={{
+                color: "#CBD5E1",
+                textDecoration: "none",
+                fontWeight: 600,
+              }}
+            >
+              Start My Journey
+            </Link>
+          </div>
+
+          <div
+            style={{
+              borderTop:
+                "1px solid rgba(148, 163, 184, 0.2)",
+              paddingTop: "24px",
+            }}
+          >
+            <p
+              style={{
+                fontSize: "13px",
+                color: "#94A3B8",
+                margin: 0,
+              }}
+            >
+              © {new Date().getFullYear()} Autism Journey
+              Navigator. All rights reserved.
+            </p>
+          </div>
         </div>
       </Container>
     </footer>
