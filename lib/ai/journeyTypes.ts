@@ -9,10 +9,73 @@ export type AIPriority = {
 };
 
 /**
+ * A specific action the AI recommends the family take.
+ *
+ * The goal is to answer:
+ * - What should I do?
+ * - Why does it matter?
+ * - How do I do it?
+ * - What should I do afterward?
+ *
+ * Guidance should remain concise and actionable.
+ */
+export type AIAction = {
+  id: string;
+
+  /**
+   * Short description of the action.
+   */
+  title: string;
+
+  /**
+   * Why this action is relevant
+   * to this particular family.
+   */
+  whyItMatters: string;
+
+  /**
+   * The specific thing the family
+   * should do.
+   */
+  action: string;
+
+  /**
+   * Brief instructions explaining
+   * how to complete the action.
+   */
+  howTo: string;
+
+  /**
+   * What the family should do after
+   * completing this action.
+   */
+  nextStep?: string;
+
+  /**
+   * AI-determined importance.
+   */
+  priority: "High" | "Medium" | "Low";
+
+  /**
+   * Estimated amount of time required.
+   */
+  estimatedTime: string;
+
+  /**
+   * Related resource IDs.
+   *
+   * These should reference resources
+   * returned in the resources array.
+   */
+  resourceIds?: string[];
+};
+
+/**
  * A resource recommended by the AI.
  *
- * The URL is optional because we will eventually
- * connect recommendations to verified resources.
+ * Resources should eventually be connected
+ * to verified resource data rather than
+ * allowing the AI to invent resources or URLs.
  */
 export type AIResource = {
   id: string;
@@ -31,20 +94,47 @@ export type AIResource = {
 
   description: string;
 
+  /**
+   * Why this resource may be relevant
+   * to this particular family.
+   */
   whyItMayHelp: string;
 
+  /**
+   * Potential eligibility considerations.
+   */
   eligibility?: string[];
 
+  /**
+   * Potential benefits or services
+   * the resource may provide.
+   */
   whatItMayCover?: string[];
 
+  /**
+   * Concise application or access steps.
+   */
   applicationSteps?: string[];
 
+  /**
+   * Documents the family may need.
+   */
   documentsNeeded?: string[];
 
+  /**
+   * Official or verified URL.
+   */
   url?: string;
 
+  /**
+   * Organization providing the resource.
+   */
   sourceName?: string;
 
+  /**
+   * Type of organization providing
+   * the resource.
+   */
   sourceType?:
     | "government"
     | "nonprofit"
@@ -52,6 +142,9 @@ export type AIResource = {
     | "healthcare"
     | "other";
 
+  /**
+   * Date the resource was last verified.
+   */
   lastVerified?: string;
 };
 
@@ -60,7 +153,18 @@ export type AIResource = {
  * should focus on right now.
  */
 export type AICurrentFocus = {
+  /**
+   * Short, action-oriented focus statement.
+   *
+   * Example:
+   * "Reduce out-of-pocket therapy costs"
+   */
   title: string;
+
+  /**
+   * Brief explanation of why this is
+   * the current focus.
+   */
   explanation: string;
 };
 
@@ -69,30 +173,38 @@ export type AICurrentFocus = {
  */
 export type AINextStep = {
   title: string;
+
   description: string;
 };
 
 /**
  * A task recommended by the AI.
  *
- * AI is responsible for determining:
+ * AI determines:
  * - What the task is
  * - Why it matters
  * - Priority
  * - Estimated time
  * - Resource, when appropriate
  *
- * The application is responsible for:
- * - Tracking completion
+ * The application determines:
+ * - Completion status
  * - Saving completion status
+ * - When completed tasks trigger reassessment
  */
 export type AITask = {
   id: string;
+
   title: string;
+
   description: string;
+
   priority: "High" | "Medium" | "Low";
+
   estimatedTime: string;
+
   completed: boolean;
+
   resourceLink?: string;
 };
 
@@ -103,6 +215,10 @@ export type AITask = {
  * the Journey Dashboard.
  */
 export type PersonalizedJourney = {
+  /**
+   * Short explanation of what the AI
+   * understood about the family's situation.
+   */
   summary: string;
 
   /**
@@ -112,17 +228,30 @@ export type PersonalizedJourney = {
   currentFocus: AICurrentFocus;
 
   /**
-   * AI-ranked areas the family should focus on.
+   * AI-ranked areas the family should
+   * keep in focus.
    */
   priorities: AIPriority[];
 
   /**
-   * Specific actions/tasks recommended by AI.
+   * Actionable recommendations.
+   *
+   * These answer:
+   * What should I do?
+   * Why?
+   * How?
+   * What's next?
+   */
+  actions: AIAction[];
+
+  /**
+   * Specific tasks recommended by AI.
    */
   tasks: AITask[];
 
   /**
-   * Resources related to the AI recommendations.
+   * Resources related to the AI
+   * recommendations.
    */
   resources: AIResource[];
 
@@ -150,8 +279,8 @@ export type AIJourneyMetadata = {
 /**
  * Complete AI journey state.
  *
- * This is the object we will eventually save
- * with the user's account.
+ * This is the object we will eventually
+ * save with the user's account.
  */
 export type AIJourney = {
   journey: PersonalizedJourney;

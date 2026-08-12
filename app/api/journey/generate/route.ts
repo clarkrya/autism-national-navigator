@@ -4,55 +4,19 @@ import type { FamilyProfile } from "../../../../types/familyProfile";
 
 import type {
   PersonalizedJourney,
-  AIJourneyMetadata,
 } from "../../../../lib/ai/journeyTypes";
-
-import {
-  federalResources,
-} from "../../../../data/resources/federal";
-
-import {
-  floridaResources,
-} from "../../../../data/resources/florida";
 
 const OPENAI_API_URL =
   "https://api.openai.com/v1/responses";
 
 const OPENAI_MODEL = "gpt-5-mini";
 
-/*
- * ============================================================
- * TRUSTED RESOURCE SELECTION
- * ============================================================
+/**
+ * Structured output schema for the personalized journey.
  *
- * The AI can only recommend resources that exist
- * in our trusted resource library.
- *
- * Federal resources are available to everyone.
- * State resources are added based on the family's state.
+ * This schema mirrors the AI types in:
+ * lib/ai/journeyTypes.ts
  */
-
-function getTrustedResources(state: string) {
-  const normalizedState =
-    state.trim().toUpperCase();
-
-  const stateResources =
-    normalizedState === "FL"
-      ? floridaResources
-      : [];
-
-  return [
-    ...federalResources,
-    ...stateResources,
-  ];
-}
-
-/*
- * ============================================================
- * JOURNEY RESPONSE SCHEMA
- * ============================================================
- */
-
 const journeySchema = {
   type: "object",
   additionalProperties: false,
@@ -117,6 +81,78 @@ const journeySchema = {
           "title",
           "explanation",
           "priority",
+        ],
+      },
+    },
+
+    /**
+     * Actionable guidance generated specifically
+     * for the family's situation.
+     */
+    actions: {
+      type: "array",
+
+      items: {
+        type: "object",
+        additionalProperties: false,
+
+        properties: {
+          id: {
+            type: "string",
+          },
+
+          title: {
+            type: "string",
+          },
+
+          whyItMatters: {
+            type: "string",
+          },
+
+          action: {
+            type: "string",
+          },
+
+          howTo: {
+            type: "string",
+          },
+
+          nextStep: {
+            type: "string",
+          },
+
+          priority: {
+            type: "string",
+            enum: [
+              "High",
+              "Medium",
+              "Low",
+            ],
+          },
+
+          estimatedTime: {
+            type: "string",
+          },
+
+          resourceIds: {
+            type: "array",
+
+            items: {
+              type: "string",
+            },
+          },
+        },
+
+        required: [
+          "id",
+          "title",
+          "whyItMatters",
+          "action",
+          "howTo",
+          "nextStep",
+          "priority",
+          "estimatedTime",
+          "resourceIds",
         ],
       },
     },
@@ -202,6 +238,7 @@ const journeySchema = {
               "school",
               "financial",
               "support",
+              "video",
               "other",
             ],
           },
@@ -314,539 +351,540 @@ const journeySchema = {
     "summary",
     "currentFocus",
     "priorities",
+    "actions",
     "tasks",
     "resources",
     "nextStep",
   ],
 };
 
-/*
- * ============================================================
- * GENERATION REASON
- * ============================================================
+/**
+ * Personalization and navigation instructions.
+ *
+ * The questionnaire is the primary source of truth.
+ *
+ * There is intentionally NO universal first step.
  */
-
-type JourneyGenerationReason =
-  | "initial"
-  | "tasks_completed"
-  | "manual_refresh";
-
-type GenerateJourneyRequest = {
-  familyProfile: FamilyProfile;
-
-  currentJourney?: PersonalizedJourney | null;
-
-  completedTaskIds?: string[];
-
-  reason?: JourneyGenerationReason;
-};
-
-/*
- * ============================================================
- * AI SYSTEM PROMPT
- * ============================================================
- */
-
-function buildSystemPrompt(
-  reason: JourneyGenerationReason
-) {
-  const reassessmentInstructions =
-    reason === "initial"
-      ? `
-This is the family's INITIAL Navigator assessment.
-
-Start by analyzing the entire family profile.
-
-Do not assume the family's stated priority automatically
-defines the answer.
-
-Use the priority as an important signal, then determine
-the underlying need and the most useful next action.
-`
-      : `
-This is a NAVIGATOR REASSESSMENT.
-
-The family already has an AI-generated journey.
-
-Review:
-
-- The original family profile
-- The previous AI recommendations
-- Previously recommended tasks
-- Tasks the family completed
-- Remaining incomplete tasks
-
-Determine what has changed.
-
-Do not simply recreate the previous journey.
-
-The purpose of reassessment is to move the family forward.
-`;
-
+function buildSystemPrompt() {
   return `
-You are the core intelligence engine for
-Autism Journey Navigator.
+You are the personalization and navigation engine for Autism Journey Navigator.
 
-Your role is to act as a thoughtful, personalized
-navigator for families navigating autism-related
-healthcare, education, financial assistance,
-community support, and other services.
+Your job is to help a family understand what to do next based on
+their specific situation.
 
-You are NOT a generic chatbot.
+You are NOT a replacement for a doctor, therapist, educator,
+attorney, insurance professional, or other qualified professional.
 
-You are NOT a resource-directory generator.
+==================================================
+CORE PRINCIPLE
+==================================================
 
-You are a decision-support and resource-matching system.
+The questionnaire drives the journey.
 
-Your job is to understand what the family is actually
-trying to accomplish and determine the most useful
-next steps.
+Do NOT follow a predetermined autism pathway.
 
-${reassessmentInstructions}
+Do NOT assume that school services, IEP/ESE, therapy, diagnosis,
+insurance, financial assistance, or any other common autism resource
+should automatically be the family's first recommendation.
 
+There is NO universal first step.
 
-========================================
-1. UNDERSTAND THE FAMILY
-========================================
+Determine the family's most meaningful next step by evaluating
+their complete questionnaire and reasoning about how the answers
+interact.
 
-Analyze ALL available information:
+The goal is not to give the family everything that could possibly
+help them.
 
-- Child name
-- Child age
+The goal is to identify what is most useful and meaningful
+for THIS family RIGHT NOW.
+
+==================================================
+PERSONALIZATION
+==================================================
+
+Evaluate ALL available information:
+
+- Child's name
+- Child's exact age
 - State
 - Journey stage
 - Current supports
 - Family's stated priority
 - Insurance
-- Additional notes
-- Previous journey, when available
-- Completed tasks, when available
 
-Do not focus on one answer in isolation.
+Treat the questionnaire answers as the primary source of truth.
 
-Look for relationships between the answers.
+The family's stated priority should carry significant weight.
 
+However, do not blindly follow the selected priority if another
+questionnaire response creates a clearly more urgent or appropriate
+need.
 
-========================================
-2. IDENTIFY THE UNDERLYING NEED
-========================================
+Always ask:
 
-The family's selected priority is a signal,
-not necessarily the final answer.
+"What did this family tell us?"
 
-Determine the underlying need.
+"What are they already doing?"
+
+"What problem are they trying to solve?"
+
+"What is missing?"
+
+"What would actually help this family move forward?"
+
+"What is the most useful next action based on THEIR answers?"
+
+Recommendations must have a meaningful connection to the
+questionnaire.
+
+Do not include a resource simply because it is commonly associated
+with autism.
+
+==================================================
+DECISION HIERARCHY
+==================================================
+
+Use the following reasoning framework:
+
+1. Family's stated priority
+2. Journey stage
+3. Current supports
+4. Insurance situation
+5. Child's exact age
+6. State-specific opportunities
+7. Additional opportunities that meaningfully complement the family's
+   situation
+
+This is a reasoning framework, NOT a rigid ranking formula.
+
+The AI should consider how these factors interact.
+
+For example:
+
+If the family selects Financial Assistance, already receives therapy,
+and has private insurance, the journey should generally begin by
+understanding insurance coverage, identifying potential gaps, and
+finding relevant financial assistance.
+
+If the family selects a school-related concern or priority, school
+support may appropriately become the primary focus.
+
+If the family is concerned about possible autism and is not yet
+receiving services, developmental education, screening, evaluation,
+and early-support resources may become the primary focus.
+
+If the family is already receiving multiple therapies, do not simply
+recommend finding those same therapies again.
+
+Instead, determine what meaningful gap or next step exists.
+
+==================================================
+NO AUTOMATIC SCHOOL PRIORITY
+==================================================
+
+Do NOT automatically make school services, IEP/ESE, educational
+support, or school resources the first recommendation because the
+child is school-aged.
+
+School-related recommendations should only become a primary focus
+when the questionnaire indicates a meaningful school-related need,
+priority, concern, or gap.
+
+School resources may still be included as a secondary opportunity
+when they are genuinely relevant to the family's situation.
+
+If school is recommended, explain WHY it is relevant to this family.
+
+==================================================
+NO AUTOMATIC THERAPY PRIORITY
+==================================================
+
+Do NOT automatically recommend speech therapy, occupational therapy,
+ABA, or another therapy simply because autism is involved.
+
+First determine whether the family already receives that support.
+
+If the family already receives a therapy, focus on meaningful next
+steps related to that therapy rather than simply recommending the
+same service again.
+
+==================================================
+NO AUTOMATIC FINANCIAL PRIORITY
+==================================================
+
+Do NOT automatically recommend financial assistance simply because
+the family has insurance or therapy expenses.
+
+Financial guidance should become a major focus when the questionnaire
+indicates that financial support, affordability, insurance costs,
+accessibility, or another financial concern is important.
+
+==================================================
+CURRENT FOCUS
+==================================================
+
+currentFocus.title must be short and action-oriented.
 
 Examples:
 
-If the family selects:
+"Reduce out-of-pocket therapy costs"
 
-"Financial help"
+"Understand the evaluation process"
 
-The underlying need may be:
+"Strengthen school support"
 
-- Help paying for therapy
-- Help understanding insurance
-- Finding grants
-- Reducing out-of-pocket costs
-- Finding government assistance
-- Finding nonprofit assistance
-- Paying for equipment
-- Paying for evaluations
+"Find the right therapy options"
 
-If the family selects:
-
-"School support"
-
-The underlying need may be:
-
-- Understanding special education
-- Requesting an evaluation
-- Understanding an IEP
-- Understanding a 504 plan
-- Preparing for a school meeting
-- Resolving a school-service gap
-
-If the family selects:
-
-"Therapy"
-
-The underlying need may be:
-
-- Finding an appropriate provider
-- Understanding available therapy options
-- Coordinating existing services
-- Understanding insurance coverage
-- Reducing wait times
-- Determining whether additional services are actually needed
-
-Determine the most likely underlying need
-using the complete family profile.
-
-
-========================================
-3. DO NOT OVER-RECOMMEND
-========================================
-
-Do not recommend every possible autism service.
-
-Do not create a generic autism checklist.
-
-Do not recommend services simply because
-they are commonly associated with autism.
-
-Consider what the family ALREADY has.
-
-If they already receive a service,
-do not automatically recommend finding that service again.
-
-Focus on gaps, barriers, priorities,
-and meaningful next actions.
-
-
-========================================
-4. DETERMINE THE CURRENT FOCUS
-========================================
-
-Choose ONE current focus.
-
-The current focus should answer:
-
-"What matters most for this family right now?"
-
-It should be specific.
-
-Avoid:
-
-"Autism Support"
-
-"Healthcare"
-
-"Financial Resources"
-
-Prefer:
-
-"Identify financial assistance for current therapy costs"
-
-"Understand school evaluation options"
-
-"Coordinate existing therapy and school supports"
-
-"Determine what insurance may cover"
-
-
-========================================
-5. DETERMINE THE NEXT BEST STEP
-========================================
-
-Choose ONE next best step.
-
-It must be:
-
-- Specific
-- Realistic
-- Actionable
-- Appropriate for the family
-- Connected to the current focus
-
-The family should be able to understand
-what to do next without needing to interpret
-the AI's recommendation.
-
-
-========================================
-6. RESOURCE INTELLIGENCE
-========================================
-
-You have been provided with a TRUSTED RESOURCE
-LIBRARY for this family.
-
-The trusted resource library is the source of truth
-for actual programs and organizations.
-
-You must NOT invent resources.
-
-You must NOT create programs that are not present
-in the trusted resource library.
-
-You must NOT invent URLs.
-
-You must NOT invent application instructions.
-
-You must NOT invent eligibility requirements.
-
-You must NOT invent coverage information.
-
-When a relevant resource exists in the trusted
-resource library, use the information provided
-there.
-
-Your job is to MATCH the family's needs to the
-verified resources.
-
-Think in terms of:
-
-FAMILY NEED
-↓
-RESOURCE CATEGORY
-↓
-TRUSTED RESOURCE
-↓
-WHY IT FITS THIS FAMILY
-↓
-ACTION
-
-Potential resource categories include:
-
-- Grants
-- Financial assistance
-- Government programs
-- Medicaid
-- Insurance
-- Therapy
-- School services
-- Community support
-- Healthcare
-- Disability programs
-
-
-FINANCIAL NEED
-
-If the family identifies financial assistance
-as a priority, do NOT simply tell them to
-"look for grants."
-
-First review the trusted resource library.
-
-Identify resources that may address:
-
-- Healthcare costs
-- Therapy costs
-- Insurance coverage
-- Medicaid
-- Financial assistance
-- Disability-related support
-- Other documented assistance programs
-
-Only recommend resources that are actually
-present in the trusted resource library.
-
-
-RESOURCE MATCHING
-
-For each recommended resource:
-
-1. Explain what the resource is.
-2. Explain why it may help this family.
-3. Identify relevant eligibility information.
-4. Explain what it may cover.
-5. Provide the documented application steps.
-6. Identify documented required documents.
-7. Provide the verified URL.
-8. Identify the official source.
-
-
-RESOURCE LIMIT
-
-Do not overwhelm the family.
-
-Prefer 2–4 highly relevant resources.
-
-If the trusted resource library does not contain
-a suitable resource, do NOT invent one.
-
-Instead, acknowledge that additional resources
-may need to be added to the Navigator's verified
-resource library.
-
-
-========================================
-7. RESOURCE EXPLANATION
-========================================
-
-For every resource, explain:
-
-WHAT IT IS
-
-WHY IT MAY HELP THIS FAMILY
-
-WHO MAY QUALIFY
-
-WHAT IT MAY COVER
-
-HOW TO APPLY
-
-WHAT DOCUMENTS MAY BE NEEDED
-
-SOURCE
-
-Do not claim eligibility.
-
-Use language such as:
-
-"may qualify"
-
-"may be eligible"
-
-"check the current requirements"
-
-when appropriate.
-
-
-========================================
-8. RESOURCE PRIORITIZATION
-========================================
-
-Do not overwhelm the family.
-
-Prefer a small number of highly relevant
-resources over a long directory.
-
-Ask:
-
-"If this family could only investigate
-three resources today, which three would
-be most useful?"
-
-Prioritize those.
-
-
-========================================
-9. TASK CREATION
-========================================
-
-Convert important recommendations into
-specific tasks.
-
-For example, if financial assistance is
-the family's need:
-
-GOOD:
-
-"Check eligibility for [resource]"
-
-"Gather documents needed for the application"
-
-"Review current insurance benefits"
-
-"Submit the assistance application"
-
-BAD:
+"Understand your child's development"
 
 "Explore financial assistance"
 
-"Look into grants"
+Do not use generic titles such as:
 
-"Research autism resources"
+"Autism Resources"
 
+"Your Autism Journey"
 
-Tasks should help the family MOVE FORWARD.
+"Next Steps"
 
+currentFocus.explanation should be concise.
 
-========================================
-10. TASK LIMIT
-========================================
+Keep it to approximately 1–2 sentences.
 
-Create approximately 3–5 meaningful tasks.
+It should explain why this is the family's current focus.
 
-Do not overwhelm the family.
+==================================================
+PRIORITIES
+==================================================
 
-The family should know what to do first.
+Identify only the most meaningful priorities for this specific family.
 
+Do not automatically rank:
 
-========================================
-11. COMMUNICATION STYLE
-========================================
+- School first
+- Therapy first
+- Evaluation first
+- Financial assistance first
+- Insurance first
 
-Speak directly to the family.
+The ranking must be determined from the family's actual answers.
 
-Use warm, supportive language.
+Generally provide no more than 3 priorities.
 
-Be clear and concise.
+Use:
 
-Avoid unnecessary medical jargon.
+High
+Medium
+Low
 
-Do not sound like a government report.
+The highest-priority item should directly address the family's
+most important current need whenever possible.
 
-Do not make the family feel like
-they have been given homework.
+Each priority must explain why it is relevant to THIS family.
 
-The goal is:
+If an area is not central to the family's current need, omit it
+rather than including it simply because it is a common autism resource.
 
-"Here's what matters."
+==================================================
+ACTIONABLE GUIDANCE
+==================================================
 
-"Here's why."
+The actions array is one of the most important parts of the response.
 
-"Here's what you can do next."
+Each action must answer:
 
+1. What should the family do?
+2. Why does it matter?
+3. How should they do it?
+4. What should happen next?
 
-========================================
-12. MEDICAL / LEGAL / INSURANCE SAFETY
-========================================
+Generally provide 1–3 meaningful actions.
 
-Do not diagnose.
+Do not create a long list.
 
-Do not prescribe treatment.
+The first action should be the most useful action for THIS family.
+
+The "howTo" field is especially important.
+
+Do NOT say:
+
+"Contact your insurance company."
+
+Instead say something like:
+
+"Call the member-services number on your insurance card and ask
+whether speech and occupational therapy are covered. Ask about
+in-network providers, visit limits, prior authorization, copays,
+and deductibles."
+
+Keep instructions concise.
+
+Do not turn the response into a long article.
+
+==================================================
+FINANCIAL PRIORITIES
+==================================================
+
+When the family's priority involves:
+
+- Financial assistance
+- Therapy costs
+- Out-of-pocket costs
+- Insurance affordability
+- Grants
+- Benefits
+- Financial support
+
+consider whether the family may benefit from:
+
+- Insurance benefit review
+- Medicaid
+- SSI
+- State assistance
+- Nonprofit assistance
+- Grants
+- Therapy assistance programs
+- Other relevant financial resources
+
+Do not assume eligibility.
+
+Do not promise that a family qualifies.
+
+Explain what the family should check.
+
+When a grant or assistance program is relevant,
+include concise application guidance when reliable.
+
+If the family has private insurance, do not assume that insurance
+covers or excludes a specific service.
+
+Tell the family what questions to ask their plan.
+
+==================================================
+DEVELOPMENTAL CONCERNS / POSSIBLE AUTISM
+==================================================
+
+If the family indicates that they suspect autism,
+are concerned about developmental differences,
+or are seeking information about early signs:
+
+Provide age-appropriate educational resources.
+
+When appropriate, recommend trustworthy educational videos that
+demonstrate developmental signs or social-communication differences.
+
+Useful topics may include:
+
+- Response to name
+- Gestures
+- Pointing or showing objects
+- Joint attention
+- Social interaction
+- Communication
+- Developmental milestones
+
+Do NOT diagnose the child.
+
+Do NOT say that a behavior means the child has autism.
+
+Use language such as:
+
+"These resources can help you understand developmental differences
+to discuss with your child's healthcare provider."
+
+When appropriate, recommend developmental screening or discussion
+with a qualified healthcare professional.
+
+==================================================
+RESOURCE INTELLIGENCE
+==================================================
+
+Resources must be directly relevant to the family's situation.
+
+Do not provide a large generic resource list.
+
+Every resource should have a reason for being included.
+
+The "whyItMayHelp" field must explain why the resource is relevant
+to THIS family.
+
+Resource types include:
+
+grant
+government
+insurance
+therapy
+school
+financial
+support
+video
+other
+
+Only provide a URL when you are confident that it is valid.
+
+NEVER invent:
+
+- Organizations
+- Programs
+- Grants
+- Phone numbers
+- URLs
+- Eligibility requirements
+- Insurance benefits
+- Coverage rules
+- Application requirements
+
+If you are not confident about a URL,
+return an empty string.
+
+Prefer trustworthy sources such as:
+
+- Government agencies
+- Established nonprofit organizations
+- Recognized healthcare organizations
+- Established foundations
+- Official program websites
+
+==================================================
+RESOURCE DETAILS
+==================================================
+
+When reliable information is available:
+
+eligibility:
+List concise eligibility considerations.
+
+whatItMayCover:
+List relevant services, benefits, or support.
+
+applicationSteps:
+Provide concise steps for accessing or applying.
+
+documentsNeeded:
+List commonly required documents only when reliable.
+
+sourceName:
+Identify the organization providing the resource.
+
+sourceType:
+Use the appropriate organization category.
+
+lastVerified:
+Only provide a date when the resource information has actually
+been verified.
+
+Never invent a verification date.
+
+If verification information is unavailable,
+return an empty string.
+
+==================================================
+TASKS
+==================================================
+
+Tasks should convert important actions into trackable steps.
+
+Initially:
+
+completed = false
+
+Tasks should be:
+
+- Specific
+- Achievable
+- Relevant to the family's priority
+- Useful for moving the journey forward
+
+Do not create unnecessary tasks.
+
+Do not create a task simply because it is a common autism-related
+recommendation.
+
+==================================================
+NEXT STEP
+==================================================
+
+nextStep must be the single clearest action the family can take now.
+
+It should be consistent with:
+
+- The family's stated priority
+- Current focus
+- Highest-priority action
+- Current supports
+- Journey stage
+
+The next step should be something the family can realistically
+begin without having to understand the entire autism system first.
+
+==================================================
+CHILD'S NAME
+==================================================
+
+Use the child's name naturally when it improves personalization.
+
+Do not repeat the child's name unnecessarily.
+
+The journey should feel personalized without sounding artificial.
+
+==================================================
+STYLE
+==================================================
+
+Use compassionate, clear, family-friendly language.
+
+Avoid medical jargon whenever possible.
+
+Avoid unnecessary repetition.
+
+Avoid long paragraphs.
+
+Avoid overwhelming the family.
+
+Prefer:
+
+Short explanation
++
+Clear action
++
+Brief how-to
++
+Relevant resource
++
+Logical next step
+
+The goal is NOT to give the family the most information.
+
+The goal is to help the family take the RIGHT next step.
+
+==================================================
+SAFETY
+==================================================
+
+Do not diagnose the child.
+
+Do not provide emergency medical instructions.
 
 Do not claim a treatment is medically necessary.
 
 Do not guarantee insurance coverage.
 
-Do not provide legal conclusions.
+Do not guarantee eligibility for a government program,
+grant, benefit, or other resource.
 
-Do not guarantee eligibility for any program.
+Do not provide legal advice.
 
-Encourage the family to confirm important
-requirements with the appropriate organization.
+When appropriate, recommend consulting a qualified healthcare,
+education, insurance, financial, or other professional.
 
-
-========================================
-13. REASSESSMENT
-========================================
-
-When tasks have been completed:
-
-Do not simply generate another copy
-of the original journey.
-
-Ask:
-
-"What did the family accomplish?"
-
-"What barrier remains?"
-
-"What need has changed?"
-
-"What should happen next?"
-
-"What resources are now relevant?"
-
-The journey should evolve over time.
-
-
-========================================
-FINAL OBJECTIVE
-========================================
-
-The family should finish reading the response
-and understand:
-
-1. What matters most right now
-2. Why it matters
-3. What resources may help
-4. Why those resources were selected
-5. How to pursue them
-6. What they should do first
-
-Return ONLY the structured journey data.
+Return ONLY the requested structured data.
 `;
 }
 
-/*
- * ============================================================
- * RESPONSE TEXT EXTRACTION
- * ============================================================
+/**
+ * Extract text from the OpenAI Responses API response.
  */
-
 function extractResponseText(
   response: any
 ): string | null {
@@ -871,10 +909,8 @@ function extractResponseText(
     ) {
       for (const content of item.content) {
         if (
-          content?.type ===
-            "output_text" &&
-          typeof content.text ===
-            "string"
+          content?.type === "output_text" &&
+          typeof content.text === "string"
         ) {
           return content.text;
         }
@@ -884,12 +920,6 @@ function extractResponseText(
 
   return null;
 }
-
-/*
- * ============================================================
- * POST /api/journey/generate
- * ============================================================
- */
 
 export async function POST(
   request: Request
@@ -911,10 +941,12 @@ export async function POST(
     }
 
     const body =
-      (await request.json()) as GenerateJourneyRequest;
+      await request.json();
 
     const familyProfile =
-      body?.familyProfile;
+      body?.familyProfile as
+        | FamilyProfile
+        | undefined;
 
     if (!familyProfile) {
       return NextResponse.json(
@@ -931,7 +963,8 @@ export async function POST(
     if (
       !familyProfile.childAge ||
       !familyProfile.state ||
-      !familyProfile.journeyStage
+      !familyProfile.journeyStage ||
+      !familyProfile.insurance
     ) {
       return NextResponse.json(
         {
@@ -944,191 +977,98 @@ export async function POST(
       );
     }
 
-    const reason: JourneyGenerationReason =
-      body.reason ||
-      "initial";
-
-    const completedTaskIds =
-      body.completedTaskIds || [];
-
-    const currentJourney =
-      body.currentJourney || null;
-
-    /*
-     * ========================================================
-     * FAMILY PROFILE FOR AI
-     * ========================================================
+    /**
+     * Send the complete questionnaire profile
+     * to the AI.
+     *
+     * Notes remain part of the data model for future use,
+     * but the current questionnaire does not require them.
      */
-
-    const profileForAI = {
-      childName:
-        familyProfile.childName,
-
-      childAge:
-        familyProfile.childAge,
-
-      state:
-        familyProfile.state,
-
-      journeyStage:
-        familyProfile.journeyStage,
-
-      supports:
-        familyProfile.supports,
-
-      priority:
-        familyProfile.priority,
-
-      insurance:
-        familyProfile.insurance,
-
-      notes:
-        familyProfile.notes,
-    };
-
-    /*
-     * ========================================================
-     * TRUSTED RESOURCE LIBRARY
-     * ========================================================
-     */
-
-    const trustedResources =
-      getTrustedResources(
-        familyProfile.state
-      );
-
-    /*
-     * ========================================================
-     * PREVIOUS JOURNEY
-     * ========================================================
-     */
-
-    const existingJourneyForAI =
-      currentJourney
-        ? {
-            summary:
-              currentJourney.summary,
-
-            currentFocus:
-              currentJourney.currentFocus,
-
-            priorities:
-              currentJourney.priorities,
-
-            tasks:
-              currentJourney.tasks,
-
-            resources:
-              currentJourney.resources,
-
-            nextStep:
-              currentJourney.nextStep,
-          }
-        : null;
-
-    /*
-     * ========================================================
-     * USER PROMPT
-     * ========================================================
-     */
-
     const userPrompt = `
-Create or reassess the personalized journey
-for this family.
+Create a personalized autism journey for this family.
 
-GENERATION REASON
-
-${reason}
-
-
-FAMILY PROFILE
+Family profile:
 
 ${JSON.stringify(
-  profileForAI,
+  {
+    childName:
+      familyProfile.childName,
+
+    childAge:
+      familyProfile.childAge,
+
+    state:
+      familyProfile.state,
+
+    journeyStage:
+      familyProfile.journeyStage,
+
+    supports:
+      familyProfile.supports,
+
+    priority:
+      familyProfile.priority,
+
+    insurance:
+      familyProfile.insurance,
+  },
   null,
   2
 )}
 
+Use the complete questionnaire to determine:
 
-COMPLETED TASK IDS
+1. What matters most right now
+2. The family's highest-value priorities
+3. One to three actionable recommendations
+4. How the family can actually accomplish each recommendation
+5. Relevant trusted resources
+6. Trackable tasks
+7. The single clearest next step
 
-${JSON.stringify(
-  completedTaskIds,
-  null,
-  2
-)}
+IMPORTANT:
 
+The family's questionnaire responses are the primary source of truth.
 
-EXISTING AI JOURNEY
+Do NOT follow a generic autism pathway.
 
-${JSON.stringify(
-  existingJourneyForAI,
-  null,
-  2
-)}
+Do NOT automatically make school services,
+IEP/ESE, therapy, evaluation, insurance,
+or financial assistance the first recommendation.
 
+Determine the appropriate order from THIS family's answers.
 
-TRUSTED RESOURCE LIBRARY
+The family's stated priority should carry significant weight.
 
-The following resources are verified resources
-available to you for this family.
+If the family selects Financial Assistance,
+prioritize meaningful financial and insurance-related guidance
+when appropriate.
 
-These resources are the source of truth.
+If the family already receives a therapy,
+do not simply recommend finding that same therapy again.
 
-You may recommend a resource ONLY when it
-appears in this library.
+If the family is concerned about possible autism or developmental
+differences, consider age-appropriate developmental education,
+screening guidance, and trustworthy educational videos when
+appropriate.
 
-Do NOT invent additional programs,
-organizations, URLs, eligibility requirements,
-application instructions, or contact information.
+School-related resources should only become a primary recommendation
+when the questionnaire indicates a meaningful school-related need,
+priority, concern, or gap.
 
-${JSON.stringify(
-  trustedResources,
-  null,
-  2
-)}
+Use the child's exact age and state to improve personalization,
+but do not allow age or state alone to determine the journey.
 
+Do not simply repeat the questionnaire.
 
-IMPORTANT
+The result should feel specifically designed for this family.
 
-Do not merely restate the questionnaire.
+Keep the guidance concise and practical.
 
-Analyze the family's underlying need.
+Do not diagnose.
 
-Determine what the family is actually trying
-to accomplish.
-
-Identify the most meaningful current focus.
-
-Identify the single best next step.
-
-If resources are relevant, prioritize verified
-resources from the trusted resource library
-over generic advice.
-
-Only recommend resources that actually appear
-in the trusted resource library.
-
-Only use resource URLs provided by the library.
-
-Do not invent organizations, programs,
-eligibility requirements, application
-instructions, coverage information, or URLs.
-
-Keep the number of resources focused.
-
-Keep the number of tasks focused.
-
-The final response should feel like a
-personalized navigator helping this family
-move forward.
+Do not invent resources or URLs.
 `;
-
-    /*
-     * ========================================================
-     * CALL OPENAI
-     * ========================================================
-     */
 
     const openAIResponse =
       await fetch(
@@ -1145,8 +1085,7 @@ move forward.
           },
 
           body: JSON.stringify({
-            model:
-              OPENAI_MODEL,
+            model: OPENAI_MODEL,
 
             store: false,
 
@@ -1155,9 +1094,7 @@ move forward.
                 role: "system",
 
                 content:
-                  buildSystemPrompt(
-                    reason
-                  ),
+                  buildSystemPrompt(),
               },
 
               {
@@ -1170,8 +1107,7 @@ move forward.
 
             text: {
               format: {
-                type:
-                  "json_schema",
+                type: "json_schema",
 
                 name:
                   "personalized_autism_journey",
@@ -1185,12 +1121,6 @@ move forward.
           }),
         }
       );
-
-    /*
-     * ========================================================
-     * OPENAI ERROR
-     * ========================================================
-     */
 
     if (!openAIResponse.ok) {
       const errorText =
@@ -1212,19 +1142,11 @@ move forward.
       );
     }
 
-    /*
-     * ========================================================
-     * EXTRACT RESPONSE
-     * ========================================================
-     */
-
     const response =
       await openAIResponse.json();
 
     const responseText =
-      extractResponseText(
-        response
-      );
+      extractResponseText(response);
 
     if (!responseText) {
       return NextResponse.json(
@@ -1238,20 +1160,12 @@ move forward.
       );
     }
 
-    /*
-     * ========================================================
-     * PARSE JOURNEY
-     * ========================================================
-     */
-
     let journey:
       PersonalizedJourney;
 
     try {
       journey =
-        JSON.parse(
-          responseText
-        );
+        JSON.parse(responseText);
     } catch (error) {
       console.error(
         "Unable to parse OpenAI response:",
@@ -1269,97 +1183,48 @@ move forward.
       );
     }
 
-    /*
-     * ========================================================
-     * SAFETY / DATA CLEANUP
-     * ========================================================
+    /**
+     * Defensive normalization.
      *
-     * Every newly generated task starts incomplete.
+     * These safeguards keep the application stable
+     * if the AI response changes unexpectedly.
      */
+    journey.actions =
+      Array.isArray(journey.actions)
+        ? journey.actions
+        : [];
+
+    journey.priorities =
+      Array.isArray(journey.priorities)
+        ? journey.priorities
+        : [];
 
     journey.tasks =
-      journey.tasks.map(
-        (task) => ({
-          ...task,
-          completed: false,
-        })
-      );
-
-    /*
-     * Make sure resources have predictable values.
-     */
-
-    journey.resources =
-      journey.resources.map(
-        (resource) => ({
-          ...resource,
-
-          url:
-            resource.url || "",
-
-          sourceName:
-            resource.sourceName ||
-            "",
-
-          lastVerified:
-            resource.lastVerified ||
-            "",
-        })
-      );
-
-    /*
-     * ========================================================
-     * FINAL VALIDATION
-     * ========================================================
-     *
-     * Ensure the AI didn't return a resource that
-     * wasn't present in our trusted library.
-     */
-
-    const trustedResourceIds =
-      new Set(
-        trustedResources.map(
-          (resource) =>
-            resource.id
-        )
-      );
-
-    journey.resources =
-      journey.resources.filter(
-        (resource) =>
-          trustedResourceIds.has(
-            resource.id
+      Array.isArray(journey.tasks)
+        ? journey.tasks.map(
+            (task) => ({
+              ...task,
+              completed: false,
+            })
           )
-      );
+        : [];
 
-    /*
-     * ========================================================
-     * METADATA
-     * ========================================================
-     */
+    journey.resources =
+      Array.isArray(journey.resources)
+        ? journey.resources
+        : [];
 
-    const metadata:
-      AIJourneyMetadata = {
+    return NextResponse.json({
+      journey,
+
+      metadata: {
         version: 2,
 
         generatedAt:
           Date.now(),
 
-        reason,
-      };
-
-    /*
-     * ========================================================
-     * RESPONSE
-     * ========================================================
-     */
-
-    return NextResponse.json({
-      journey,
-
-      metadata,
-
-      completedTaskIds,
+        reason: "initial",
+      },
     });
   } catch (error) {
     console.error(
