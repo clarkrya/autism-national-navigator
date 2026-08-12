@@ -3,10 +3,13 @@
 import { useMemo, useState } from "react";
 
 import type { FamilyProfile } from "../../types/familyProfile";
+
 import type {
   PersonalizedJourney,
   AIPriority,
+  AIResource,
 } from "../../lib/ai/journeyTypes";
+
 import type { Task } from "../../lib/journeyEngine";
 
 interface JourneyDashboardProps {
@@ -20,12 +23,6 @@ interface JourneyDashboardProps {
  * This does NOT change the underlying values sent
  * to the AI. It only makes the dashboard easier
  * for families to read.
- *
- * Examples:
- * financial -> Financial
- * private -> Private
- * school-services -> School Services
- * occupational -> Occupational
  */
 function formatDisplayValue(value: string) {
   if (!value) return "";
@@ -35,6 +32,40 @@ function formatDisplayValue(value: string) {
     .replace(/\b\w/g, (letter) =>
       letter.toUpperCase()
     );
+}
+
+/*
+ * Convert a resource type into a parent-friendly label.
+ */
+function formatResourceType(type: AIResource["type"]) {
+  switch (type) {
+    case "grant":
+      return "Grant";
+
+    case "government":
+      return "Government";
+
+    case "insurance":
+      return "Insurance";
+
+    case "therapy":
+      return "Therapy";
+
+    case "school":
+      return "School";
+
+    case "financial":
+      return "Financial Support";
+
+    case "support":
+      return "Support";
+
+    case "video":
+      return "Video";
+
+    default:
+      return "Resource";
+  }
 }
 
 export default function JourneyDashboard({
@@ -65,8 +96,7 @@ export default function JourneyDashboard({
    * Toggle a task.
    *
    * This currently updates the dashboard locally.
-   * In the next sprint, completed tasks will be
-   * saved and used to trigger the next AI journey.
+   * Persistence will be added in a later sprint.
    */
   function toggleTask(taskId: string) {
     setTasks((currentTasks) =>
@@ -81,20 +111,36 @@ export default function JourneyDashboard({
     );
   }
 
-  /*
-   * Determine whether every AI-recommended task
-   * has been completed.
-   */
   const allTasksCompleted =
     tasks.length > 0 &&
     tasks.every((task) => task.completed);
 
+  /*
+   * The AI now returns actionable guidance.
+   *
+   * We intentionally show only a small number
+   * of actions on the main dashboard so the
+   * family is not overwhelmed.
+   */
+  const actions =
+    personalizedJourney.actions || [];
+
+  const primaryAction =
+    actions.length > 0
+      ? actions[0]
+      : null;
+
+  const additionalActions =
+    actions.length > 1
+      ? actions.slice(1, 3)
+      : [];
+
   return (
     <main
       style={{
-        maxWidth: "1100px",
+        maxWidth: "1050px",
         margin: "0 auto",
-        padding: "70px 24px 100px",
+        padding: "56px 24px 90px",
       }}
     >
       {/* =====================================================
@@ -103,17 +149,17 @@ export default function JourneyDashboard({
 
       <section
         style={{
-          marginBottom: "45px",
+          marginBottom: "34px",
         }}
       >
         <div
           style={{
             color: "#2563EB",
-            fontSize: "14px",
+            fontSize: "13px",
             fontWeight: 800,
             letterSpacing: "0.08em",
             textTransform: "uppercase",
-            marginBottom: "14px",
+            marginBottom: "12px",
           }}
         >
           Your Personalized Journey
@@ -121,12 +167,12 @@ export default function JourneyDashboard({
 
         <h1
           style={{
-            fontSize: "52px",
-            lineHeight: 1.08,
+            fontSize: "46px",
+            lineHeight: 1.1,
             fontWeight: 800,
             color: "#0F172A",
             margin: 0,
-            maxWidth: "900px",
+            maxWidth: "850px",
           }}
         >
           {familyProfile.childName
@@ -136,15 +182,17 @@ export default function JourneyDashboard({
 
         <p
           style={{
-            marginTop: "22px",
-            maxWidth: "820px",
-            fontSize: "20px",
-            lineHeight: 1.7,
+            marginTop: "16px",
+            maxWidth: "760px",
+            fontSize: "18px",
+            lineHeight: 1.65,
             color: "#64748B",
+            marginBottom: 0,
           }}
         >
-          Based on what you shared, we've identified
-          where we recommend focusing first.
+          Based on what you shared, we've
+          identified where we'd recommend
+          starting.
         </p>
       </section>
 
@@ -156,19 +204,19 @@ export default function JourneyDashboard({
         style={{
           background: "#F8FAFC",
           border: "1px solid #E2E8F0",
-          borderRadius: "24px",
-          padding: "30px",
-          marginBottom: "36px",
+          borderRadius: "20px",
+          padding: "24px",
+          marginBottom: "30px",
         }}
       >
         <div
           style={{
             color: "#2563EB",
-            fontSize: "13px",
+            fontSize: "12px",
             fontWeight: 800,
             letterSpacing: "0.08em",
             textTransform: "uppercase",
-            marginBottom: "22px",
+            marginBottom: "18px",
           }}
         >
           Your Family Snapshot
@@ -178,8 +226,8 @@ export default function JourneyDashboard({
           style={{
             display: "grid",
             gridTemplateColumns:
-              "repeat(auto-fit, minmax(180px, 1fr))",
-            gap: "24px",
+              "repeat(auto-fit, minmax(170px, 1fr))",
+            gap: "20px",
           }}
         >
           <SnapshotItem
@@ -228,18 +276,18 @@ export default function JourneyDashboard({
         {familyProfile.supports.length > 0 && (
           <div
             style={{
-              marginTop: "26px",
-              paddingTop: "24px",
+              marginTop: "22px",
+              paddingTop: "20px",
               borderTop:
                 "1px solid #E2E8F0",
             }}
           >
             <div
               style={{
-                fontSize: "14px",
+                fontSize: "13px",
                 fontWeight: 700,
                 color: "#475569",
-                marginBottom: "10px",
+                marginBottom: "9px",
               }}
             >
               Current Supports
@@ -249,7 +297,7 @@ export default function JourneyDashboard({
               style={{
                 display: "flex",
                 flexWrap: "wrap",
-                gap: "8px",
+                gap: "7px",
               }}
             >
               {familyProfile.supports.map(
@@ -257,13 +305,16 @@ export default function JourneyDashboard({
                   <span
                     key={support}
                     style={{
-                      padding: "8px 14px",
-                      borderRadius: "999px",
-                      background: "#FFFFFF",
+                      padding:
+                        "7px 12px",
+                      borderRadius:
+                        "999px",
+                      background:
+                        "#FFFFFF",
                       border:
                         "1px solid #CBD5E1",
                       color: "#334155",
-                      fontSize: "14px",
+                      fontSize: "13px",
                       fontWeight: 600,
                     }}
                   >
@@ -280,15 +331,15 @@ export default function JourneyDashboard({
         {familyProfile.priority && (
           <div
             style={{
-              marginTop: "22px",
+              marginTop: "20px",
             }}
           >
             <div
               style={{
-                fontSize: "14px",
+                fontSize: "13px",
                 fontWeight: 700,
                 color: "#475569",
-                marginBottom: "6px",
+                marginBottom: "5px",
               }}
             >
               Top Priority
@@ -296,7 +347,7 @@ export default function JourneyDashboard({
 
             <div
               style={{
-                fontSize: "18px",
+                fontSize: "17px",
                 fontWeight: 700,
                 color: "#0F172A",
               }}
@@ -310,86 +361,70 @@ export default function JourneyDashboard({
       </section>
 
       {/* =====================================================
-          AI SUMMARY
+          START HERE
       ====================================================== */}
 
       <section
         style={{
-          marginBottom: "36px",
+          marginBottom: "32px",
         }}
       >
         <div
           style={{
+            borderRadius: "22px",
+            border:
+              "1px solid #BFDBFE",
             background:
               "linear-gradient(135deg, #EFF6FF, #F0FDFA)",
-            border: "1px solid #BFDBFE",
-            borderRadius: "24px",
-            padding: "34px",
-          }}
-        >
-          <div
-            style={{
-              color: "#2563EB",
-              fontSize: "13px",
-              fontWeight: 800,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              marginBottom: "14px",
-            }}
-          >
-            What We See
-          </div>
-
-          <p
-            style={{
-              margin: 0,
-              fontSize: "20px",
-              lineHeight: 1.75,
-              color: "#334155",
-              maxWidth: "900px",
-            }}
-          >
-            {personalizedJourney.summary}
-          </p>
-        </div>
-      </section>
-
-      {/* =====================================================
-          CURRENT FOCUS
-      ====================================================== */}
-
-      <section
-        style={{
-          marginBottom: "36px",
-        }}
-      >
-        <div
-          style={{
-            borderRadius: "24px",
-            border: "1px solid #BFDBFE",
-            background: "#FFFFFF",
-            padding: "38px",
+            padding: "32px",
             boxShadow:
-              "0 12px 30px rgba(15, 23, 42, 0.07)",
+              "0 10px 26px rgba(15, 23, 42, 0.06)",
           }}
         >
           <div
             style={{
-              color: "#2563EB",
-              fontSize: "13px",
-              fontWeight: 800,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              marginBottom: "14px",
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              marginBottom: "12px",
             }}
           >
-            Current Focus
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: "30px",
+                height: "30px",
+                borderRadius: "50%",
+                background: "#2563EB",
+                color: "#FFFFFF",
+                fontSize: "15px",
+                fontWeight: 800,
+              }}
+            >
+              1
+            </span>
+
+            <span
+              style={{
+                color: "#2563EB",
+                fontSize: "13px",
+                fontWeight: 800,
+                letterSpacing:
+                  "0.08em",
+                textTransform:
+                  "uppercase",
+              }}
+            >
+              Start Here
+            </span>
           </div>
 
           <h2
             style={{
               margin: 0,
-              fontSize: "36px",
+              fontSize: "32px",
               lineHeight: 1.2,
               color: "#0F172A",
               fontWeight: 800,
@@ -403,12 +438,12 @@ export default function JourneyDashboard({
 
           <p
             style={{
-              marginTop: "18px",
+              marginTop: "13px",
               marginBottom: 0,
-              maxWidth: "850px",
-              color: "#64748B",
-              fontSize: "19px",
-              lineHeight: 1.75,
+              maxWidth: "800px",
+              color: "#475569",
+              fontSize: "17px",
+              lineHeight: 1.65,
             }}
           >
             {
@@ -417,103 +452,320 @@ export default function JourneyDashboard({
                 .explanation
             }
           </p>
+
+          {personalizedJourney
+            .nextStep && (
+            <div
+              style={{
+                marginTop: "24px",
+                paddingTop: "22px",
+                borderTop:
+                  "1px solid #BFDBFE",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "12px",
+                  fontWeight: 800,
+                  color: "#2563EB",
+                  textTransform:
+                    "uppercase",
+                  letterSpacing:
+                    "0.06em",
+                  marginBottom:
+                    "7px",
+                }}
+              >
+                Your Next Best Step
+              </div>
+
+              <div
+                style={{
+                  fontSize: "19px",
+                  fontWeight: 750,
+                  color: "#0F172A",
+                }}
+              >
+                {
+                  personalizedJourney
+                    .nextStep.title
+                }
+              </div>
+
+              <p
+                style={{
+                  margin:
+                    "7px 0 0",
+                  color: "#64748B",
+                  lineHeight: 1.6,
+                  fontSize: "15px",
+                  maxWidth: "780px",
+                }}
+              >
+                {
+                  personalizedJourney
+                    .nextStep
+                    .description
+                }
+              </p>
+            </div>
+          )}
         </div>
       </section>
 
       {/* =====================================================
-          NEXT BEST STEP
+          HOW TO DO IT
       ====================================================== */}
 
-      <section
-        style={{
-          marginBottom: "55px",
-        }}
-      >
-        <div
-          style={{
-            background: "#0F172A",
-            color: "#FFFFFF",
-            borderRadius: "24px",
-            padding: "38px",
-          }}
-        >
-          <div
-            style={{
-              color: "#93C5FD",
-              fontSize: "13px",
-              fontWeight: 800,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              marginBottom: "14px",
-            }}
-          >
-            Your Next Best Step
-          </div>
-
-          <h2
-            style={{
-              margin: 0,
-              fontSize: "32px",
-              lineHeight: 1.25,
-              fontWeight: 800,
-            }}
-          >
-            {
-              personalizedJourney
-                .nextStep.title
-            }
-          </h2>
-
-          <p
-            style={{
-              marginTop: "16px",
-              marginBottom: 0,
-              color: "#CBD5E1",
-              fontSize: "18px",
-              lineHeight: 1.7,
-              maxWidth: "800px",
-            }}
-          >
-            {
-              personalizedJourney
-                .nextStep
-                .description
-            }
-          </p>
-        </div>
-      </section>
-
-      {/* =====================================================
-          AI PRIORITIES
-      ====================================================== */}
-
-      {personalizedJourney.priorities
-        ?.length > 0 && (
+      {primaryAction && (
         <section
           style={{
-            marginBottom: "55px",
+            marginBottom: "36px",
           }}
         >
           <SectionHeading
-            eyebrow="What to Focus On"
-            title="Your priorities"
-            description="These are the areas the AI recommends keeping in focus as you move forward."
+            eyebrow="How to Do It"
+            title="Your first action"
+            description="Here's a practical way to get started."
+          />
+
+          <div
+            style={{
+              marginTop: "22px",
+              padding: "28px",
+              borderRadius: "20px",
+              border:
+                "1px solid #E2E8F0",
+              background: "#FFFFFF",
+              boxShadow:
+                "0 6px 18px rgba(15, 23, 42, 0.04)",
+            }}
+          >
+            <div
+              style={{
+                display: "inline-flex",
+                padding:
+                  "5px 10px",
+                borderRadius:
+                  "999px",
+                background: "#EFF6FF",
+                color: "#2563EB",
+                fontSize: "11px",
+                fontWeight: 800,
+                textTransform:
+                  "uppercase",
+                letterSpacing:
+                  "0.04em",
+                marginBottom:
+                  "13px",
+              }}
+            >
+              {primaryAction.priority} Priority
+            </div>
+
+            <h3
+              style={{
+                margin: 0,
+                color: "#0F172A",
+                fontSize: "23px",
+                lineHeight: 1.3,
+              }}
+            >
+              {primaryAction.title}
+            </h3>
+
+            <div
+              style={{
+                display: "grid",
+                gap: "18px",
+                marginTop: "20px",
+              }}
+            >
+              <GuidanceBlock
+                label="Why it matters"
+                text={
+                  primaryAction.whyItMatters
+                }
+              />
+
+              <GuidanceBlock
+                label="What to do"
+                text={
+                  primaryAction.action
+                }
+              />
+
+              <GuidanceBlock
+                label="How to do it"
+                text={
+                  primaryAction.howTo
+                }
+              />
+
+              <GuidanceBlock
+                label="Then"
+                text={
+                  primaryAction.nextStep
+                }
+              />
+            </div>
+
+            <div
+              style={{
+                marginTop: "20px",
+                paddingTop: "16px",
+                borderTop:
+                  "1px solid #E2E8F0",
+                color: "#94A3B8",
+                fontSize: "13px",
+              }}
+            >
+              Estimated time:{" "}
+              {
+                primaryAction.estimatedTime
+              }
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* =====================================================
+          WHAT'S NEXT
+      ====================================================== */}
+
+      {additionalActions.length > 0 && (
+        <section
+          style={{
+            marginBottom: "42px",
+          }}
+        >
+          <SectionHeading
+            eyebrow="What's Next"
+            title="A few more steps when you're ready"
+            description="You don't need to do everything at once."
           />
 
           <div
             style={{
               display: "grid",
               gridTemplateColumns:
-                "repeat(auto-fit, minmax(260px, 1fr))",
-              gap: "20px",
-              marginTop: "28px",
+                "repeat(auto-fit, minmax(280px, 1fr))",
+              gap: "18px",
+              marginTop: "22px",
             }}
           >
-            {personalizedJourney.priorities.map(
-              (priority) => (
-                <PriorityCard
-                  key={priority.id}
-                  priority={priority}
+            {additionalActions.map(
+              (action) => (
+                <div
+                  key={action.id}
+                  style={{
+                    padding: "23px",
+                    borderRadius: "18px",
+                    border:
+                      "1px solid #E2E8F0",
+                    background:
+                      "#FFFFFF",
+                  }}
+                >
+                  <div
+                    style={{
+                      color: "#2563EB",
+                      fontSize: "11px",
+                      fontWeight: 800,
+                      textTransform:
+                        "uppercase",
+                      letterSpacing:
+                        "0.04em",
+                      marginBottom:
+                        "10px",
+                    }}
+                  >
+                    {action.priority} Priority
+                  </div>
+
+                  <h3
+                    style={{
+                      margin: 0,
+                      color: "#0F172A",
+                      fontSize: "19px",
+                      lineHeight: 1.35,
+                    }}
+                  >
+                    {action.title}
+                  </h3>
+
+                  <p
+                    style={{
+                      margin:
+                        "10px 0 0",
+                      color: "#64748B",
+                      lineHeight: 1.6,
+                      fontSize: "15px",
+                    }}
+                  >
+                    {
+                      action.whyItMatters
+                    }
+                  </p>
+
+                  <div
+                    style={{
+                      marginTop:
+                        "14px",
+                      paddingTop:
+                        "14px",
+                      borderTop:
+                        "1px solid #E2E8F0",
+                      color: "#475569",
+                      fontSize: "14px",
+                      lineHeight: 1.55,
+                    }}
+                  >
+                    <strong>
+                      Next:
+                    </strong>{" "}
+                    {
+                      action.nextStep
+                    }
+                  </div>
+                </div>
+              )
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* =====================================================
+          RESOURCES
+      ====================================================== */}
+
+      {personalizedJourney
+        .resources?.length > 0 && (
+        <section
+          style={{
+            marginBottom: "48px",
+          }}
+        >
+          <SectionHeading
+            eyebrow="Resources"
+            title="Resources selected for you"
+            description="These resources were selected based on your family's situation and priorities."
+          />
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns:
+                "repeat(auto-fit, minmax(290px, 1fr))",
+              gap: "18px",
+              marginTop: "22px",
+            }}
+          >
+            {personalizedJourney.resources.map(
+              (resource) => (
+                <ResourceCard
+                  key={resource.id}
+                  resource={resource}
                 />
               )
             )}
@@ -522,24 +774,24 @@ export default function JourneyDashboard({
       )}
 
       {/* =====================================================
-          TASKS
+          PROGRESS
       ====================================================== */}
 
       <section
         style={{
-          marginBottom: "55px",
+          marginBottom: "35px",
         }}
       >
         <SectionHeading
-          eyebrow="Your Next Steps"
-          title="Actions recommended for your family"
-          description="You don't need to do everything at once. Start with the highest-priority action and work through the list at your own pace."
+          eyebrow="Your Progress"
+          title="Keep moving at your own pace"
+          description="Start with the most important action. You can work through the rest when you're ready."
         />
 
         <div
           style={{
-            marginTop: "28px",
-            padding: "24px",
+            marginTop: "22px",
+            padding: "23px",
             borderRadius: "20px",
             background: "#F8FAFC",
             border:
@@ -552,7 +804,7 @@ export default function JourneyDashboard({
               justifyContent:
                 "space-between",
               alignItems: "center",
-              marginBottom: "12px",
+              marginBottom: "10px",
             }}
           >
             <strong
@@ -560,13 +812,13 @@ export default function JourneyDashboard({
                 color: "#0F172A",
               }}
             >
-              Task Progress
+              Journey Progress
             </strong>
 
             <span
               style={{
                 color: "#475569",
-                fontSize: "14px",
+                fontSize: "13px",
               }}
             >
               {completedTasks} of{" "}
@@ -576,9 +828,10 @@ export default function JourneyDashboard({
 
           <div
             style={{
-              height: "10px",
+              height: "9px",
               background: "#E2E8F0",
-              borderRadius: "999px",
+              borderRadius:
+                "999px",
               overflow: "hidden",
             }}
           >
@@ -598,8 +851,8 @@ export default function JourneyDashboard({
         <div
           style={{
             display: "grid",
-            gap: "16px",
-            marginTop: "20px",
+            gap: "12px",
+            marginTop: "16px",
           }}
         >
           {tasks.map((task) => (
@@ -616,11 +869,10 @@ export default function JourneyDashboard({
         {allTasksCompleted && (
           <div
             style={{
-              marginTop: "28px",
-              padding: "28px",
-              borderRadius: "20px",
-              background:
-                "#ECFDF5",
+              marginTop: "22px",
+              padding: "24px",
+              borderRadius: "18px",
+              background: "#ECFDF5",
               border:
                 "1px solid #A7F3D0",
             }}
@@ -629,7 +881,7 @@ export default function JourneyDashboard({
               style={{
                 margin: 0,
                 color: "#065F46",
-                fontSize: "22px",
+                fontSize: "20px",
               }}
             >
               You've completed your
@@ -640,20 +892,22 @@ export default function JourneyDashboard({
               style={{
                 color: "#047857",
                 lineHeight: 1.6,
-                marginBottom: "20px",
+                margin:
+                  "8px 0 18px",
               }}
             >
-              Your journey is ready to be
-              reassessed so we can determine
-              what should come next.
+              Your journey is ready to
+              be reassessed so we can
+              determine what should
+              come next.
             </p>
 
             <button
               type="button"
               style={{
                 padding:
-                  "13px 22px",
-                borderRadius: "10px",
+                  "11px 18px",
+                borderRadius: "9px",
                 border: "none",
                 background:
                   "#059669",
@@ -668,109 +922,19 @@ export default function JourneyDashboard({
         )}
       </section>
 
-      {/* =====================================================
-          RESOURCES
-      ====================================================== */}
-
-      {personalizedJourney.resources
-        ?.length > 0 && (
-        <section
-          style={{
-            marginBottom: "30px",
-          }}
-        >
-          <SectionHeading
-            eyebrow="Recommended Resources"
-            title="Resources for your journey"
-            description="These resources were selected based on the priorities identified for your family."
-          />
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns:
-                "repeat(auto-fit, minmax(280px, 1fr))",
-              gap: "20px",
-              marginTop: "28px",
-            }}
-          >
-            {personalizedJourney.resources.map(
-              (resource) => (
-                <div
-                  key={resource.id}
-                  style={{
-                    padding: "26px",
-                    borderRadius:
-                      "18px",
-                    border:
-                      "1px solid #E2E8F0",
-                    background:
-                      "#FFFFFF",
-                  }}
-                >
-                  <h3
-                    style={{
-                      margin: 0,
-                      color:
-                        "#0F172A",
-                      fontSize:
-                        "20px",
-                    }}
-                  >
-                    {resource.title}
-                  </h3>
-
-                  <p
-                    style={{
-                      color:
-                        "#64748B",
-                      lineHeight: 1.6,
-                      margin:
-                        "10px 0 18px",
-                    }}
-                  >
-                    {
-                      resource.description
-                    }
-                  </p>
-
-                  {resource.url && (
-                    <a
-                      href={
-                        resource.url
-                      }
-                      target="_blank"
-                      rel="noreferrer"
-                      style={{
-                        color:
-                          "#2563EB",
-                        fontWeight:
-                          700,
-                        textDecoration:
-                          "none",
-                      }}
-                    >
-                      View Resource →
-                    </a>
-                  )}
-                </div>
-              )
-            )}
-          </div>
-        </section>
-      )}
-
       <p
         style={{
           textAlign: "center",
           color: "#94A3B8",
-          fontSize: "13px",
-          marginTop: "60px",
+          fontSize: "12px",
+          lineHeight: 1.5,
+          marginTop: "50px",
         }}
       >
-        Your recommendations are based on the
-        information you provided and are intended
-        to help you identify possible next steps.
+        Your recommendations are based on
+        the information you provided and are
+        intended to help you identify possible
+        next steps.
       </p>
     </main>
   );
@@ -791,12 +955,14 @@ function SnapshotItem({
     <div>
       <div
         style={{
-          fontSize: "13px",
+          fontSize: "12px",
           fontWeight: 700,
           color: "#64748B",
-          marginBottom: "6px",
-          textTransform: "uppercase",
-          letterSpacing: "0.04em",
+          marginBottom: "5px",
+          textTransform:
+            "uppercase",
+          letterSpacing:
+            "0.04em",
         }}
       >
         {label}
@@ -804,7 +970,7 @@ function SnapshotItem({
 
       <div
         style={{
-          fontSize: "17px",
+          fontSize: "16px",
           fontWeight: 700,
           color: "#0F172A",
         }}
@@ -833,11 +999,13 @@ function SectionHeading({
       <div
         style={{
           color: "#2563EB",
-          fontSize: "13px",
+          fontSize: "12px",
           fontWeight: 800,
-          letterSpacing: "0.08em",
-          textTransform: "uppercase",
-          marginBottom: "8px",
+          letterSpacing:
+            "0.08em",
+          textTransform:
+            "uppercase",
+          marginBottom: "7px",
         }}
       >
         {eyebrow}
@@ -847,8 +1015,9 @@ function SectionHeading({
         style={{
           margin: 0,
           color: "#0F172A",
-          fontSize: "32px",
+          fontSize: "29px",
           fontWeight: 800,
+          lineHeight: 1.2,
         }}
       >
         {title}
@@ -856,11 +1025,11 @@ function SectionHeading({
 
       <p
         style={{
-          maxWidth: "750px",
+          maxWidth: "720px",
           color: "#64748B",
-          fontSize: "17px",
-          lineHeight: 1.7,
-          marginTop: "10px",
+          fontSize: "15px",
+          lineHeight: 1.6,
+          marginTop: "8px",
           marginBottom: 0,
         }}
       >
@@ -871,69 +1040,164 @@ function SectionHeading({
 }
 
 /* =========================================================
-   PRIORITY CARD
+   GUIDANCE BLOCK
 ========================================================= */
 
-function PriorityCard({
-  priority,
+function GuidanceBlock({
+  label,
+  text,
 }: {
-  priority: AIPriority;
+  label: string;
+  text: string;
 }) {
-  const priorityColor =
-    priority.priority === "High"
-      ? "#DC2626"
-      : priority.priority === "Medium"
-      ? "#D97706"
-      : "#64748B";
+  return (
+    <div>
+      <div
+        style={{
+          color: "#334155",
+          fontSize: "13px",
+          fontWeight: 800,
+          marginBottom: "5px",
+        }}
+      >
+        {label}
+      </div>
 
+      <div
+        style={{
+          color: "#64748B",
+          fontSize: "15px",
+          lineHeight: 1.6,
+        }}
+      >
+        {text}
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   RESOURCE CARD
+========================================================= */
+
+function ResourceCard({
+  resource,
+}: {
+  resource: AIResource;
+}) {
   return (
     <div
       style={{
-        padding: "26px",
-        borderRadius: "20px",
-        border: "1px solid #E2E8F0",
+        padding: "23px",
+        borderRadius: "18px",
+        border:
+          "1px solid #E2E8F0",
         background: "#FFFFFF",
         boxShadow:
-          "0 6px 18px rgba(15, 23, 42, 0.04)",
+          "0 5px 15px rgba(15, 23, 42, 0.03)",
       }}
     >
       <div
         style={{
-          display: "inline-block",
-          padding: "5px 10px",
-          borderRadius: "999px",
+          display: "inline-flex",
+          padding:
+            "5px 9px",
+          borderRadius:
+            "999px",
           background: "#F8FAFC",
-          color: priorityColor,
-          fontSize: "12px",
+          color: "#475569",
+          fontSize: "10px",
           fontWeight: 800,
-          textTransform: "uppercase",
-          letterSpacing: "0.04em",
-          marginBottom: "16px",
+          textTransform:
+            "uppercase",
+          letterSpacing:
+            "0.04em",
+          marginBottom:
+            "11px",
         }}
       >
-        {priority.priority} Priority
+        {formatResourceType(
+          resource.type
+        )}
       </div>
 
       <h3
         style={{
           margin: 0,
           color: "#0F172A",
-          fontSize: "21px",
+          fontSize: "19px",
           lineHeight: 1.3,
         }}
       >
-        {priority.title}
+        {resource.title}
       </h3>
 
       <p
         style={{
           color: "#64748B",
-          lineHeight: 1.65,
-          marginBottom: 0,
+          lineHeight: 1.55,
+          fontSize: "14px",
+          margin:
+            "9px 0 14px",
         }}
       >
-        {priority.explanation}
+        {resource.description}
       </p>
+
+      {resource.whyItMayHelp && (
+        <div
+          style={{
+            marginBottom: "14px",
+            padding:
+              "12px 13px",
+            borderRadius: "11px",
+            background: "#F8FAFC",
+            color: "#475569",
+            fontSize: "13px",
+            lineHeight: 1.5,
+          }}
+        >
+          <strong>
+            Why it may help:
+          </strong>{" "}
+          {
+            resource.whyItMayHelp
+          }
+        </div>
+      )}
+
+      {resource.sourceName && (
+        <div
+          style={{
+            color: "#94A3B8",
+            fontSize: "12px",
+            marginBottom:
+              "12px",
+          }}
+        >
+          Source:{" "}
+          {resource.sourceName}
+        </div>
+      )}
+
+      {resource.url && (
+        <a
+          href={resource.url}
+          target="_blank"
+          rel="noreferrer"
+          style={{
+            display:
+              "inline-block",
+            color: "#2563EB",
+            fontSize: "14px",
+            fontWeight: 700,
+            textDecoration:
+              "none",
+          }}
+        >
+          View Resource →
+        </a>
+      )}
     </div>
   );
 }
@@ -953,16 +1217,18 @@ function TaskCard({
     <div
       style={{
         display: "flex",
-        alignItems: "flex-start",
-        gap: "18px",
-        padding: "24px",
-        borderRadius: "18px",
+        alignItems:
+          "flex-start",
+        gap: "15px",
+        padding: "18px",
+        borderRadius: "16px",
         border: task.completed
           ? "1px solid #A7F3D0"
           : "1px solid #E2E8F0",
-        background: task.completed
-          ? "#F0FDF4"
-          : "#FFFFFF",
+        background:
+          task.completed
+            ? "#F0FDF4"
+            : "#FFFFFF",
       }}
     >
       <button
@@ -975,19 +1241,20 @@ function TaskCard({
         }
         style={{
           flexShrink: 0,
-          width: "28px",
-          height: "28px",
+          width: "27px",
+          height: "27px",
           borderRadius: "8px",
           border: task.completed
             ? "none"
             : "2px solid #CBD5E1",
-          background: task.completed
-            ? "#059669"
-            : "#FFFFFF",
+          background:
+            task.completed
+              ? "#059669"
+              : "#FFFFFF",
           color: "#FFFFFF",
           cursor: "pointer",
           fontWeight: 800,
-          fontSize: "16px",
+          fontSize: "15px",
         }}
       >
         {task.completed ? "✓" : ""}
@@ -1001,9 +1268,11 @@ function TaskCard({
         <div
           style={{
             display: "flex",
-            flexWrap: "wrap",
-            alignItems: "center",
-            gap: "10px",
+            flexWrap:
+              "wrap",
+            alignItems:
+              "center",
+            gap: "8px",
           }}
         >
           <h3
@@ -1012,7 +1281,8 @@ function TaskCard({
               color: task.completed
                 ? "#64748B"
                 : "#0F172A",
-              fontSize: "19px",
+              fontSize: "17px",
+              lineHeight: 1.3,
               textDecoration:
                 task.completed
                   ? "line-through"
@@ -1024,23 +1294,27 @@ function TaskCard({
 
           <span
             style={{
-              padding: "4px 8px",
-              borderRadius: "999px",
+              padding:
+                "3px 7px",
+              borderRadius:
+                "999px",
               background:
-                task.priority === "High"
+                task.priority ===
+                "High"
                   ? "#FEF2F2"
                   : task.priority ===
                     "Medium"
                   ? "#FFFBEB"
                   : "#F8FAFC",
               color:
-                task.priority === "High"
+                task.priority ===
+                "High"
                   ? "#DC2626"
                   : task.priority ===
                     "Medium"
                   ? "#D97706"
                   : "#64748B",
-              fontSize: "11px",
+              fontSize: "10px",
               fontWeight: 800,
               textTransform:
                 "uppercase",
@@ -1052,10 +1326,11 @@ function TaskCard({
 
         <p
           style={{
-            marginTop: "8px",
-            marginBottom: "8px",
+            marginTop: "6px",
+            marginBottom: "6px",
             color: "#64748B",
-            lineHeight: 1.6,
+            lineHeight: 1.5,
+            fontSize: "14px",
           }}
         >
           {task.description}
@@ -1064,7 +1339,7 @@ function TaskCard({
         <span
           style={{
             color: "#94A3B8",
-            fontSize: "13px",
+            fontSize: "12px",
           }}
         >
           Estimated time:{" "}
@@ -1074,7 +1349,7 @@ function TaskCard({
         {task.resourceLink && (
           <div
             style={{
-              marginTop: "10px",
+              marginTop: "8px",
             }}
           >
             <a
@@ -1083,7 +1358,7 @@ function TaskCard({
               rel="noreferrer"
               style={{
                 color: "#2563EB",
-                fontSize: "14px",
+                fontSize: "13px",
                 fontWeight: 700,
                 textDecoration:
                   "none",
