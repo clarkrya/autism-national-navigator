@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { FamilyProfile } from "../../types/familyProfile";
 import type { PersonalizedJourney } from "../../lib/ai/journeyTypes";
@@ -48,6 +48,39 @@ export default function JourneyBuilder() {
       insurance: "",
       notes: "",
     });
+
+  /*
+   * Automatically move the user to the top
+   * whenever the questionnaire step changes.
+   *
+   * This prevents the user from having to
+   * manually scroll back up after clicking
+   * Continue or Back.
+   */
+  useEffect(() => {
+    if (step > 0) {
+      window.scrollTo({
+        top: 0,
+        behavior: "smooth",
+      });
+    }
+  }, [step]);
+
+  /*
+   * Automatically move the user to the top
+   * when the personalized journey is displayed.
+   *
+   * This prevents the results page from opening
+   * at the previous questionnaire scroll position.
+   */
+  useEffect(() => {
+    if (personalizedJourney) {
+      window.scrollTo({
+        top: 0,
+        behavior: "smooth",
+      });
+    }
+  }, [personalizedJourney]);
 
   /*
    * Update one field in the family profile.
