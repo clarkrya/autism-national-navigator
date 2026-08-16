@@ -38,7 +38,7 @@ import type {
 
 import {
   getFamilyIntent,
-} from "../../../../lib/ai/finalIntentGuard";
+} from "./familyIntent";
 
 import {
   buildSystemPrompt,

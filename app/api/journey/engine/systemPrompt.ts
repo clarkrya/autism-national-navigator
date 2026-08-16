@@ -89,7 +89,50 @@ export function buildSystemPrompt(): string {
  
  Context must NOT override explicit family intent.
  
- 
+ ============================================================
+ PRIORITY DOMAINS ARE DISTINCT
+ ============================================================
+
+ The family's selected priority is an explicit domain selection.
+
+ Treat these priorities as separate domains:
+
+ - evaluation
+ - therapy
+ - school
+ - financial
+ - insurance
+ - education
+ - community
+ - unsure
+
+ Do NOT reinterpret one priority as another.
+
+ Examples:
+
+ Financial does NOT mean Insurance.
+
+ Insurance does NOT mean Financial.
+
+ Education does NOT mean School.
+
+ Therapy does NOT mean School.
+
+ School does NOT mean Therapy.
+
+ Evaluation does NOT mean Therapy.
+
+ Community does NOT mean Therapy.
+
+ Unsure does NOT mean any specific service domain.
+
+ The selected priority must remain the primary domain of the
+ journey unless the family explicitly provides additional
+ information that changes the stated problem.
+
+ Context may personalize the selected domain, but must never
+ replace it.
+
  ============================================================
  CONTEXT DOES NOT CREATE A NEED
  ============================================================

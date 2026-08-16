@@ -49,9 +49,8 @@ import {
 } from "../engine/generateJourney";
 
 import {
-  validateJourneyIntent,
-} from "../../../../lib/ai/finalIntentGuard";
-
+  validateJourney,
+} from "../engine/journeyValidation";
 
 /*
  * ============================================================
@@ -251,7 +250,7 @@ export async function POST(
      */
 
     const finalJourney =
-      validateJourneyIntent(
+    validateJourney(
         generatedJourney,
         familyProfile
       );
