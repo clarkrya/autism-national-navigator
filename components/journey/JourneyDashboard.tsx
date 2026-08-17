@@ -1,23 +1,44 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
 import Link from "next/link";
 
-import { doc, setDoc } from "firebase/firestore";
+import {
+  doc,
+  setDoc,
+} from "firebase/firestore";
+
+import {
+  signOut,
+} from "firebase/auth";
 
 import type { FamilyProfile } from "../../types/familyProfile";
 
 import type {
   PersonalizedJourney,
-  AIPriority,
   AIResource,
 } from "../../lib/ai/journeyTypes";
 
 import type { Task } from "../../lib/journeyEngine";
 
-import { db } from "../../lib/firebase";
-import { getCurrentUser } from "../../lib/auth";
-import { savePendingJourney } from "../../lib/journeyStorage";
+import {
+  auth,
+  db,
+} from "../../lib/firebase";
+
+import {
+  getCurrentUser,
+  watchAuthState,
+} from "../../lib/auth";
+
+import {
+  savePendingJourney,
+} from "../../lib/journeyStorage";
 
 
 interface JourneyDashboardProps {
@@ -30,14 +51,11 @@ interface JourneyDashboardProps {
  * ============================================================
  * FORMAT QUESTIONNAIRE VALUES
  * ============================================================
- *
- * Format values for display only.
- *
- * This does NOT change the underlying values sent
- * to the AI.
  */
 
-function formatDisplayValue(value: string) {
+function formatDisplayValue(
+  value: string
+) {
   if (!value) return "";
 
   return value
@@ -105,9 +123,10 @@ export default function JourneyDashboard({
    * ----------------------------------------------------------
    */
 
-  const [tasks, setTasks] = useState<Task[]>(
-    personalizedJourney.tasks || []
-  );
+  const [tasks, setTasks] =
+    useState<Task[]>(
+      personalizedJourney.tasks || []
+    );
 
 
   /*
@@ -116,14 +135,20 @@ export default function JourneyDashboard({
    * ----------------------------------------------------------
    */
 
-  const [savingJourney, setSavingJourney] =
-    useState(false);
+  const [
+    savingJourney,
+    setSavingJourney,
+  ] = useState(false);
 
-  const [saveMessage, setSaveMessage] =
-    useState("");
+  const [
+    saveMessage,
+    setSaveMessage,
+  ] = useState("");
 
-  const [saveError, setSaveError] =
-    useState("");
+  const [
+    saveError,
+    setSaveError,
+  ] = useState("");
 
   const [
     showSaveAccountPrompt,
@@ -133,22 +158,77 @@ export default function JourneyDashboard({
 
   /*
    * ----------------------------------------------------------
+   * ACCOUNT STATE
+   * ----------------------------------------------------------
+   */
+
+  const [
+    currentUserEmail,
+    setCurrentUserEmail,
+  ] = useState<string | null>(null);
+
+  const [
+    loggingOut,
+    setLoggingOut,
+  ] = useState(false);
+
+
+  /*
+   * ----------------------------------------------------------
+   * AUTH STATE LISTENER
+   * ----------------------------------------------------------
+   *
+   * Keeps the completed journey page aware of whether the
+   * family is currently logged in.
+   */
+
+  useEffect(() => {
+
+    const unsubscribe =
+      watchAuthState(
+        (user) => {
+
+          setCurrentUserEmail(
+            user?.email ?? null
+          );
+
+        }
+      );
+
+    return () => {
+      unsubscribe();
+    };
+
+  }, []);
+
+
+  /*
+   * ----------------------------------------------------------
    * TASK PROGRESS
    * ----------------------------------------------------------
    */
 
-  const completedTasks = useMemo(() => {
-    return tasks.filter(
-      (task) => task.completed
-    ).length;
-  }, [tasks]);
+  const completedTasks =
+    useMemo(() => {
 
-  const totalTasks = tasks.length;
+      return tasks.filter(
+        (task) =>
+          task.completed
+      ).length;
+
+    }, [tasks]);
+
+
+  const totalTasks =
+    tasks.length;
+
 
   const taskPercent =
     totalTasks > 0
       ? Math.round(
-          (completedTasks / totalTasks) * 100
+          (completedTasks /
+            totalTasks) *
+            100
         )
       : 0;
 
@@ -157,48 +237,48 @@ export default function JourneyDashboard({
    * ----------------------------------------------------------
    * TOGGLE TASK
    * ----------------------------------------------------------
-   *
-   * This currently updates the dashboard locally.
-   *
-   * Persistence is handled when the family saves
-   * the journey.
    */
 
-  function toggleTask(taskId: string) {
-    setTasks((currentTasks) =>
-      currentTasks.map((task) =>
-        task.id === taskId
-          ? {
-              ...task,
-              completed: !task.completed,
-            }
-          : task
-      )
+  function toggleTask(
+    taskId: string
+  ) {
+
+    setTasks(
+      (currentTasks) =>
+        currentTasks.map(
+          (task) =>
+            task.id === taskId
+              ? {
+                  ...task,
+                  completed:
+                    !task.completed,
+                }
+              : task
+        )
     );
+
   }
 
 
   /*
-   * ----------------------------------------------------------
+   * ==========================================================
    * SAVE JOURNEY
-   * ----------------------------------------------------------
+   * ==========================================================
    *
-   * If the family is logged in:
-   *
+   * Logged in:
    *     Save directly to Firestore.
    *
-   * If the family is NOT logged in:
-   *
-   *     Temporarily save the journey in sessionStorage
-   *     and display Login / Create Account options.
-   *
-   * The authentication handoff will be completed in
-   * the next step.
+   * Logged out:
+   *     Save temporarily and show account options.
+   * ==========================================================
    */
 
   async function handleSaveJourney() {
+
     setSaveMessage("");
+
     setSaveError("");
+
 
     const currentUser =
       getCurrentUser();
@@ -220,7 +300,11 @@ export default function JourneyDashboard({
         }
       );
 
-      setShowSaveAccountPrompt(true);
+
+      setShowSaveAccountPrompt(
+        true
+      );
+
 
       return;
     }
@@ -234,15 +318,17 @@ export default function JourneyDashboard({
 
     setSavingJourney(true);
 
+
     try {
 
-      const journeyRef = doc(
-        db,
-        "users",
-        currentUser.uid,
-        "journeys",
-        "current"
-      );
+      const journeyRef =
+        doc(
+          db,
+          "users",
+          currentUser.uid,
+          "journeys",
+          "current"
+        );
 
 
       await setDoc(
@@ -255,7 +341,8 @@ export default function JourneyDashboard({
             tasks,
           },
 
-          updatedAt: Date.now(),
+          updatedAt:
+            Date.now(),
 
           createdBy:
             currentUser.uid,
@@ -270,12 +357,18 @@ export default function JourneyDashboard({
         "Your journey has been saved."
       );
 
+
+      setShowSaveAccountPrompt(
+        false
+      );
+
     } catch (error) {
 
       console.error(
         "Unable to save journey:",
         error
       );
+
 
       setSaveError(
         "We couldn't save your journey right now. Please try again."
@@ -290,24 +383,60 @@ export default function JourneyDashboard({
 
 
   /*
-   * ----------------------------------------------------------
+   * ==========================================================
+   * LOG OUT
+   * ==========================================================
+   *
+   * Logging out does NOT delete the saved journey.
+   */
+
+  async function handleLogout() {
+
+    setLoggingOut(true);
+
+
+    try {
+
+      await signOut(auth);
+
+
+      /*
+       * Return to the home page after sign out.
+       */
+
+      window.location.href =
+        "/";
+
+    } catch (error) {
+
+      console.error(
+        "Logout error:",
+        error
+      );
+
+
+      setLoggingOut(false);
+
+    }
+  }
+
+
+  /*
+   * ============================================================
    * ACTIONS
-   * ----------------------------------------------------------
-   *
-   * The AI returns actionable guidance.
-   *
-   * We intentionally show only a small number
-   * of actions on the main dashboard so the
-   * family is not overwhelmed.
+   * ============================================================
    */
 
   const actions =
-    personalizedJourney.actions || [];
+    personalizedJourney.actions ||
+    [];
+
 
   const primaryAction =
     actions.length > 0
       ? actions[0]
       : null;
+
 
   const additionalActions =
     actions.length > 1
@@ -316,24 +445,31 @@ export default function JourneyDashboard({
 
 
   /*
-   * ----------------------------------------------------------
+   * ============================================================
    * ALL TASKS COMPLETE
-   * ----------------------------------------------------------
+   * ============================================================
    */
 
   const allTasksCompleted =
     tasks.length > 0 &&
     tasks.every(
-      (task) => task.completed
+      (task) =>
+        task.completed
     );
 
 
   return (
+
     <main
       style={{
-        maxWidth: "1050px",
-        margin: "0 auto",
-        padding: "56px 24px 90px",
+        maxWidth:
+          "1050px",
+
+        margin:
+          "0 auto",
+
+        padding:
+          "56px 24px 90px",
       }}
     >
 
@@ -343,18 +479,30 @@ export default function JourneyDashboard({
 
       <section
         style={{
-          marginBottom: "34px",
+          marginBottom:
+            "34px",
         }}
       >
 
         <div
           style={{
-            color: "#2563EB",
-            fontSize: "13px",
-            fontWeight: 800,
-            letterSpacing: "0.08em",
-            textTransform: "uppercase",
-            marginBottom: "12px",
+            color:
+              "#2563EB",
+
+            fontSize:
+              "13px",
+
+            fontWeight:
+              800,
+
+            letterSpacing:
+              "0.08em",
+
+            textTransform:
+              "uppercase",
+
+            marginBottom:
+              "12px",
           }}
         >
           Your Personalized Journey
@@ -363,12 +511,23 @@ export default function JourneyDashboard({
 
         <h1
           style={{
-            fontSize: "46px",
-            lineHeight: 1.1,
-            fontWeight: 800,
-            color: "#0F172A",
-            margin: 0,
-            maxWidth: "850px",
+            fontSize:
+              "46px",
+
+            lineHeight:
+              1.1,
+
+            fontWeight:
+              800,
+
+            color:
+              "#0F172A",
+
+            margin:
+              0,
+
+            maxWidth:
+              "850px",
           }}
         >
           {familyProfile.childName
@@ -379,17 +538,28 @@ export default function JourneyDashboard({
 
         <p
           style={{
-            marginTop: "16px",
-            maxWidth: "760px",
-            fontSize: "18px",
-            lineHeight: 1.65,
-            color: "#64748B",
-            marginBottom: 0,
+            marginTop:
+              "16px",
+
+            maxWidth:
+              "760px",
+
+            fontSize:
+              "18px",
+
+            lineHeight:
+              1.65,
+
+            color:
+              "#64748B",
+
+            marginBottom:
+              0,
           }}
         >
-          Based on what you shared, we've
-          identified where we'd recommend
-          starting.
+          Based on what you shared,
+          we've identified where we'd
+          recommend starting.
         </p>
 
       </section>
@@ -401,22 +571,42 @@ export default function JourneyDashboard({
 
       <section
         style={{
-          background: "#F8FAFC",
-          border: "1px solid #E2E8F0",
-          borderRadius: "20px",
-          padding: "24px",
-          marginBottom: "30px",
+          background:
+            "#F8FAFC",
+
+          border:
+            "1px solid #E2E8F0",
+
+          borderRadius:
+            "20px",
+
+          padding:
+            "24px",
+
+          marginBottom:
+            "30px",
         }}
       >
 
         <div
           style={{
-            color: "#2563EB",
-            fontSize: "12px",
-            fontWeight: 800,
-            letterSpacing: "0.08em",
-            textTransform: "uppercase",
-            marginBottom: "18px",
+            color:
+              "#2563EB",
+
+            fontSize:
+              "12px",
+
+            fontWeight:
+              800,
+
+            letterSpacing:
+              "0.08em",
+
+            textTransform:
+              "uppercase",
+
+            marginBottom:
+              "18px",
           }}
         >
           Your Family Snapshot
@@ -425,10 +615,14 @@ export default function JourneyDashboard({
 
         <div
           style={{
-            display: "grid",
+            display:
+              "grid",
+
             gridTemplateColumns:
               "repeat(auto-fit, minmax(170px, 1fr))",
-            gap: "20px",
+
+            gap:
+              "20px",
           }}
         >
 
@@ -480,11 +674,17 @@ export default function JourneyDashboard({
         </div>
 
 
-        {familyProfile.supports.length > 0 && (
+        {familyProfile.supports.length >
+          0 && (
+
           <div
             style={{
-              marginTop: "22px",
-              paddingTop: "20px",
+              marginTop:
+                "22px",
+
+              paddingTop:
+                "20px",
+
               borderTop:
                 "1px solid #E2E8F0",
             }}
@@ -492,10 +692,17 @@ export default function JourneyDashboard({
 
             <div
               style={{
-                fontSize: "13px",
-                fontWeight: 700,
-                color: "#475569",
-                marginBottom: "9px",
+                fontSize:
+                  "13px",
+
+                fontWeight:
+                  700,
+
+                color:
+                  "#475569",
+
+                marginBottom:
+                  "9px",
               }}
             >
               Current Supports
@@ -504,56 +711,84 @@ export default function JourneyDashboard({
 
             <div
               style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: "7px",
+                display:
+                  "flex",
+
+                flexWrap:
+                  "wrap",
+
+                gap:
+                  "7px",
               }}
             >
 
               {familyProfile.supports.map(
                 (support) => (
+
                   <span
-                    key={support}
+                    key={
+                      support
+                    }
                     style={{
                       padding:
                         "7px 12px",
+
                       borderRadius:
                         "999px",
+
                       background:
                         "#FFFFFF",
+
                       border:
                         "1px solid #CBD5E1",
-                      color: "#334155",
-                      fontSize: "13px",
-                      fontWeight: 600,
+
+                      color:
+                        "#334155",
+
+                      fontSize:
+                        "13px",
+
+                      fontWeight:
+                        600,
                     }}
                   >
                     {formatDisplayValue(
                       support
                     )}
                   </span>
+
                 )
               )}
 
             </div>
 
           </div>
+
         )}
 
 
         {familyProfile.priority && (
+
           <div
             style={{
-              marginTop: "20px",
+              marginTop:
+                "20px",
             }}
           >
 
             <div
               style={{
-                fontSize: "13px",
-                fontWeight: 700,
-                color: "#475569",
-                marginBottom: "5px",
+                fontSize:
+                  "13px",
+
+                fontWeight:
+                  700,
+
+                color:
+                  "#475569",
+
+                marginBottom:
+                  "5px",
               }}
             >
               Top Priority
@@ -562,9 +797,14 @@ export default function JourneyDashboard({
 
             <div
               style={{
-                fontSize: "17px",
-                fontWeight: 700,
-                color: "#0F172A",
+                fontSize:
+                  "17px",
+
+                fontWeight:
+                  700,
+
+                color:
+                  "#0F172A",
               }}
             >
               {formatDisplayValue(
@@ -573,6 +813,7 @@ export default function JourneyDashboard({
             </div>
 
           </div>
+
         )}
 
       </section>
@@ -584,18 +825,25 @@ export default function JourneyDashboard({
 
       <section
         style={{
-          marginBottom: "32px",
+          marginBottom:
+            "32px",
         }}
       >
 
         <div
           style={{
-            borderRadius: "22px",
+            borderRadius:
+              "22px",
+
             border:
               "1px solid #BFDBFE",
+
             background:
               "linear-gradient(135deg, #EFF6FF, #F0FDFA)",
-            padding: "32px",
+
+            padding:
+              "32px",
+
             boxShadow:
               "0 10px 26px rgba(15, 23, 42, 0.06)",
           }}
@@ -603,25 +851,51 @@ export default function JourneyDashboard({
 
           <div
             style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "10px",
-              marginBottom: "12px",
+              display:
+                "flex",
+
+              alignItems:
+                "center",
+
+              gap:
+                "10px",
+
+              marginBottom:
+                "12px",
             }}
           >
 
             <span
               style={{
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                width: "30px",
-                height: "30px",
-                borderRadius: "50%",
-                background: "#2563EB",
-                color: "#FFFFFF",
-                fontSize: "15px",
-                fontWeight: 800,
+                display:
+                  "inline-flex",
+
+                alignItems:
+                  "center",
+
+                justifyContent:
+                  "center",
+
+                width:
+                  "30px",
+
+                height:
+                  "30px",
+
+                borderRadius:
+                  "50%",
+
+                background:
+                  "#2563EB",
+
+                color:
+                  "#FFFFFF",
+
+                fontSize:
+                  "15px",
+
+                fontWeight:
+                  800,
               }}
             >
               1
@@ -630,11 +904,18 @@ export default function JourneyDashboard({
 
             <span
               style={{
-                color: "#2563EB",
-                fontSize: "13px",
-                fontWeight: 800,
+                color:
+                  "#2563EB",
+
+                fontSize:
+                  "13px",
+
+                fontWeight:
+                  800,
+
                 letterSpacing:
                   "0.08em",
+
                 textTransform:
                   "uppercase",
               }}
@@ -647,28 +928,49 @@ export default function JourneyDashboard({
 
           <h2
             style={{
-              margin: 0,
-              fontSize: "32px",
-              lineHeight: 1.2,
-              color: "#0F172A",
-              fontWeight: 800,
+              margin:
+                0,
+
+              fontSize:
+                "32px",
+
+              lineHeight:
+                1.2,
+
+              color:
+                "#0F172A",
+
+              fontWeight:
+                800,
             }}
           >
             {
               personalizedJourney
-                .currentFocus.title
+                .currentFocus
+                .title
             }
           </h2>
 
 
           <p
             style={{
-              marginTop: "13px",
-              marginBottom: 0,
-              maxWidth: "800px",
-              color: "#475569",
-              fontSize: "17px",
-              lineHeight: 1.65,
+              marginTop:
+                "13px",
+
+              marginBottom:
+                0,
+
+              maxWidth:
+                "800px",
+
+              color:
+                "#475569",
+
+              fontSize:
+                "17px",
+
+              lineHeight:
+                1.65,
             }}
           >
             {
@@ -679,12 +981,16 @@ export default function JourneyDashboard({
           </p>
 
 
-          {personalizedJourney
-            .nextStep && (
+          {personalizedJourney.nextStep && (
+
             <div
               style={{
-                marginTop: "24px",
-                paddingTop: "22px",
+                marginTop:
+                  "24px",
+
+                paddingTop:
+                  "22px",
+
                 borderTop:
                   "1px solid #BFDBFE",
               }}
@@ -692,13 +998,21 @@ export default function JourneyDashboard({
 
               <div
                 style={{
-                  fontSize: "12px",
-                  fontWeight: 800,
-                  color: "#2563EB",
+                  fontSize:
+                    "12px",
+
+                  fontWeight:
+                    800,
+
+                  color:
+                    "#2563EB",
+
                   textTransform:
                     "uppercase",
+
                   letterSpacing:
                     "0.06em",
+
                   marginBottom:
                     "7px",
                 }}
@@ -709,14 +1023,20 @@ export default function JourneyDashboard({
 
               <div
                 style={{
-                  fontSize: "19px",
-                  fontWeight: 750,
-                  color: "#0F172A",
+                  fontSize:
+                    "19px",
+
+                  fontWeight:
+                    750,
+
+                  color:
+                    "#0F172A",
                 }}
               >
                 {
                   personalizedJourney
-                    .nextStep.title
+                    .nextStep
+                    .title
                 }
               </div>
 
@@ -725,10 +1045,18 @@ export default function JourneyDashboard({
                 style={{
                   margin:
                     "7px 0 0",
-                  color: "#64748B",
-                  lineHeight: 1.6,
-                  fontSize: "15px",
-                  maxWidth: "780px",
+
+                  color:
+                    "#64748B",
+
+                  lineHeight:
+                    1.6,
+
+                  fontSize:
+                    "15px",
+
+                  maxWidth:
+                    "780px",
                 }}
               >
                 {
@@ -739,6 +1067,7 @@ export default function JourneyDashboard({
               </p>
 
             </div>
+
           )}
 
         </div>
@@ -751,9 +1080,11 @@ export default function JourneyDashboard({
       ====================================================== */}
 
       {primaryAction && (
+
         <section
           style={{
-            marginBottom: "36px",
+            marginBottom:
+              "36px",
           }}
         >
 
@@ -766,12 +1097,21 @@ export default function JourneyDashboard({
 
           <div
             style={{
-              marginTop: "22px",
-              padding: "28px",
-              borderRadius: "20px",
+              marginTop:
+                "22px",
+
+              padding:
+                "28px",
+
+              borderRadius:
+                "20px",
+
               border:
                 "1px solid #E2E8F0",
-              background: "#FFFFFF",
+
+              background:
+                "#FFFFFF",
+
               boxShadow:
                 "0 6px 18px rgba(15, 23, 42, 0.04)",
             }}
@@ -779,19 +1119,33 @@ export default function JourneyDashboard({
 
             <div
               style={{
-                display: "inline-flex",
+                display:
+                  "inline-flex",
+
                 padding:
                   "5px 10px",
+
                 borderRadius:
                   "999px",
-                background: "#EFF6FF",
-                color: "#2563EB",
-                fontSize: "11px",
-                fontWeight: 800,
+
+                background:
+                  "#EFF6FF",
+
+                color:
+                  "#2563EB",
+
+                fontSize:
+                  "11px",
+
+                fontWeight:
+                  800,
+
                 textTransform:
                   "uppercase",
+
                 letterSpacing:
                   "0.04em",
+
                 marginBottom:
                   "13px",
               }}
@@ -802,10 +1156,17 @@ export default function JourneyDashboard({
 
             <h3
               style={{
-                margin: 0,
-                color: "#0F172A",
-                fontSize: "23px",
-                lineHeight: 1.3,
+                margin:
+                  0,
+
+                color:
+                  "#0F172A",
+
+                fontSize:
+                  "23px",
+
+                lineHeight:
+                  1.3,
               }}
             >
               {primaryAction.title}
@@ -814,9 +1175,14 @@ export default function JourneyDashboard({
 
             <div
               style={{
-                display: "grid",
-                gap: "18px",
-                marginTop: "20px",
+                display:
+                  "grid",
+
+                gap:
+                  "18px",
+
+                marginTop:
+                  "20px",
               }}
             >
 
@@ -856,23 +1222,33 @@ export default function JourneyDashboard({
 
             <div
               style={{
-                marginTop: "20px",
-                paddingTop: "16px",
+                marginTop:
+                  "20px",
+
+                paddingTop:
+                  "16px",
+
                 borderTop:
                   "1px solid #E2E8F0",
-                color: "#94A3B8",
-                fontSize: "13px",
+
+                color:
+                  "#94A3B8",
+
+                fontSize:
+                  "13px",
               }}
             >
               Estimated time:{" "}
               {
-                primaryAction.estimatedTime
+                primaryAction
+                  .estimatedTime
               }
             </div>
 
           </div>
 
         </section>
+
       )}
 
 
@@ -880,10 +1256,13 @@ export default function JourneyDashboard({
           WHAT'S NEXT
       ====================================================== */}
 
-      {additionalActions.length > 0 && (
+      {additionalActions.length >
+        0 && (
+
         <section
           style={{
-            marginBottom: "42px",
+            marginBottom:
+              "42px",
           }}
         >
 
@@ -896,23 +1275,37 @@ export default function JourneyDashboard({
 
           <div
             style={{
-              display: "grid",
+              display:
+                "grid",
+
               gridTemplateColumns:
                 "repeat(auto-fit, minmax(280px, 1fr))",
-              gap: "18px",
-              marginTop: "22px",
+
+              gap:
+                "18px",
+
+              marginTop:
+                "22px",
             }}
           >
 
             {additionalActions.map(
               (action) => (
+
                 <div
-                  key={action.id}
+                  key={
+                    action.id
+                  }
                   style={{
-                    padding: "23px",
-                    borderRadius: "18px",
+                    padding:
+                      "23px",
+
+                    borderRadius:
+                      "18px",
+
                     border:
                       "1px solid #E2E8F0",
+
                     background:
                       "#FFFFFF",
                   }}
@@ -920,30 +1313,50 @@ export default function JourneyDashboard({
 
                   <div
                     style={{
-                      color: "#2563EB",
-                      fontSize: "11px",
-                      fontWeight: 800,
+                      color:
+                        "#2563EB",
+
+                      fontSize:
+                        "11px",
+
+                      fontWeight:
+                        800,
+
                       textTransform:
                         "uppercase",
+
                       letterSpacing:
                         "0.04em",
+
                       marginBottom:
                         "10px",
                     }}
                   >
-                    {action.priority} Priority
+                    {
+                      action.priority
+                    }{" "}
+                    Priority
                   </div>
 
 
                   <h3
                     style={{
-                      margin: 0,
-                      color: "#0F172A",
-                      fontSize: "19px",
-                      lineHeight: 1.35,
+                      margin:
+                        0,
+
+                      color:
+                        "#0F172A",
+
+                      fontSize:
+                        "19px",
+
+                      lineHeight:
+                        1.35,
                     }}
                   >
-                    {action.title}
+                    {
+                      action.title
+                    }
                   </h3>
 
 
@@ -951,13 +1364,20 @@ export default function JourneyDashboard({
                     style={{
                       margin:
                         "10px 0 0",
-                      color: "#64748B",
-                      lineHeight: 1.6,
-                      fontSize: "15px",
+
+                      color:
+                        "#64748B",
+
+                      lineHeight:
+                        1.6,
+
+                      fontSize:
+                        "15px",
                     }}
                   >
                     {
-                      action.whyItMatters
+                      action
+                        .whyItMatters
                     }
                   </p>
 
@@ -966,13 +1386,21 @@ export default function JourneyDashboard({
                     style={{
                       marginTop:
                         "14px",
+
                       paddingTop:
                         "14px",
+
                       borderTop:
                         "1px solid #E2E8F0",
-                      color: "#475569",
-                      fontSize: "14px",
-                      lineHeight: 1.55,
+
+                      color:
+                        "#475569",
+
+                      fontSize:
+                        "14px",
+
+                      lineHeight:
+                        1.55,
                     }}
                   >
                     <strong>
@@ -984,12 +1412,14 @@ export default function JourneyDashboard({
                   </div>
 
                 </div>
+
               )
             )}
 
           </div>
 
         </section>
+
       )}
 
 
@@ -997,11 +1427,13 @@ export default function JourneyDashboard({
           RESOURCES
       ====================================================== */}
 
-      {personalizedJourney
-        .resources?.length > 0 && (
+      {personalizedJourney.resources?.length >
+        0 && (
+
         <section
           style={{
-            marginBottom: "48px",
+            marginBottom:
+              "48px",
           }}
         >
 
@@ -1014,26 +1446,43 @@ export default function JourneyDashboard({
 
           <div
             style={{
-              display: "grid",
+              display:
+                "grid",
+
               gridTemplateColumns:
                 "repeat(auto-fit, minmax(290px, 1fr))",
-              gap: "18px",
-              marginTop: "22px",
+
+              gap:
+                "18px",
+
+              marginTop:
+                "22px",
             }}
           >
 
-            {personalizedJourney.resources.map(
-              (resource) => (
-                <ResourceCard
-                  key={resource.id}
-                  resource={resource}
-                />
-              )
-            )}
+            {
+              personalizedJourney
+                .resources
+                .map(
+                  (resource) => (
+
+                    <ResourceCard
+                      key={
+                        resource.id
+                      }
+                      resource={
+                        resource
+                      }
+                    />
+
+                  )
+                )
+            }
 
           </div>
 
         </section>
+
       )}
 
 
@@ -1043,26 +1492,43 @@ export default function JourneyDashboard({
 
       <section
         style={{
-          marginBottom: "35px",
+          marginBottom:
+            "35px",
         }}
       >
 
         <div
           style={{
-            padding: "26px",
-            borderRadius: "20px",
-            border: "1px solid #BFDBFE",
-            background: "#EFF6FF",
-            textAlign: "center",
+            padding:
+              "26px",
+
+            borderRadius:
+              "20px",
+
+            border:
+              "1px solid #BFDBFE",
+
+            background:
+              "#EFF6FF",
+
+            textAlign:
+              "center",
           }}
         >
 
           <h2
             style={{
-              margin: 0,
-              color: "#0F172A",
-              fontSize: "23px",
-              fontWeight: 800,
+              margin:
+                0,
+
+              color:
+                "#0F172A",
+
+              fontSize:
+                "23px",
+
+              fontWeight:
+                800,
             }}
           >
             Want to keep your journey?
@@ -1073,10 +1539,18 @@ export default function JourneyDashboard({
             style={{
               margin:
                 "9px auto 18px",
-              maxWidth: "620px",
-              color: "#475569",
-              fontSize: "15px",
-              lineHeight: 1.6,
+
+              maxWidth:
+                "620px",
+
+              color:
+                "#475569",
+
+              fontSize:
+                "15px",
+
+              lineHeight:
+                1.6,
             }}
           >
             Save your personalized journey so
@@ -1087,62 +1561,106 @@ export default function JourneyDashboard({
 
           <button
             type="button"
-            onClick={handleSaveJourney}
-            disabled={savingJourney}
+            onClick={
+              handleSaveJourney
+            }
+            disabled={
+              savingJourney
+            }
             style={{
-              padding: "13px 22px",
-              borderRadius: "10px",
-              border: "none",
-              background: savingJourney
-                ? "#93C5FD"
-                : "#2563EB",
-              color: "#FFFFFF",
-              fontSize: "15px",
-              fontWeight: 800,
-              cursor: savingJourney
-                ? "default"
-                : "pointer",
+              padding:
+                "13px 22px",
+
+              borderRadius:
+                "10px",
+
+              border:
+                "none",
+
+              background:
+                savingJourney
+                  ? "#93C5FD"
+                  : "#2563EB",
+
+              color:
+                "#FFFFFF",
+
+              fontSize:
+                "15px",
+
+              fontWeight:
+                800,
+
+              cursor:
+                savingJourney
+                  ? "default"
+                  : "pointer",
             }}
           >
-            {savingJourney
-              ? "Saving..."
-              : "💾 Save My Journey"}
+            {
+              savingJourney
+                ? "Saving..."
+                : "💾 Save My Journey"
+            }
           </button>
 
 
           {saveMessage && (
+
             <div
               style={{
-                marginTop: "15px",
-                color: "#047857",
-                fontSize: "14px",
-                fontWeight: 700,
+                marginTop:
+                  "15px",
+
+                color:
+                  "#047857",
+
+                fontSize:
+                  "14px",
+
+                fontWeight:
+                  700,
               }}
             >
               ✓ {saveMessage}
             </div>
+
           )}
 
 
           {saveError && (
+
             <div
               style={{
-                marginTop: "15px",
-                color: "#B91C1C",
-                fontSize: "14px",
-                lineHeight: 1.5,
+                marginTop:
+                  "15px",
+
+                color:
+                  "#B91C1C",
+
+                fontSize:
+                  "14px",
+
+                lineHeight:
+                  1.5,
               }}
             >
               {saveError}
             </div>
+
           )}
 
 
           {showSaveAccountPrompt && (
+
             <div
               style={{
-                marginTop: "22px",
-                paddingTop: "20px",
+                marginTop:
+                  "22px",
+
+                paddingTop:
+                  "20px",
+
                 borderTop:
                   "1px solid #BFDBFE",
               }}
@@ -1150,10 +1668,17 @@ export default function JourneyDashboard({
 
               <div
                 style={{
-                  color: "#0F172A",
-                  fontSize: "15px",
-                  fontWeight: 700,
-                  marginBottom: "12px",
+                  color:
+                    "#0F172A",
+
+                  fontSize:
+                    "15px",
+
+                  fontWeight:
+                    700,
+
+                  marginBottom:
+                    "12px",
                 }}
               >
                 Create a free account or log in
@@ -1163,10 +1688,17 @@ export default function JourneyDashboard({
 
               <div
                 style={{
-                  display: "flex",
-                  justifyContent: "center",
-                  gap: "10px",
-                  flexWrap: "wrap",
+                  display:
+                    "flex",
+
+                  justifyContent:
+                    "center",
+
+                  gap:
+                    "10px",
+
+                  flexWrap:
+                    "wrap",
                 }}
               >
 
@@ -1175,12 +1707,24 @@ export default function JourneyDashboard({
                   style={{
                     padding:
                       "10px 18px",
-                    borderRadius: "9px",
-                    background: "#2563EB",
-                    color: "#FFFFFF",
-                    fontSize: "14px",
-                    fontWeight: 700,
-                    textDecoration: "none",
+
+                    borderRadius:
+                      "9px",
+
+                    background:
+                      "#2563EB",
+
+                    color:
+                      "#FFFFFF",
+
+                    fontSize:
+                      "14px",
+
+                    fontWeight:
+                      700,
+
+                    textDecoration:
+                      "none",
                   }}
                 >
                   Log In
@@ -1192,14 +1736,27 @@ export default function JourneyDashboard({
                   style={{
                     padding:
                       "10px 18px",
-                    borderRadius: "9px",
+
+                    borderRadius:
+                      "9px",
+
                     border:
                       "1px solid #2563EB",
-                    background: "#FFFFFF",
-                    color: "#2563EB",
-                    fontSize: "14px",
-                    fontWeight: 700,
-                    textDecoration: "none",
+
+                    background:
+                      "#FFFFFF",
+
+                    color:
+                      "#2563EB",
+
+                    fontSize:
+                      "14px",
+
+                    fontWeight:
+                      700,
+
+                    textDecoration:
+                      "none",
                   }}
                 >
                   Create Free Account
@@ -1208,6 +1765,7 @@ export default function JourneyDashboard({
               </div>
 
             </div>
+
           )}
 
         </div>
@@ -1216,12 +1774,152 @@ export default function JourneyDashboard({
 
 
       {/* =====================================================
+          ACCOUNT
+      ====================================================== */}
+
+      {currentUserEmail && (
+
+        <section
+          style={{
+            marginBottom:
+              "35px",
+          }}
+        >
+
+          <div
+            style={{
+              padding:
+                "22px 24px",
+
+              borderRadius:
+                "18px",
+
+              border:
+                "1px solid #E2E8F0",
+
+              background:
+                "#FFFFFF",
+
+              display:
+                "flex",
+
+              justifyContent:
+                "space-between",
+
+              alignItems:
+                "center",
+
+              gap:
+                "20px",
+
+              flexWrap:
+                "wrap",
+            }}
+          >
+
+            <div>
+
+              <div
+                style={{
+                  color:
+                    "#64748B",
+
+                  fontSize:
+                    "12px",
+
+                  fontWeight:
+                    800,
+
+                  textTransform:
+                    "uppercase",
+
+                  letterSpacing:
+                    "0.06em",
+
+                  marginBottom:
+                    "5px",
+                }}
+              >
+                Your Account
+              </div>
+
+
+              <div
+                style={{
+                  color:
+                    "#0F172A",
+
+                  fontSize:
+                    "15px",
+
+                  fontWeight:
+                    700,
+                }}
+              >
+                {currentUserEmail}
+              </div>
+
+            </div>
+
+
+            <button
+              type="button"
+              onClick={
+                handleLogout
+              }
+              disabled={
+                loggingOut
+              }
+              style={{
+                padding:
+                  "10px 18px",
+
+                borderRadius:
+                  "9px",
+
+                border:
+                  "1px solid #CBD5E1",
+
+                background:
+                  "#FFFFFF",
+
+                color:
+                  "#475569",
+
+                fontSize:
+                  "14px",
+
+                fontWeight:
+                  700,
+
+                cursor:
+                  loggingOut
+                    ? "default"
+                    : "pointer",
+              }}
+            >
+              {
+                loggingOut
+                  ? "Logging Out..."
+                  : "Log Out"
+              }
+            </button>
+
+          </div>
+
+        </section>
+
+      )}
+
+
+      {/* =====================================================
           PROGRESS
       ====================================================== */}
 
       <section
         style={{
-          marginBottom: "35px",
+          marginBottom:
+            "35px",
         }}
       >
 
@@ -1234,10 +1932,18 @@ export default function JourneyDashboard({
 
         <div
           style={{
-            marginTop: "22px",
-            padding: "23px",
-            borderRadius: "20px",
-            background: "#F8FAFC",
+            marginTop:
+              "22px",
+
+            padding:
+              "23px",
+
+            borderRadius:
+              "20px",
+
+            background:
+              "#F8FAFC",
+
             border:
               "1px solid #E2E8F0",
           }}
@@ -1245,17 +1951,24 @@ export default function JourneyDashboard({
 
           <div
             style={{
-              display: "flex",
+              display:
+                "flex",
+
               justifyContent:
                 "space-between",
-              alignItems: "center",
-              marginBottom: "10px",
+
+              alignItems:
+                "center",
+
+              marginBottom:
+                "10px",
             }}
           >
 
             <strong
               style={{
-                color: "#0F172A",
+                color:
+                  "#0F172A",
               }}
             >
               Journey Progress
@@ -1264,8 +1977,11 @@ export default function JourneyDashboard({
 
             <span
               style={{
-                color: "#475569",
-                fontSize: "13px",
+                color:
+                  "#475569",
+
+                fontSize:
+                  "13px",
               }}
             >
               {completedTasks} of{" "}
@@ -1277,20 +1993,31 @@ export default function JourneyDashboard({
 
           <div
             style={{
-              height: "9px",
-              background: "#E2E8F0",
+              height:
+                "9px",
+
+              background:
+                "#E2E8F0",
+
               borderRadius:
                 "999px",
-              overflow: "hidden",
+
+              overflow:
+                "hidden",
             }}
           >
 
             <div
               style={{
-                width: `${taskPercent}%`,
-                height: "100%",
+                width:
+                  `${taskPercent}%`,
+
+                height:
+                  "100%",
+
                 background:
                   "linear-gradient(90deg, #2563EB, #14B8A6)",
+
                 transition:
                   "width .3s ease",
               }}
@@ -1303,32 +2030,58 @@ export default function JourneyDashboard({
 
         <div
           style={{
-            display: "grid",
-            gap: "12px",
-            marginTop: "16px",
+            display:
+              "grid",
+
+            gap:
+              "12px",
+
+            marginTop:
+              "16px",
           }}
         >
 
-          {tasks.map((task) => (
-            <TaskCard
-              key={task.id}
-              task={task}
-              onToggle={() =>
-                toggleTask(task.id)
-              }
-            />
-          ))}
+          {tasks.map(
+            (task) => (
+
+              <TaskCard
+                key={
+                  task.id
+                }
+
+                task={
+                  task
+                }
+
+                onToggle={() =>
+                  toggleTask(
+                    task.id
+                  )
+                }
+              />
+
+            )
+          )}
 
         </div>
 
 
         {allTasksCompleted && (
+
           <div
             style={{
-              marginTop: "22px",
-              padding: "24px",
-              borderRadius: "18px",
-              background: "#ECFDF5",
+              marginTop:
+                "22px",
+
+              padding:
+                "24px",
+
+              borderRadius:
+                "18px",
+
+              background:
+                "#ECFDF5",
+
               border:
                 "1px solid #A7F3D0",
             }}
@@ -1336,9 +2089,14 @@ export default function JourneyDashboard({
 
             <h3
               style={{
-                margin: 0,
-                color: "#065F46",
-                fontSize: "20px",
+                margin:
+                  0,
+
+                color:
+                  "#065F46",
+
+                fontSize:
+                  "20px",
               }}
             >
               You've completed your
@@ -1348,8 +2106,12 @@ export default function JourneyDashboard({
 
             <p
               style={{
-                color: "#047857",
-                lineHeight: 1.6,
+                color:
+                  "#047857",
+
+                lineHeight:
+                  1.6,
+
                 margin:
                   "8px 0 18px",
               }}
@@ -1366,19 +2128,31 @@ export default function JourneyDashboard({
               style={{
                 padding:
                   "11px 18px",
-                borderRadius: "9px",
-                border: "none",
+
+                borderRadius:
+                  "9px",
+
+                border:
+                  "none",
+
                 background:
                   "#059669",
-                color: "#FFFFFF",
-                fontWeight: 700,
-                cursor: "pointer",
+
+                color:
+                  "#FFFFFF",
+
+                fontWeight:
+                  700,
+
+                cursor:
+                  "pointer",
               }}
             >
               Show Me What's Next →
             </button>
 
           </div>
+
         )}
 
       </section>
@@ -1386,11 +2160,20 @@ export default function JourneyDashboard({
 
       <p
         style={{
-          textAlign: "center",
-          color: "#94A3B8",
-          fontSize: "12px",
-          lineHeight: 1.5,
-          marginTop: "50px",
+          textAlign:
+            "center",
+
+          color:
+            "#94A3B8",
+
+          fontSize:
+            "12px",
+
+          lineHeight:
+            1.5,
+
+          marginTop:
+            "50px",
         }}
       >
         Your recommendations are based on
@@ -1415,17 +2198,28 @@ function SnapshotItem({
   label: string;
   value: string;
 }) {
+
   return (
+
     <div>
 
       <div
         style={{
-          fontSize: "12px",
-          fontWeight: 700,
-          color: "#64748B",
-          marginBottom: "5px",
+          fontSize:
+            "12px",
+
+          fontWeight:
+            700,
+
+          color:
+            "#64748B",
+
+          marginBottom:
+            "5px",
+
           textTransform:
             "uppercase",
+
           letterSpacing:
             "0.04em",
         }}
@@ -1436,15 +2230,21 @@ function SnapshotItem({
 
       <div
         style={{
-          fontSize: "16px",
-          fontWeight: 700,
-          color: "#0F172A",
+          fontSize:
+            "16px",
+
+          fontWeight:
+            700,
+
+          color:
+            "#0F172A",
         }}
       >
         {value}
       </div>
 
     </div>
+
   );
 }
 
@@ -1462,19 +2262,30 @@ function SectionHeading({
   title: string;
   description: string;
 }) {
+
   return (
+
     <div>
 
       <div
         style={{
-          color: "#2563EB",
-          fontSize: "12px",
-          fontWeight: 800,
+          color:
+            "#2563EB",
+
+          fontSize:
+            "12px",
+
+          fontWeight:
+            800,
+
           letterSpacing:
             "0.08em",
+
           textTransform:
             "uppercase",
-          marginBottom: "7px",
+
+          marginBottom:
+            "7px",
         }}
       >
         {eyebrow}
@@ -1483,11 +2294,20 @@ function SectionHeading({
 
       <h2
         style={{
-          margin: 0,
-          color: "#0F172A",
-          fontSize: "29px",
-          fontWeight: 800,
-          lineHeight: 1.2,
+          margin:
+            0,
+
+          color:
+            "#0F172A",
+
+          fontSize:
+            "29px",
+
+          fontWeight:
+            800,
+
+          lineHeight:
+            1.2,
         }}
       >
         {title}
@@ -1496,18 +2316,30 @@ function SectionHeading({
 
       <p
         style={{
-          maxWidth: "720px",
-          color: "#64748B",
-          fontSize: "15px",
-          lineHeight: 1.6,
-          marginTop: "8px",
-          marginBottom: 0,
+          maxWidth:
+            "720px",
+
+          color:
+            "#64748B",
+
+          fontSize:
+            "15px",
+
+          lineHeight:
+            1.6,
+
+          marginTop:
+            "8px",
+
+          marginBottom:
+            0,
         }}
       >
         {description}
       </p>
 
     </div>
+
   );
 }
 
@@ -1523,15 +2355,24 @@ function GuidanceBlock({
   label: string;
   text: string;
 }) {
+
   return (
+
     <div>
 
       <div
         style={{
-          color: "#334155",
-          fontSize: "13px",
-          fontWeight: 800,
-          marginBottom: "5px",
+          color:
+            "#334155",
+
+          fontSize:
+            "13px",
+
+          fontWeight:
+            800,
+
+          marginBottom:
+            "5px",
         }}
       >
         {label}
@@ -1540,15 +2381,21 @@ function GuidanceBlock({
 
       <div
         style={{
-          color: "#64748B",
-          fontSize: "15px",
-          lineHeight: 1.6,
+          color:
+            "#64748B",
+
+          fontSize:
+            "15px",
+
+          lineHeight:
+            1.6,
         }}
       >
         {text}
       </div>
 
     </div>
+
   );
 }
 
@@ -1562,14 +2409,23 @@ function ResourceCard({
 }: {
   resource: AIResource;
 }) {
+
   return (
+
     <div
       style={{
-        padding: "23px",
-        borderRadius: "18px",
+        padding:
+          "23px",
+
+        borderRadius:
+          "18px",
+
         border:
           "1px solid #E2E8F0",
-        background: "#FFFFFF",
+
+        background:
+          "#FFFFFF",
+
         boxShadow:
           "0 5px 15px rgba(15, 23, 42, 0.03)",
       }}
@@ -1577,35 +2433,58 @@ function ResourceCard({
 
       <div
         style={{
-          display: "inline-flex",
+          display:
+            "inline-flex",
+
           padding:
             "5px 9px",
+
           borderRadius:
             "999px",
-          background: "#F8FAFC",
-          color: "#475569",
-          fontSize: "10px",
-          fontWeight: 800,
+
+          background:
+            "#F8FAFC",
+
+          color:
+            "#475569",
+
+          fontSize:
+            "10px",
+
+          fontWeight:
+            800,
+
           textTransform:
             "uppercase",
+
           letterSpacing:
             "0.04em",
+
           marginBottom:
             "11px",
         }}
       >
-        {formatResourceType(
-          resource.type
-        )}
+        {
+          formatResourceType(
+            resource.type
+          )
+        }
       </div>
 
 
       <h3
         style={{
-          margin: 0,
-          color: "#0F172A",
-          fontSize: "19px",
-          lineHeight: 1.3,
+          margin:
+            0,
+
+          color:
+            "#0F172A",
+
+          fontSize:
+            "19px",
+
+          lineHeight:
+            1.3,
         }}
       >
         {resource.title}
@@ -1614,9 +2493,15 @@ function ResourceCard({
 
       <p
         style={{
-          color: "#64748B",
-          lineHeight: 1.55,
-          fontSize: "14px",
+          color:
+            "#64748B",
+
+          lineHeight:
+            1.55,
+
+          fontSize:
+            "14px",
+
           margin:
             "9px 0 14px",
         }}
@@ -1626,63 +2511,101 @@ function ResourceCard({
 
 
       {resource.whyItMayHelp && (
+
         <div
           style={{
-            marginBottom: "14px",
+            marginBottom:
+              "14px",
+
             padding:
               "12px 13px",
-            borderRadius: "11px",
-            background: "#F8FAFC",
-            color: "#475569",
-            fontSize: "13px",
-            lineHeight: 1.5,
+
+            borderRadius:
+              "11px",
+
+            background:
+              "#F8FAFC",
+
+            color:
+              "#475569",
+
+            fontSize:
+              "13px",
+
+            lineHeight:
+              1.5,
           }}
         >
           <strong>
             Why it may help:
           </strong>{" "}
           {
-            resource.whyItMayHelp
+            resource
+              .whyItMayHelp
           }
         </div>
+
       )}
 
 
       {resource.sourceName && (
+
         <div
           style={{
-            color: "#94A3B8",
-            fontSize: "12px",
+            color:
+              "#94A3B8",
+
+            fontSize:
+              "12px",
+
             marginBottom:
               "12px",
           }}
         >
           Source:{" "}
-          {resource.sourceName}
+          {
+            resource.sourceName
+          }
         </div>
+
       )}
 
 
       {resource.url && (
+
         <a
-          href={resource.url}
+          href={
+            resource.url
+          }
+
           target="_blank"
+
           rel="noreferrer"
+
           style={{
             display:
               "inline-block",
-            color: "#2563EB",
-            fontSize: "14px",
-            fontWeight: 700,
+
+            color:
+              "#2563EB",
+
+            fontSize:
+              "14px",
+
+            fontWeight:
+              700,
+
             textDecoration:
               "none",
           }}
         >
           View Resource →
         </a>
+
       )}
 
     </div>
+
   );
 }
 
@@ -1698,18 +2621,31 @@ function TaskCard({
   task: Task;
   onToggle: () => void;
 }) {
+
   return (
+
     <div
       style={{
-        display: "flex",
+        display:
+          "flex",
+
         alignItems:
           "flex-start",
-        gap: "15px",
-        padding: "18px",
-        borderRadius: "16px",
-        border: task.completed
-          ? "1px solid #A7F3D0"
-          : "1px solid #E2E8F0",
+
+        gap:
+          "15px",
+
+        padding:
+          "18px",
+
+        borderRadius:
+          "16px",
+
+        border:
+          task.completed
+            ? "1px solid #A7F3D0"
+            : "1px solid #E2E8F0",
+
         background:
           task.completed
             ? "#F0FDF4"
@@ -1719,31 +2655,58 @@ function TaskCard({
 
       <button
         type="button"
-        onClick={onToggle}
+
+        onClick={
+          onToggle
+        }
+
         aria-label={
           task.completed
             ? `Mark ${task.title} incomplete`
             : `Mark ${task.title} complete`
         }
+
         style={{
-          flexShrink: 0,
-          width: "27px",
-          height: "27px",
-          borderRadius: "8px",
-          border: task.completed
-            ? "none"
-            : "2px solid #CBD5E1",
+          flexShrink:
+            0,
+
+          width:
+            "27px",
+
+          height:
+            "27px",
+
+          borderRadius:
+            "8px",
+
+          border:
+            task.completed
+              ? "none"
+              : "2px solid #CBD5E1",
+
           background:
             task.completed
               ? "#059669"
               : "#FFFFFF",
-          color: "#FFFFFF",
-          cursor: "pointer",
-          fontWeight: 800,
-          fontSize: "15px",
+
+          color:
+            "#FFFFFF",
+
+          cursor:
+            "pointer",
+
+          fontWeight:
+            800,
+
+          fontSize:
+            "15px",
         }}
       >
-        {task.completed ? "✓" : ""}
+        {
+          task.completed
+            ? "✓"
+            : ""
+        }
       </button>
 
 
@@ -1755,23 +2718,36 @@ function TaskCard({
 
         <div
           style={{
-            display: "flex",
+            display:
+              "flex",
+
             flexWrap:
               "wrap",
+
             alignItems:
               "center",
-            gap: "8px",
+
+            gap:
+              "8px",
           }}
         >
 
           <h3
             style={{
-              margin: 0,
-              color: task.completed
-                ? "#64748B"
-                : "#0F172A",
-              fontSize: "17px",
-              lineHeight: 1.3,
+              margin:
+                0,
+
+              color:
+                task.completed
+                  ? "#64748B"
+                  : "#0F172A",
+
+              fontSize:
+                "17px",
+
+              lineHeight:
+                1.3,
+
               textDecoration:
                 task.completed
                   ? "line-through"
@@ -1786,8 +2762,10 @@ function TaskCard({
             style={{
               padding:
                 "3px 7px",
+
               borderRadius:
                 "999px",
+
               background:
                 task.priority ===
                 "High"
@@ -1796,6 +2774,7 @@ function TaskCard({
                     "Medium"
                   ? "#FFFBEB"
                   : "#F8FAFC",
+
               color:
                 task.priority ===
                 "High"
@@ -1804,8 +2783,13 @@ function TaskCard({
                     "Medium"
                   ? "#D97706"
                   : "#64748B",
-              fontSize: "10px",
-              fontWeight: 800,
+
+              fontSize:
+                "10px",
+
+              fontWeight:
+                800,
+
               textTransform:
                 "uppercase",
             }}
@@ -1818,11 +2802,20 @@ function TaskCard({
 
         <p
           style={{
-            marginTop: "6px",
-            marginBottom: "6px",
-            color: "#64748B",
-            lineHeight: 1.5,
-            fontSize: "14px",
+            marginTop:
+              "6px",
+
+            marginBottom:
+              "6px",
+
+            color:
+              "#64748B",
+
+            lineHeight:
+              1.5,
+
+            fontSize:
+              "14px",
           }}
         >
           {task.description}
@@ -1831,40 +2824,62 @@ function TaskCard({
 
         <span
           style={{
-            color: "#94A3B8",
-            fontSize: "12px",
+            color:
+              "#94A3B8",
+
+            fontSize:
+              "12px",
           }}
         >
           Estimated time:{" "}
-          {task.estimatedTime}
+          {
+            task.estimatedTime
+          }
         </span>
 
 
         {task.resourceLink && (
+
           <div
             style={{
-              marginTop: "8px",
+              marginTop:
+                "8px",
             }}
           >
+
             <a
-              href={task.resourceLink}
+              href={
+                task.resourceLink
+              }
+
               target="_blank"
+
               rel="noreferrer"
+
               style={{
-                color: "#2563EB",
-                fontSize: "13px",
-                fontWeight: 700,
+                color:
+                  "#2563EB",
+
+                fontSize:
+                  "13px",
+
+                fontWeight:
+                  700,
+
                 textDecoration:
                   "none",
               }}
             >
               Open Resource →
             </a>
+
           </div>
+
         )}
 
       </div>
 
     </div>
+
   );
 }
