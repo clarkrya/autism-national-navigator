@@ -44,7 +44,6 @@ import {
   canContinueToNextJourney,
 } from "../../lib/accountEntitlements";
 
-
 interface JourneyDashboardProps {
   personalizedJourney: PersonalizedJourney;
   familyProfile: FamilyProfile;
@@ -468,22 +467,31 @@ export default function JourneyDashboard({
     ) {
       return;
     }
-
-
+  
+  
     /*
      * ----------------------------------------------------------
-     * ACCOUNT GATE
+     * VERIFY ACCOUNT
      * ----------------------------------------------------------
      *
-     * Guests can complete the first task set, but an account
+     * Guests can complete the first journey, but an account
      * is required before the AI generates the next stage.
-     *
-     * Preserve the completed current journey temporarily so
-     * the login/signup flow can save it to the user account.
      */
-
-    if (!canContinueToNextJourney()) {
-
+  
+    const currentUser =
+      getCurrentUser();
+  
+  
+    if (
+      !currentUser ||
+      !canContinueToNextJourney()
+    ) {
+  
+      /*
+       * Preserve the completed journey so the login/signup
+       * flow can continue from this point.
+       */
+  
       savePendingJourney(
         familyProfile,
         {
@@ -491,36 +499,56 @@ export default function JourneyDashboard({
           tasks,
         }
       );
-
-      setNextJourneyError("");
-
+  
+  
       setShowNextAccountPrompt(
         true
       );
-
+  
+  
       return;
     }
-
-
+  
+  
+    /*
+     * ----------------------------------------------------------
+     * AUTHENTICATED USER
+     * ----------------------------------------------------------
+     */
+  
     setShowNextAccountPrompt(
       false
     );
-
+  
+  
     setGeneratingNextJourney(
       true
     );
-
+  
     setNextJourneyError("");
-
-
+  
+  
     try {
-
+  
+      /*
+       * --------------------------------------------------------
+       * FIREBASE ID TOKEN
+       * --------------------------------------------------------
+       *
+       * This token is sent to the server so the API can verify
+       * that the caller is actually authenticated.
+       */
+  
+      const idToken =
+        await currentUser.getIdToken();
+  
+  
       /*
        * --------------------------------------------------------
        * GET COMPLETED TASK INFORMATION
        * --------------------------------------------------------
        */
-
+  
       const completedTaskIds =
         tasks
           .filter(
@@ -531,228 +559,197 @@ export default function JourneyDashboard({
             (task) =>
               task.id
           );
-
-
+  
+  
       const completedTaskDetails =
         tasks.filter(
           (task) =>
             task.completed
         );
-
-
+  
+  
       /*
        * --------------------------------------------------------
        * CURRENT JOURNEY SNAPSHOT
        * --------------------------------------------------------
-       *
-       * Make sure the API receives the latest task state,
-       * including completion.
        */
-
+  
       const currentJourney = {
         ...personalizedJourney,
-
+  
         tasks,
       };
-
-
+  
+  
       /*
        * --------------------------------------------------------
        * CALL NEXT-JOURNEY API
        * --------------------------------------------------------
        */
-
+  
       const response =
         await fetch(
           "/api/journey/next",
           {
             method:
               "POST",
-
+  
             headers: {
               "Content-Type":
                 "application/json",
+  
+              Authorization:
+                `Bearer ${idToken}`,
             },
-
+  
             body:
               JSON.stringify({
                 familyProfile,
-
+  
                 currentJourney,
-
+  
                 completedTaskIds,
-
+  
                 completedTasks:
                   completedTaskDetails,
               }),
           }
         );
-
-
+  
+  
       const data =
         await response.json();
-
-
+  
+  
       /*
        * --------------------------------------------------------
        * API ERROR
        * --------------------------------------------------------
        */
-
+  
       if (!response.ok) {
-
+  
         throw new Error(
           data?.error ||
             "Unable to create the next stage of your journey."
         );
-
+  
       }
-
-
+  
+  
       if (
         !data?.journey
       ) {
-
+  
         throw new Error(
           "The next stage of your journey was not returned."
         );
-
+  
       }
-
-
-      const nextJourney =
-        data.journey as PersonalizedJourney;
-
-
+  
+  
       /*
        * --------------------------------------------------------
-       * UPDATE JOURNEY
+       * RECEIVE NEXT JOURNEY
        * --------------------------------------------------------
-       *
-       * Replace the current stage with the new stage.
-       *
-       * The new AI stage arrives with all tasks incomplete.
        */
-
+  
+      const nextJourney =
+        data.journey as PersonalizedJourney;
+  
+  
+      /*
+       * --------------------------------------------------------
+       * UPDATE ACTIVE JOURNEY
+       * --------------------------------------------------------
+       */
+  
       setPersonalizedJourney(
         nextJourney
       );
-
-
+  
+  
       setTasks(
         nextJourney.tasks || []
       );
-
-
+  
+  
       /*
        * --------------------------------------------------------
-       * SAVE PROGRESSION
+       * SAVE NEXT JOURNEY
        * --------------------------------------------------------
        *
-       * Logged-in family:
-       *     Save the new stage directly to Firestore.
-       *
-       * Guest family:
-       *     Keep the latest stage temporarily so it can
-       *     still be saved after account creation/login.
+       * The user is authenticated, so save the new stage.
        */
-
-      const currentUser =
-        getCurrentUser();
-
-
-      if (
-        currentUser
-      ) {
-
-        const journeyRef =
-          doc(
-            db,
-            "users",
-            currentUser.uid,
-            "journeys",
-            "current"
-          );
-
-
-        await setDoc(
-          journeyRef,
-          {
-            familyProfile,
-
-            journey: {
-              ...nextJourney,
-
-              tasks:
-                nextJourney.tasks ||
-                [],
-            },
-
-            updatedAt:
-              Date.now(),
-
-            createdBy:
-              currentUser.uid,
-
-            previousCompletedTaskIds:
-              completedTaskIds,
-
-            journeyReason:
-              "tasks_completed",
-          },
-          {
-            merge: true,
-          }
+  
+      const journeyRef =
+        doc(
+          db,
+          "users",
+          currentUser.uid,
+          "journeys",
+          "current"
         );
-
-
-        setSaveMessage(
-          "Your next journey stage has been saved."
-        );
-
-      } else {
-
-        /*
-         * Guest:
-         * preserve the latest journey temporarily.
-         */
-
-        savePendingJourney(
+  
+  
+      await setDoc(
+        journeyRef,
+        {
           familyProfile,
-
-          {
+  
+          journey: {
             ...nextJourney,
-
+  
             tasks:
               nextJourney.tasks ||
               [],
-          }
-        );
-
-      }
-
+          },
+  
+          updatedAt:
+            Date.now(),
+  
+          createdBy:
+            currentUser.uid,
+  
+          previousCompletedTaskIds:
+            completedTaskIds,
+  
+          journeyReason:
+            "tasks_completed",
+        },
+        {
+          merge: true,
+        }
+      );
+  
+  
+      setSaveMessage(
+        "Your next journey stage has been saved."
+      );
+  
+  
     } catch (error) {
-
+  
       console.error(
         "Unable to generate next journey:",
         error
       );
-
-
+  
+  
       setNextJourneyError(
         error instanceof Error
           ? error.message
           : "We couldn't create the next stage of your journey. Please try again."
       );
-
+  
+  
     } finally {
-
+  
       setGeneratingNextJourney(
         false
       );
-
+  
     }
-
   }
 
 

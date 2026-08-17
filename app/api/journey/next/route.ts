@@ -22,19 +22,157 @@ const OPENAI_MODEL =
 
 /*
  * ============================================================
- * NEXT JOURNEY RESPONSE SCHEMA
+ * FIREBASE AUTH CONFIGURATION
  * ============================================================
  *
- * This uses the same PersonalizedJourney structure as the
- * initial journey.
+ * The Firebase Web API key is not a secret credential.
  *
- * The important difference is that the AI is explicitly told
- * what the family has already completed.
+ * It is used here to call Firebase's accounts:lookup REST
+ * endpoint so the server can verify that the Firebase ID token
+ * belongs to a real authenticated Firebase account.
+ *
+ * Prefer FIREBASE_WEB_API_KEY in production, but fall back to
+ * NEXT_PUBLIC_FIREBASE_API_KEY because that is already part of
+ * the project's current Firebase configuration.
+ * ============================================================
+ */
+
+const FIREBASE_WEB_API_KEY =
+  process.env.FIREBASE_WEB_API_KEY ||
+  process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
+
+
+/*
+ * ============================================================
+ * VERIFY FIREBASE ID TOKEN
+ * ============================================================
+ *
+ * Firebase exposes:
+ *
+ * POST
+ * https://identitytoolkit.googleapis.com/v1/accounts:lookup
+ *
+ * with:
+ *
+ * {
+ *   idToken: "..."
+ * }
+ *
+ * A successful response contains the authenticated user's
+ * Firebase localId / UID.
+ * ============================================================
+ */
+
+async function verifyFirebaseIdToken(
+  idToken: string
+): Promise<{
+  uid: string;
+  email?: string;
+}> {
+
+  if (
+    !FIREBASE_WEB_API_KEY
+  ) {
+
+    throw new Error(
+      "Firebase Web API key is not configured."
+    );
+
+  }
+
+
+  const response =
+    await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(
+        FIREBASE_WEB_API_KEY
+      )}`,
+      {
+        method:
+          "POST",
+
+        headers: {
+          "Content-Type":
+            "application/json",
+        },
+
+        body:
+          JSON.stringify({
+            idToken,
+          }),
+      }
+    );
+
+
+  if (
+    !response.ok
+  ) {
+
+    const errorText =
+      await response.text();
+
+
+    console.error(
+      "Firebase token verification failed:",
+      errorText
+    );
+
+
+    throw new Error(
+      "AUTH_INVALID"
+    );
+
+  }
+
+
+  const data =
+    await response.json();
+
+
+  const user =
+    Array.isArray(
+      data?.users
+    )
+      ? data.users[0]
+      : undefined;
+
+
+  if (
+    !user?.localId
+  ) {
+
+    throw new Error(
+      "AUTH_INVALID"
+    );
+
+  }
+
+
+  return {
+    uid:
+      String(
+        user.localId
+      ),
+
+    email:
+      typeof user.email ===
+      "string"
+        ? user.email
+        : undefined,
+  };
+}
+
+
+/*
+ * ============================================================
+ * NEXT JOURNEY RESPONSE SCHEMA
+ * ============================================================
  */
 
 const nextJourneySchema = {
   type: "object",
-  additionalProperties: false,
+
+  additionalProperties:
+    false,
 
   properties: {
 
@@ -45,7 +183,9 @@ const nextJourneySchema = {
 
     currentFocus: {
       type: "object",
-      additionalProperties: false,
+
+      additionalProperties:
+        false,
 
       properties: {
 
@@ -71,7 +211,9 @@ const nextJourneySchema = {
 
       items: {
         type: "object",
-        additionalProperties: false,
+
+        additionalProperties:
+          false,
 
         properties: {
 
@@ -114,7 +256,9 @@ const nextJourneySchema = {
 
       items: {
         type: "object",
-        additionalProperties: false,
+
+        additionalProperties:
+          false,
 
         properties: {
 
@@ -186,7 +330,9 @@ const nextJourneySchema = {
 
       items: {
         type: "object",
-        additionalProperties: false,
+
+        additionalProperties:
+          false,
 
         properties: {
 
@@ -244,7 +390,9 @@ const nextJourneySchema = {
 
       items: {
         type: "object",
-        additionalProperties: false,
+
+        additionalProperties:
+          false,
 
         properties: {
 
@@ -304,7 +452,9 @@ const nextJourneySchema = {
 
     nextStep: {
       type: "object",
-      additionalProperties: false,
+
+      additionalProperties:
+        false,
 
       properties: {
 
@@ -352,9 +502,105 @@ export async function POST(
   try {
 
     /*
-     * ----------------------------------------------------------
-     * STEP 1 — API KEY
-     * ----------------------------------------------------------
+     * ========================================================
+     * STEP 1 — VERIFY AUTHENTICATION
+     * ========================================================
+     *
+     * This happens BEFORE:
+     *
+     * - reading the journey
+     * - making the OpenAI request
+     * - generating AI content
+     *
+     * A guest cannot bypass the UI and call this endpoint
+     * directly.
+     */
+
+    const authorization =
+      request.headers.get(
+        "authorization"
+      );
+
+
+    if (
+      !authorization ||
+      !authorization
+        .toLowerCase()
+        .startsWith(
+          "bearer "
+        )
+    ) {
+
+      return NextResponse.json(
+        {
+          error:
+            "You must be logged in to continue your journey.",
+        },
+        {
+          status:
+            401,
+        }
+      );
+
+    }
+
+
+    const idToken =
+      authorization
+        .slice(7)
+        .trim();
+
+
+    if (!idToken) {
+
+      return NextResponse.json(
+        {
+          error:
+            "Authentication token is missing.",
+        },
+        {
+          status:
+            401,
+        }
+      );
+
+    }
+
+
+    let authenticatedUser:
+      {
+        uid: string;
+        email?: string;
+      };
+
+
+    try {
+
+      authenticatedUser =
+        await verifyFirebaseIdToken(
+          idToken
+        );
+
+    } catch {
+
+      return NextResponse.json(
+        {
+          error:
+            "Your login session is no longer valid. Please log in again.",
+        },
+        {
+          status:
+            401,
+        }
+      );
+
+    }
+
+
+    /*
+     * ========================================================
+     * STEP 2 — API KEY
+     * ========================================================
      */
 
     const apiKey =
@@ -369,7 +615,8 @@ export async function POST(
             "OpenAI API key is not configured.",
         },
         {
-          status: 500,
+          status:
+            500,
         }
       );
 
@@ -377,9 +624,9 @@ export async function POST(
 
 
     /*
-     * ----------------------------------------------------------
-     * STEP 2 — READ REQUEST
-     * ----------------------------------------------------------
+     * ========================================================
+     * STEP 3 — READ REQUEST
+     * ========================================================
      */
 
     const body =
@@ -415,12 +662,14 @@ export async function POST(
 
 
     /*
-     * ----------------------------------------------------------
-     * STEP 3 — VALIDATE REQUEST
-     * ----------------------------------------------------------
+     * ========================================================
+     * STEP 4 — VALIDATE REQUEST
+     * ========================================================
      */
 
-    if (!familyProfile) {
+    if (
+      !familyProfile
+    ) {
 
       return NextResponse.json(
         {
@@ -428,22 +677,8 @@ export async function POST(
             "Family profile is required.",
         },
         {
-          status: 400,
-        }
-      );
-
-    }
-
-
-    if (!currentJourney) {
-
-      return NextResponse.json(
-        {
-          error:
-            "Current journey is required.",
-        },
-        {
-          status: 400,
+          status:
+            400,
         }
       );
 
@@ -451,7 +686,26 @@ export async function POST(
 
 
     if (
-      completedTaskIds.length === 0
+      !currentJourney
+    ) {
+
+      return NextResponse.json(
+        {
+          error:
+            "Current journey is required.",
+        },
+        {
+          status:
+            400,
+        }
+      );
+
+    }
+
+
+    if (
+      completedTaskIds.length ===
+      0
     ) {
 
       return NextResponse.json(
@@ -460,7 +714,8 @@ export async function POST(
             "Completed tasks are required before generating the next stage.",
         },
         {
-          status: 400,
+          status:
+            400,
         }
       );
 
@@ -468,14 +723,19 @@ export async function POST(
 
 
     /*
-     * ==========================================================
+     * ========================================================
      * DEVELOPMENT LOG
-     * ==========================================================
+     * ========================================================
+     *
+     * Do not log the full family profile or AI question content.
      */
 
     console.log(
       "Generating next journey stage:",
       {
+        uid:
+          authenticatedUser.uid,
+
         priority:
           familyProfile.priority,
 
@@ -484,16 +744,14 @@ export async function POST(
 
         completedTaskCount:
           completedTaskIds.length,
-
-        completedTaskIds,
       }
     );
 
 
     /*
-     * ==========================================================
+     * ========================================================
      * SYSTEM PROMPT
-     * ==========================================================
+     * ========================================================
      */
 
     const systemPrompt = `
@@ -704,9 +962,9 @@ Return ONLY the requested structured JSON.
 
 
     /*
-     * ==========================================================
+     * ========================================================
      * USER PROMPT
-     * ==========================================================
+     * ========================================================
      */
 
     const userPrompt = `
@@ -735,7 +993,7 @@ ${JSON.stringify(
 )}
 
 ============================================================
-ORIGINAL JOURNEY
+CURRENT JOURNEY
 ============================================================
 
 ${JSON.stringify(
@@ -768,7 +1026,7 @@ ${JSON.stringify(
 PROGRESSION QUESTION
 ============================================================
 
-Based on the family's original priority, their original journey,
+Based on the family's original priority, their current journey,
 and what they have already completed:
 
 What is the most useful next stage?
@@ -786,9 +1044,9 @@ The new stage should:
 
 
     /*
-     * ==========================================================
+     * ========================================================
      * OPENAI REQUEST
-     * ==========================================================
+     * ========================================================
      */
 
     const openAIResponse =
@@ -853,9 +1111,9 @@ The new stage should:
 
 
     /*
-     * ==========================================================
+     * ========================================================
      * OPENAI ERROR
-     * ==========================================================
+     * ========================================================
      */
 
     if (
@@ -880,19 +1138,14 @@ The new stage should:
 
 
     /*
-     * ==========================================================
+     * ========================================================
      * PARSE RESPONSE
-     * ==========================================================
+     * ========================================================
      */
 
     const response =
       await openAIResponse.json();
 
-
-    /*
-     * The Responses API returns output text through the
-     * response output content.
-     */
 
     let responseText =
       "";
@@ -911,7 +1164,7 @@ The new stage should:
 
         if (
           outputItem?.type ===
-          "message" &&
+            "message" &&
           Array.isArray(
             outputItem?.content
           )
@@ -924,7 +1177,7 @@ The new stage should:
 
             if (
               contentItem?.type ===
-              "output_text" &&
+                "output_text" &&
               typeof contentItem.text ===
                 "string"
             ) {
@@ -955,9 +1208,9 @@ The new stage should:
 
 
     /*
-     * ==========================================================
+     * ========================================================
      * PARSE JOURNEY
-     * ==========================================================
+     * ========================================================
      */
 
     let nextJourney:
@@ -978,6 +1231,7 @@ The new stage should:
         error
       );
 
+
       console.error(
         "Raw next journey response:",
         responseText
@@ -992,11 +1246,9 @@ The new stage should:
 
 
     /*
-     * ==========================================================
+     * ========================================================
      * FORCE NEW TASKS TO START INCOMPLETE
-     * ==========================================================
-     *
-     * Completion belongs to the application, not the AI.
+     * ========================================================
      */
 
     nextJourney = {
@@ -1006,6 +1258,7 @@ The new stage should:
         nextJourney.tasks.map(
           (task) => ({
             ...task,
+
             completed:
               false,
           })
@@ -1014,12 +1267,9 @@ The new stage should:
 
 
     /*
-     * ==========================================================
+     * ========================================================
      * FINAL APPLICATION VALIDATION
-     * ==========================================================
-     *
-     * Reuse the existing intent validation so the second AI
-     * pass is still checked against the family's stated priority.
+     * ========================================================
      */
 
     const validatedJourney =
@@ -1030,35 +1280,38 @@ The new stage should:
 
 
     /*
-     * ==========================================================
+     * ========================================================
      * FINAL TASK SAFETY
-     * ==========================================================
+     * ========================================================
      */
 
-    const finalJourney =
-      {
-        ...validatedJourney,
+    const finalJourney = {
+      ...validatedJourney,
 
-        tasks:
-          validatedJourney.tasks.map(
-            (task) => ({
-              ...task,
-              completed:
-                false,
-            })
-          ),
-      };
+      tasks:
+        validatedJourney.tasks.map(
+          (task) => ({
+            ...task,
+
+            completed:
+              false,
+          })
+        ),
+    };
 
 
     /*
-     * ==========================================================
+     * ========================================================
      * FINAL DEBUG INFORMATION
-     * ==========================================================
+     * ========================================================
      */
 
     console.log(
       "Next personalized journey created:",
       {
+        uid:
+          authenticatedUser.uid,
+
         priority:
           familyProfile.priority,
 
@@ -1095,9 +1348,9 @@ The new stage should:
 
 
     /*
-     * ==========================================================
+     * ========================================================
      * RETURN
-     * ==========================================================
+     * ========================================================
      */
 
     return NextResponse.json(
@@ -1120,12 +1373,13 @@ The new stage should:
       }
     );
 
+
   } catch (error) {
 
     /*
-     * ==========================================================
+     * ========================================================
      * ERROR HANDLING
-     * ==========================================================
+     * ========================================================
      */
 
     console.error(
@@ -1133,6 +1387,11 @@ The new stage should:
       error
     );
 
+
+    /*
+     * Authentication failures should be handled above as 401.
+     * Any remaining unexpected error is a server error.
+     */
 
     return NextResponse.json(
       {
