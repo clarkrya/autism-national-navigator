@@ -97,9 +97,6 @@ function formatResourceType(
     case "support":
       return "Support";
 
-    case "video":
-      return "Video";
-
     default:
       return "Resource";
   }
@@ -113,9 +110,30 @@ function formatResourceType(
  */
 
 export default function JourneyDashboard({
-  personalizedJourney,
+  personalizedJourney: initialJourney,
   familyProfile,
 }: JourneyDashboardProps) {
+
+  /*
+   * ----------------------------------------------------------
+   * JOURNEY STATE
+   * ----------------------------------------------------------
+   *
+   * This is the currently active journey stage.
+   *
+   * It begins with the AI's original journey.
+   *
+   * When What's Next is used, this state is replaced with
+   * the newly generated next stage.
+   */
+
+  const [
+    personalizedJourney,
+    setPersonalizedJourney,
+  ] = useState<PersonalizedJourney>(
+    initialJourney
+  );
+
 
   /*
    * ----------------------------------------------------------
@@ -123,10 +141,12 @@ export default function JourneyDashboard({
    * ----------------------------------------------------------
    */
 
-  const [tasks, setTasks] =
-    useState<Task[]>(
-      personalizedJourney.tasks || []
-    );
+  const [
+    tasks,
+    setTasks,
+  ] = useState<Task[]>(
+    initialJourney.tasks || []
+  );
 
 
   /*
@@ -175,11 +195,25 @@ export default function JourneyDashboard({
 
   /*
    * ----------------------------------------------------------
+   * NEXT JOURNEY STATE
+   * ----------------------------------------------------------
+   */
+
+  const [
+    generatingNextJourney,
+    setGeneratingNextJourney,
+  ] = useState(false);
+
+  const [
+    nextJourneyError,
+    setNextJourneyError,
+  ] = useState("");
+
+
+  /*
+   * ----------------------------------------------------------
    * AUTH STATE LISTENER
    * ----------------------------------------------------------
-   *
-   * Keeps the completed journey page aware of whether the
-   * family is currently logged in.
    */
 
   useEffect(() => {
@@ -194,6 +228,7 @@ export default function JourneyDashboard({
 
         }
       );
+
 
     return () => {
       unsubscribe();
@@ -235,8 +270,25 @@ export default function JourneyDashboard({
 
   /*
    * ----------------------------------------------------------
-   * TOGGLE TASK
+   * ALL TASKS COMPLETED
    * ----------------------------------------------------------
+   *
+   * This is the only condition that unlocks the
+   * What's Next button.
+   */
+
+  const allTasksCompleted =
+    tasks.length > 0 &&
+    tasks.every(
+      (task) =>
+        task.completed
+    );
+
+
+  /*
+   * ==========================================================
+   * TOGGLE TASK
+   * ==========================================================
    */
 
   function toggleTask(
@@ -257,6 +309,13 @@ export default function JourneyDashboard({
         )
     );
 
+    /*
+     * Clear any previous next-stage error if the family
+     * changes task completion status again.
+     */
+
+    setNextJourneyError("");
+
   }
 
 
@@ -264,19 +323,11 @@ export default function JourneyDashboard({
    * ==========================================================
    * SAVE JOURNEY
    * ==========================================================
-   *
-   * Logged in:
-   *     Save directly to Firestore.
-   *
-   * Logged out:
-   *     Save temporarily and show account options.
-   * ==========================================================
    */
 
   async function handleSaveJourney() {
 
     setSaveMessage("");
-
     setSaveError("");
 
 
@@ -286,7 +337,7 @@ export default function JourneyDashboard({
 
     /*
      * --------------------------------------------------------
-     * NOT LOGGED IN
+     * GUEST USER
      * --------------------------------------------------------
      */
 
@@ -312,7 +363,7 @@ export default function JourneyDashboard({
 
     /*
      * --------------------------------------------------------
-     * LOGGED IN
+     * LOGGED-IN USER
      * --------------------------------------------------------
      */
 
@@ -379,6 +430,284 @@ export default function JourneyDashboard({
       setSavingJourney(false);
 
     }
+
+  }
+
+
+  /*
+   * ==========================================================
+   * GENERATE NEXT JOURNEY
+   * ==========================================================
+   *
+   * This is the new progression engine.
+   *
+   * The AI receives:
+   *
+   * 1. Original family profile
+   * 2. Current journey
+   * 3. Completed task IDs
+   * 4. Completed task details
+   *
+   * It then determines what should come next.
+   */
+
+  async function handleShowNextJourney() {
+
+    if (
+      !allTasksCompleted ||
+      generatingNextJourney
+    ) {
+      return;
+    }
+
+
+    setGeneratingNextJourney(
+      true
+    );
+
+    setNextJourneyError("");
+
+
+    try {
+
+      /*
+       * --------------------------------------------------------
+       * GET COMPLETED TASK INFORMATION
+       * --------------------------------------------------------
+       */
+
+      const completedTaskIds =
+        tasks
+          .filter(
+            (task) =>
+              task.completed
+          )
+          .map(
+            (task) =>
+              task.id
+          );
+
+
+      const completedTaskDetails =
+        tasks.filter(
+          (task) =>
+            task.completed
+        );
+
+
+      /*
+       * --------------------------------------------------------
+       * CURRENT JOURNEY SNAPSHOT
+       * --------------------------------------------------------
+       *
+       * Make sure the API receives the latest task state,
+       * including completion.
+       */
+
+      const currentJourney = {
+        ...personalizedJourney,
+
+        tasks,
+      };
+
+
+      /*
+       * --------------------------------------------------------
+       * CALL NEXT-JOURNEY API
+       * --------------------------------------------------------
+       */
+
+      const response =
+        await fetch(
+          "/api/journey/next",
+          {
+            method:
+              "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body:
+              JSON.stringify({
+                familyProfile,
+
+                currentJourney,
+
+                completedTaskIds,
+
+                completedTasks:
+                  completedTaskDetails,
+              }),
+          }
+        );
+
+
+      const data =
+        await response.json();
+
+
+      /*
+       * --------------------------------------------------------
+       * API ERROR
+       * --------------------------------------------------------
+       */
+
+      if (!response.ok) {
+
+        throw new Error(
+          data?.error ||
+            "Unable to create the next stage of your journey."
+        );
+
+      }
+
+
+      if (
+        !data?.journey
+      ) {
+
+        throw new Error(
+          "The next stage of your journey was not returned."
+        );
+
+      }
+
+
+      const nextJourney =
+        data.journey as PersonalizedJourney;
+
+
+      /*
+       * --------------------------------------------------------
+       * UPDATE JOURNEY
+       * --------------------------------------------------------
+       *
+       * Replace the current stage with the new stage.
+       *
+       * The new AI stage arrives with all tasks incomplete.
+       */
+
+      setPersonalizedJourney(
+        nextJourney
+      );
+
+
+      setTasks(
+        nextJourney.tasks || []
+      );
+
+
+      /*
+       * --------------------------------------------------------
+       * SAVE PROGRESSION
+       * --------------------------------------------------------
+       *
+       * Logged-in family:
+       *     Save the new stage directly to Firestore.
+       *
+       * Guest family:
+       *     Keep the latest stage temporarily so it can
+       *     still be saved after account creation/login.
+       */
+
+      const currentUser =
+        getCurrentUser();
+
+
+      if (
+        currentUser
+      ) {
+
+        const journeyRef =
+          doc(
+            db,
+            "users",
+            currentUser.uid,
+            "journeys",
+            "current"
+          );
+
+
+        await setDoc(
+          journeyRef,
+          {
+            familyProfile,
+
+            journey: {
+              ...nextJourney,
+
+              tasks:
+                nextJourney.tasks ||
+                [],
+            },
+
+            updatedAt:
+              Date.now(),
+
+            createdBy:
+              currentUser.uid,
+
+            previousCompletedTaskIds:
+              completedTaskIds,
+
+            journeyReason:
+              "tasks_completed",
+          },
+          {
+            merge: true,
+          }
+        );
+
+
+        setSaveMessage(
+          "Your next journey stage has been saved."
+        );
+
+      } else {
+
+        /*
+         * Guest:
+         * preserve the latest journey temporarily.
+         */
+
+        savePendingJourney(
+          familyProfile,
+
+          {
+            ...nextJourney,
+
+            tasks:
+              nextJourney.tasks ||
+              [],
+          }
+        );
+
+      }
+
+    } catch (error) {
+
+      console.error(
+        "Unable to generate next journey:",
+        error
+      );
+
+
+      setNextJourneyError(
+        error instanceof Error
+          ? error.message
+          : "We couldn't create the next stage of your journey. Please try again."
+      );
+
+    } finally {
+
+      setGeneratingNextJourney(
+        false
+      );
+
+    }
+
   }
 
 
@@ -386,8 +715,6 @@ export default function JourneyDashboard({
    * ==========================================================
    * LOG OUT
    * ==========================================================
-   *
-   * Logging out does NOT delete the saved journey.
    */
 
   async function handleLogout() {
@@ -399,10 +726,6 @@ export default function JourneyDashboard({
 
       await signOut(auth);
 
-
-      /*
-       * Return to the home page after sign out.
-       */
 
       window.location.href =
         "/";
@@ -418,13 +741,21 @@ export default function JourneyDashboard({
       setLoggingOut(false);
 
     }
+
   }
 
 
   /*
-   * ============================================================
-   * ACTIONS
-   * ============================================================
+   * ==========================================================
+   * CURRENT ACTION
+   * ==========================================================
+   *
+   * We continue displaying the first AI action.
+   *
+   * IMPORTANT:
+   *
+   * The separate "What's Next" action cards are NOT shown
+   * anymore. The next-stage AI engine controls what comes next.
    */
 
   const actions =
@@ -436,26 +767,6 @@ export default function JourneyDashboard({
     actions.length > 0
       ? actions[0]
       : null;
-
-
-  const additionalActions =
-    actions.length > 1
-      ? actions.slice(1, 3)
-      : [];
-
-
-  /*
-   * ============================================================
-   * ALL TASKS COMPLETE
-   * ============================================================
-   */
-
-  const allTasksCompleted =
-    tasks.length > 0 &&
-    tasks.every(
-      (task) =>
-        task.completed
-    );
 
 
   return (
@@ -729,6 +1040,7 @@ export default function JourneyDashboard({
                     key={
                       support
                     }
+
                     style={{
                       padding:
                         "7px 12px",
@@ -1210,12 +1522,16 @@ export default function JourneyDashboard({
               />
 
 
-              <GuidanceBlock
-                label="Then"
-                text={
-                  primaryAction.nextStep
-                }
-              />
+              {primaryAction.nextStep && (
+
+                <GuidanceBlock
+                  label="Then"
+                  text={
+                    primaryAction.nextStep
+                  }
+                />
+
+              )}
 
             </div>
 
@@ -1253,181 +1569,11 @@ export default function JourneyDashboard({
 
 
       {/* =====================================================
-          WHAT'S NEXT
-      ====================================================== */}
-
-      {additionalActions.length >
-        0 && (
-
-        <section
-          style={{
-            marginBottom:
-              "42px",
-          }}
-        >
-
-          <SectionHeading
-            eyebrow="What's Next"
-            title="A few more steps when you're ready"
-            description="You don't need to do everything at once."
-          />
-
-
-          <div
-            style={{
-              display:
-                "grid",
-
-              gridTemplateColumns:
-                "repeat(auto-fit, minmax(280px, 1fr))",
-
-              gap:
-                "18px",
-
-              marginTop:
-                "22px",
-            }}
-          >
-
-            {additionalActions.map(
-              (action) => (
-
-                <div
-                  key={
-                    action.id
-                  }
-                  style={{
-                    padding:
-                      "23px",
-
-                    borderRadius:
-                      "18px",
-
-                    border:
-                      "1px solid #E2E8F0",
-
-                    background:
-                      "#FFFFFF",
-                  }}
-                >
-
-                  <div
-                    style={{
-                      color:
-                        "#2563EB",
-
-                      fontSize:
-                        "11px",
-
-                      fontWeight:
-                        800,
-
-                      textTransform:
-                        "uppercase",
-
-                      letterSpacing:
-                        "0.04em",
-
-                      marginBottom:
-                        "10px",
-                    }}
-                  >
-                    {
-                      action.priority
-                    }{" "}
-                    Priority
-                  </div>
-
-
-                  <h3
-                    style={{
-                      margin:
-                        0,
-
-                      color:
-                        "#0F172A",
-
-                      fontSize:
-                        "19px",
-
-                      lineHeight:
-                        1.35,
-                    }}
-                  >
-                    {
-                      action.title
-                    }
-                  </h3>
-
-
-                  <p
-                    style={{
-                      margin:
-                        "10px 0 0",
-
-                      color:
-                        "#64748B",
-
-                      lineHeight:
-                        1.6,
-
-                      fontSize:
-                        "15px",
-                    }}
-                  >
-                    {
-                      action
-                        .whyItMatters
-                    }
-                  </p>
-
-
-                  <div
-                    style={{
-                      marginTop:
-                        "14px",
-
-                      paddingTop:
-                        "14px",
-
-                      borderTop:
-                        "1px solid #E2E8F0",
-
-                      color:
-                        "#475569",
-
-                      fontSize:
-                        "14px",
-
-                      lineHeight:
-                        1.55,
-                    }}
-                  >
-                    <strong>
-                      Next:
-                    </strong>{" "}
-                    {
-                      action.nextStep
-                    }
-                  </div>
-
-                </div>
-
-              )
-            )}
-
-          </div>
-
-        </section>
-
-      )}
-
-
-      {/* =====================================================
           RESOURCES
       ====================================================== */}
 
-      {personalizedJourney.resources?.length >
+      {personalizedJourney
+        .resources?.length >
         0 && (
 
         <section
@@ -1470,6 +1616,7 @@ export default function JourneyDashboard({
                       key={
                         resource.id
                       }
+
                       resource={
                         resource
                       }
@@ -1561,12 +1708,15 @@ export default function JourneyDashboard({
 
           <button
             type="button"
+
             onClick={
               handleSaveJourney
             }
+
             disabled={
               savingJourney
             }
+
             style={{
               padding:
                 "13px 22px",
@@ -1704,6 +1854,7 @@ export default function JourneyDashboard({
 
                 <Link
                   href="/login"
+
                   style={{
                     padding:
                       "10px 18px",
@@ -1733,6 +1884,7 @@ export default function JourneyDashboard({
 
                 <Link
                   href="/signup"
+
                   style={{
                     padding:
                       "10px 18px",
@@ -1864,12 +2016,15 @@ export default function JourneyDashboard({
 
             <button
               type="button"
+
               onClick={
                 handleLogout
               }
+
               disabled={
                 loggingOut
               }
+
               style={{
                 padding:
                   "10px 18px",
@@ -1926,7 +2081,7 @@ export default function JourneyDashboard({
         <SectionHeading
           eyebrow="Your Progress"
           title="Keep moving at your own pace"
-          description="Start with the most important action. You can work through the rest when you're ready."
+          description="Complete the suggested tasks to unlock your next stage."
         />
 
 
@@ -2066,6 +2221,10 @@ export default function JourneyDashboard({
         </div>
 
 
+        {/* ===================================================
+            NEXT STAGE UNLOCK
+        ==================================================== */}
+
         {allTasksCompleted && (
 
           <div
@@ -2074,7 +2233,7 @@ export default function JourneyDashboard({
                 "22px",
 
               padding:
-                "24px",
+                "26px",
 
               borderRadius:
                 "18px",
@@ -2084,8 +2243,24 @@ export default function JourneyDashboard({
 
               border:
                 "1px solid #A7F3D0",
+
+              textAlign:
+                "center",
             }}
           >
+
+            <div
+              style={{
+                fontSize:
+                  "28px",
+
+                marginBottom:
+                  "8px",
+              }}
+            >
+              🎉
+            </div>
+
 
             <h3
               style={{
@@ -2096,7 +2271,7 @@ export default function JourneyDashboard({
                   "#065F46",
 
                 fontSize:
-                  "20px",
+                  "22px",
               }}
             >
               You've completed your
@@ -2113,42 +2288,111 @@ export default function JourneyDashboard({
                   1.6,
 
                 margin:
-                  "8px 0 18px",
+                  "9px auto 18px",
+
+                maxWidth:
+                  "650px",
               }}
             >
-              Your journey is ready to
-              be reassessed so we can
-              determine what should
-              come next.
+              Great work. Now let's use what
+              you've accomplished to determine
+              what should come next in your
+              journey.
             </p>
+
+
+            {nextJourneyError && (
+
+              <div
+                role="alert"
+
+                style={{
+                  margin:
+                    "0 auto 16px",
+
+                  maxWidth:
+                    "650px",
+
+                  padding:
+                    "12px 14px",
+
+                  borderRadius:
+                    "10px",
+
+                  background:
+                    "#FEF2F2",
+
+                  border:
+                    "1px solid #FECACA",
+
+                  color:
+                    "#B91C1C",
+
+                  fontSize:
+                    "14px",
+
+                  lineHeight:
+                    1.5,
+
+                  textAlign:
+                    "left",
+                }}
+              >
+                {nextJourneyError}
+              </div>
+
+            )}
 
 
             <button
               type="button"
+
+              onClick={
+                handleShowNextJourney
+              }
+
+              disabled={
+                generatingNextJourney
+              }
+
               style={{
                 padding:
-                  "11px 18px",
+                  "13px 22px",
 
                 borderRadius:
-                  "9px",
+                  "10px",
 
                 border:
                   "none",
 
                 background:
-                  "#059669",
+                  generatingNextJourney
+                    ? "#6EE7B7"
+                    : "#059669",
 
                 color:
                   "#FFFFFF",
 
+                fontSize:
+                  "15px",
+
                 fontWeight:
-                  700,
+                  800,
 
                 cursor:
-                  "pointer",
+                  generatingNextJourney
+                    ? "default"
+                    : "pointer",
+
+                minWidth:
+                  "210px",
               }}
             >
-              Show Me What's Next →
+              {
+                generatingNextJourney
+                  ? "Building What's Next..."
+                  : "Show Me What's Next →"
+              }
             </button>
 
           </div>
@@ -2712,7 +2956,8 @@ function TaskCard({
 
       <div
         style={{
-          flex: 1,
+          flex:
+            1,
         }}
       >
 
