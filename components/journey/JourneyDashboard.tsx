@@ -1,6 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
+
+import { doc, setDoc } from "firebase/firestore";
 
 import type { FamilyProfile } from "../../types/familyProfile";
 
@@ -12,18 +15,28 @@ import type {
 
 import type { Task } from "../../lib/journeyEngine";
 
+import { db } from "../../lib/firebase";
+import { getCurrentUser } from "../../lib/auth";
+import { savePendingJourney } from "../../lib/journeyStorage";
+
+
 interface JourneyDashboardProps {
   personalizedJourney: PersonalizedJourney;
   familyProfile: FamilyProfile;
 }
 
+
 /*
- * Format questionnaire values for display only.
+ * ============================================================
+ * FORMAT QUESTIONNAIRE VALUES
+ * ============================================================
+ *
+ * Format values for display only.
  *
  * This does NOT change the underlying values sent
- * to the AI. It only makes the dashboard easier
- * for families to read.
+ * to the AI.
  */
+
 function formatDisplayValue(value: string) {
   if (!value) return "";
 
@@ -34,10 +47,16 @@ function formatDisplayValue(value: string) {
     );
 }
 
+
 /*
- * Convert a resource type into a parent-friendly label.
+ * ============================================================
+ * FORMAT RESOURCE TYPE
+ * ============================================================
  */
-function formatResourceType(type: AIResource["type"]) {
+
+function formatResourceType(
+  type: AIResource["type"]
+) {
   switch (type) {
     case "grant":
       return "Grant";
@@ -68,19 +87,60 @@ function formatResourceType(type: AIResource["type"]) {
   }
 }
 
+
+/*
+ * ============================================================
+ * JOURNEY DASHBOARD
+ * ============================================================
+ */
+
 export default function JourneyDashboard({
   personalizedJourney,
   familyProfile,
 }: JourneyDashboardProps) {
+
+  /*
+   * ----------------------------------------------------------
+   * TASK STATE
+   * ----------------------------------------------------------
+   */
+
   const [tasks, setTasks] = useState<Task[]>(
     personalizedJourney.tasks || []
   );
 
+
   /*
-   * Calculate task progress.
+   * ----------------------------------------------------------
+   * SAVE STATE
+   * ----------------------------------------------------------
    */
+
+  const [savingJourney, setSavingJourney] =
+    useState(false);
+
+  const [saveMessage, setSaveMessage] =
+    useState("");
+
+  const [saveError, setSaveError] =
+    useState("");
+
+  const [
+    showSaveAccountPrompt,
+    setShowSaveAccountPrompt,
+  ] = useState(false);
+
+
+  /*
+   * ----------------------------------------------------------
+   * TASK PROGRESS
+   * ----------------------------------------------------------
+   */
+
   const completedTasks = useMemo(() => {
-    return tasks.filter((task) => task.completed).length;
+    return tasks.filter(
+      (task) => task.completed
+    ).length;
   }, [tasks]);
 
   const totalTasks = tasks.length;
@@ -92,12 +152,18 @@ export default function JourneyDashboard({
         )
       : 0;
 
+
   /*
-   * Toggle a task.
+   * ----------------------------------------------------------
+   * TOGGLE TASK
+   * ----------------------------------------------------------
    *
    * This currently updates the dashboard locally.
-   * Persistence will be added in a later sprint.
+   *
+   * Persistence is handled when the family saves
+   * the journey.
    */
+
   function toggleTask(taskId: string) {
     setTasks((currentTasks) =>
       currentTasks.map((task) =>
@@ -111,17 +177,130 @@ export default function JourneyDashboard({
     );
   }
 
-  const allTasksCompleted =
-    tasks.length > 0 &&
-    tasks.every((task) => task.completed);
 
   /*
-   * The AI now returns actionable guidance.
+   * ----------------------------------------------------------
+   * SAVE JOURNEY
+   * ----------------------------------------------------------
+   *
+   * If the family is logged in:
+   *
+   *     Save directly to Firestore.
+   *
+   * If the family is NOT logged in:
+   *
+   *     Temporarily save the journey in sessionStorage
+   *     and display Login / Create Account options.
+   *
+   * The authentication handoff will be completed in
+   * the next step.
+   */
+
+  async function handleSaveJourney() {
+    setSaveMessage("");
+    setSaveError("");
+
+    const currentUser =
+      getCurrentUser();
+
+
+    /*
+     * --------------------------------------------------------
+     * NOT LOGGED IN
+     * --------------------------------------------------------
+     */
+
+    if (!currentUser) {
+
+      savePendingJourney(
+        familyProfile,
+        {
+          ...personalizedJourney,
+          tasks,
+        }
+      );
+
+      setShowSaveAccountPrompt(true);
+
+      return;
+    }
+
+
+    /*
+     * --------------------------------------------------------
+     * LOGGED IN
+     * --------------------------------------------------------
+     */
+
+    setSavingJourney(true);
+
+    try {
+
+      const journeyRef = doc(
+        db,
+        "users",
+        currentUser.uid,
+        "journeys",
+        "current"
+      );
+
+
+      await setDoc(
+        journeyRef,
+        {
+          familyProfile,
+
+          journey: {
+            ...personalizedJourney,
+            tasks,
+          },
+
+          updatedAt: Date.now(),
+
+          createdBy:
+            currentUser.uid,
+        },
+        {
+          merge: true,
+        }
+      );
+
+
+      setSaveMessage(
+        "Your journey has been saved."
+      );
+
+    } catch (error) {
+
+      console.error(
+        "Unable to save journey:",
+        error
+      );
+
+      setSaveError(
+        "We couldn't save your journey right now. Please try again."
+      );
+
+    } finally {
+
+      setSavingJourney(false);
+
+    }
+  }
+
+
+  /*
+   * ----------------------------------------------------------
+   * ACTIONS
+   * ----------------------------------------------------------
+   *
+   * The AI returns actionable guidance.
    *
    * We intentionally show only a small number
    * of actions on the main dashboard so the
    * family is not overwhelmed.
    */
+
   const actions =
     personalizedJourney.actions || [];
 
@@ -135,6 +314,20 @@ export default function JourneyDashboard({
       ? actions.slice(1, 3)
       : [];
 
+
+  /*
+   * ----------------------------------------------------------
+   * ALL TASKS COMPLETE
+   * ----------------------------------------------------------
+   */
+
+  const allTasksCompleted =
+    tasks.length > 0 &&
+    tasks.every(
+      (task) => task.completed
+    );
+
+
   return (
     <main
       style={{
@@ -143,6 +336,7 @@ export default function JourneyDashboard({
         padding: "56px 24px 90px",
       }}
     >
+
       {/* =====================================================
           HEADER
       ====================================================== */}
@@ -152,6 +346,7 @@ export default function JourneyDashboard({
           marginBottom: "34px",
         }}
       >
+
         <div
           style={{
             color: "#2563EB",
@@ -164,6 +359,7 @@ export default function JourneyDashboard({
         >
           Your Personalized Journey
         </div>
+
 
         <h1
           style={{
@@ -180,6 +376,7 @@ export default function JourneyDashboard({
             : "Your Personalized Journey"}
         </h1>
 
+
         <p
           style={{
             marginTop: "16px",
@@ -194,7 +391,9 @@ export default function JourneyDashboard({
           identified where we'd recommend
           starting.
         </p>
+
       </section>
+
 
       {/* =====================================================
           FAMILY SNAPSHOT
@@ -209,6 +408,7 @@ export default function JourneyDashboard({
           marginBottom: "30px",
         }}
       >
+
         <div
           style={{
             color: "#2563EB",
@@ -222,6 +422,7 @@ export default function JourneyDashboard({
           Your Family Snapshot
         </div>
 
+
         <div
           style={{
             display: "grid",
@@ -230,6 +431,7 @@ export default function JourneyDashboard({
             gap: "20px",
           }}
         >
+
           <SnapshotItem
             label="Age"
             value={
@@ -238,6 +440,7 @@ export default function JourneyDashboard({
                 : "Not provided"
             }
           />
+
 
           <SnapshotItem
             label="Location"
@@ -250,6 +453,7 @@ export default function JourneyDashboard({
             }
           />
 
+
           <SnapshotItem
             label="Journey Stage"
             value={
@@ -261,6 +465,7 @@ export default function JourneyDashboard({
             }
           />
 
+
           <SnapshotItem
             label="Insurance"
             value={
@@ -271,7 +476,9 @@ export default function JourneyDashboard({
                 : "Not provided"
             }
           />
+
         </div>
+
 
         {familyProfile.supports.length > 0 && (
           <div
@@ -282,6 +489,7 @@ export default function JourneyDashboard({
                 "1px solid #E2E8F0",
             }}
           >
+
             <div
               style={{
                 fontSize: "13px",
@@ -293,6 +501,7 @@ export default function JourneyDashboard({
               Current Supports
             </div>
 
+
             <div
               style={{
                 display: "flex",
@@ -300,6 +509,7 @@ export default function JourneyDashboard({
                 gap: "7px",
               }}
             >
+
               {familyProfile.supports.map(
                 (support) => (
                   <span
@@ -324,9 +534,12 @@ export default function JourneyDashboard({
                   </span>
                 )
               )}
+
             </div>
+
           </div>
         )}
+
 
         {familyProfile.priority && (
           <div
@@ -334,6 +547,7 @@ export default function JourneyDashboard({
               marginTop: "20px",
             }}
           >
+
             <div
               style={{
                 fontSize: "13px",
@@ -344,6 +558,7 @@ export default function JourneyDashboard({
             >
               Top Priority
             </div>
+
 
             <div
               style={{
@@ -356,9 +571,12 @@ export default function JourneyDashboard({
                 familyProfile.priority
               )}
             </div>
+
           </div>
         )}
+
       </section>
+
 
       {/* =====================================================
           START HERE
@@ -369,6 +587,7 @@ export default function JourneyDashboard({
           marginBottom: "32px",
         }}
       >
+
         <div
           style={{
             borderRadius: "22px",
@@ -381,6 +600,7 @@ export default function JourneyDashboard({
               "0 10px 26px rgba(15, 23, 42, 0.06)",
           }}
         >
+
           <div
             style={{
               display: "flex",
@@ -389,6 +609,7 @@ export default function JourneyDashboard({
               marginBottom: "12px",
             }}
           >
+
             <span
               style={{
                 display: "inline-flex",
@@ -406,6 +627,7 @@ export default function JourneyDashboard({
               1
             </span>
 
+
             <span
               style={{
                 color: "#2563EB",
@@ -419,7 +641,9 @@ export default function JourneyDashboard({
             >
               Start Here
             </span>
+
           </div>
+
 
           <h2
             style={{
@@ -435,6 +659,7 @@ export default function JourneyDashboard({
                 .currentFocus.title
             }
           </h2>
+
 
           <p
             style={{
@@ -453,6 +678,7 @@ export default function JourneyDashboard({
             }
           </p>
 
+
           {personalizedJourney
             .nextStep && (
             <div
@@ -463,6 +689,7 @@ export default function JourneyDashboard({
                   "1px solid #BFDBFE",
               }}
             >
+
               <div
                 style={{
                   fontSize: "12px",
@@ -479,6 +706,7 @@ export default function JourneyDashboard({
                 Your Next Best Step
               </div>
 
+
               <div
                 style={{
                   fontSize: "19px",
@@ -491,6 +719,7 @@ export default function JourneyDashboard({
                     .nextStep.title
                 }
               </div>
+
 
               <p
                 style={{
@@ -508,10 +737,14 @@ export default function JourneyDashboard({
                     .description
                 }
               </p>
+
             </div>
           )}
+
         </div>
+
       </section>
+
 
       {/* =====================================================
           HOW TO DO IT
@@ -523,11 +756,13 @@ export default function JourneyDashboard({
             marginBottom: "36px",
           }}
         >
+
           <SectionHeading
             eyebrow="How to Do It"
             title="Your first action"
             description="Here's a practical way to get started."
           />
+
 
           <div
             style={{
@@ -541,6 +776,7 @@ export default function JourneyDashboard({
                 "0 6px 18px rgba(15, 23, 42, 0.04)",
             }}
           >
+
             <div
               style={{
                 display: "inline-flex",
@@ -563,6 +799,7 @@ export default function JourneyDashboard({
               {primaryAction.priority} Priority
             </div>
 
+
             <h3
               style={{
                 margin: 0,
@@ -574,6 +811,7 @@ export default function JourneyDashboard({
               {primaryAction.title}
             </h3>
 
+
             <div
               style={{
                 display: "grid",
@@ -581,12 +819,14 @@ export default function JourneyDashboard({
                 marginTop: "20px",
               }}
             >
+
               <GuidanceBlock
                 label="Why it matters"
                 text={
                   primaryAction.whyItMatters
                 }
               />
+
 
               <GuidanceBlock
                 label="What to do"
@@ -595,6 +835,7 @@ export default function JourneyDashboard({
                 }
               />
 
+
               <GuidanceBlock
                 label="How to do it"
                 text={
@@ -602,13 +843,16 @@ export default function JourneyDashboard({
                 }
               />
 
+
               <GuidanceBlock
                 label="Then"
                 text={
                   primaryAction.nextStep
                 }
               />
+
             </div>
+
 
             <div
               style={{
@@ -625,9 +869,12 @@ export default function JourneyDashboard({
                 primaryAction.estimatedTime
               }
             </div>
+
           </div>
+
         </section>
       )}
+
 
       {/* =====================================================
           WHAT'S NEXT
@@ -639,11 +886,13 @@ export default function JourneyDashboard({
             marginBottom: "42px",
           }}
         >
+
           <SectionHeading
             eyebrow="What's Next"
             title="A few more steps when you're ready"
             description="You don't need to do everything at once."
           />
+
 
           <div
             style={{
@@ -654,6 +903,7 @@ export default function JourneyDashboard({
               marginTop: "22px",
             }}
           >
+
             {additionalActions.map(
               (action) => (
                 <div
@@ -667,6 +917,7 @@ export default function JourneyDashboard({
                       "#FFFFFF",
                   }}
                 >
+
                   <div
                     style={{
                       color: "#2563EB",
@@ -683,6 +934,7 @@ export default function JourneyDashboard({
                     {action.priority} Priority
                   </div>
 
+
                   <h3
                     style={{
                       margin: 0,
@@ -693,6 +945,7 @@ export default function JourneyDashboard({
                   >
                     {action.title}
                   </h3>
+
 
                   <p
                     style={{
@@ -707,6 +960,7 @@ export default function JourneyDashboard({
                       action.whyItMatters
                     }
                   </p>
+
 
                   <div
                     style={{
@@ -728,12 +982,16 @@ export default function JourneyDashboard({
                       action.nextStep
                     }
                   </div>
+
                 </div>
               )
             )}
+
           </div>
+
         </section>
       )}
+
 
       {/* =====================================================
           RESOURCES
@@ -746,11 +1004,13 @@ export default function JourneyDashboard({
             marginBottom: "48px",
           }}
         >
+
           <SectionHeading
             eyebrow="Resources"
             title="Resources selected for you"
             description="These resources were selected based on your family's situation and priorities."
           />
+
 
           <div
             style={{
@@ -761,6 +1021,7 @@ export default function JourneyDashboard({
               marginTop: "22px",
             }}
           >
+
             {personalizedJourney.resources.map(
               (resource) => (
                 <ResourceCard
@@ -769,9 +1030,190 @@ export default function JourneyDashboard({
                 />
               )
             )}
+
           </div>
+
         </section>
       )}
+
+
+      {/* =====================================================
+          SAVE JOURNEY
+      ====================================================== */}
+
+      <section
+        style={{
+          marginBottom: "35px",
+        }}
+      >
+
+        <div
+          style={{
+            padding: "26px",
+            borderRadius: "20px",
+            border: "1px solid #BFDBFE",
+            background: "#EFF6FF",
+            textAlign: "center",
+          }}
+        >
+
+          <h2
+            style={{
+              margin: 0,
+              color: "#0F172A",
+              fontSize: "23px",
+              fontWeight: 800,
+            }}
+          >
+            Want to keep your journey?
+          </h2>
+
+
+          <p
+            style={{
+              margin:
+                "9px auto 18px",
+              maxWidth: "620px",
+              color: "#475569",
+              fontSize: "15px",
+              lineHeight: 1.6,
+            }}
+          >
+            Save your personalized journey so
+            you can come back to it and keep
+            moving forward.
+          </p>
+
+
+          <button
+            type="button"
+            onClick={handleSaveJourney}
+            disabled={savingJourney}
+            style={{
+              padding: "13px 22px",
+              borderRadius: "10px",
+              border: "none",
+              background: savingJourney
+                ? "#93C5FD"
+                : "#2563EB",
+              color: "#FFFFFF",
+              fontSize: "15px",
+              fontWeight: 800,
+              cursor: savingJourney
+                ? "default"
+                : "pointer",
+            }}
+          >
+            {savingJourney
+              ? "Saving..."
+              : "💾 Save My Journey"}
+          </button>
+
+
+          {saveMessage && (
+            <div
+              style={{
+                marginTop: "15px",
+                color: "#047857",
+                fontSize: "14px",
+                fontWeight: 700,
+              }}
+            >
+              ✓ {saveMessage}
+            </div>
+          )}
+
+
+          {saveError && (
+            <div
+              style={{
+                marginTop: "15px",
+                color: "#B91C1C",
+                fontSize: "14px",
+                lineHeight: 1.5,
+              }}
+            >
+              {saveError}
+            </div>
+          )}
+
+
+          {showSaveAccountPrompt && (
+            <div
+              style={{
+                marginTop: "22px",
+                paddingTop: "20px",
+                borderTop:
+                  "1px solid #BFDBFE",
+              }}
+            >
+
+              <div
+                style={{
+                  color: "#0F172A",
+                  fontSize: "15px",
+                  fontWeight: 700,
+                  marginBottom: "12px",
+                }}
+              >
+                Create a free account or log in
+                to save your journey.
+              </div>
+
+
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "center",
+                  gap: "10px",
+                  flexWrap: "wrap",
+                }}
+              >
+
+                <Link
+                  href="/login"
+                  style={{
+                    padding:
+                      "10px 18px",
+                    borderRadius: "9px",
+                    background: "#2563EB",
+                    color: "#FFFFFF",
+                    fontSize: "14px",
+                    fontWeight: 700,
+                    textDecoration: "none",
+                  }}
+                >
+                  Log In
+                </Link>
+
+
+                <Link
+                  href="/signup"
+                  style={{
+                    padding:
+                      "10px 18px",
+                    borderRadius: "9px",
+                    border:
+                      "1px solid #2563EB",
+                    background: "#FFFFFF",
+                    color: "#2563EB",
+                    fontSize: "14px",
+                    fontWeight: 700,
+                    textDecoration: "none",
+                  }}
+                >
+                  Create Free Account
+                </Link>
+
+              </div>
+
+            </div>
+          )}
+
+        </div>
+
+      </section>
+
 
       {/* =====================================================
           PROGRESS
@@ -782,11 +1224,13 @@ export default function JourneyDashboard({
           marginBottom: "35px",
         }}
       >
+
         <SectionHeading
           eyebrow="Your Progress"
           title="Keep moving at your own pace"
           description="Start with the most important action. You can work through the rest when you're ready."
         />
+
 
         <div
           style={{
@@ -798,6 +1242,7 @@ export default function JourneyDashboard({
               "1px solid #E2E8F0",
           }}
         >
+
           <div
             style={{
               display: "flex",
@@ -807,6 +1252,7 @@ export default function JourneyDashboard({
               marginBottom: "10px",
             }}
           >
+
             <strong
               style={{
                 color: "#0F172A",
@@ -814,6 +1260,7 @@ export default function JourneyDashboard({
             >
               Journey Progress
             </strong>
+
 
             <span
               style={{
@@ -824,7 +1271,9 @@ export default function JourneyDashboard({
               {completedTasks} of{" "}
               {totalTasks} completed
             </span>
+
           </div>
+
 
           <div
             style={{
@@ -835,6 +1284,7 @@ export default function JourneyDashboard({
               overflow: "hidden",
             }}
           >
+
             <div
               style={{
                 width: `${taskPercent}%`,
@@ -845,8 +1295,11 @@ export default function JourneyDashboard({
                   "width .3s ease",
               }}
             />
+
           </div>
+
         </div>
+
 
         <div
           style={{
@@ -855,6 +1308,7 @@ export default function JourneyDashboard({
             marginTop: "16px",
           }}
         >
+
           {tasks.map((task) => (
             <TaskCard
               key={task.id}
@@ -864,7 +1318,9 @@ export default function JourneyDashboard({
               }
             />
           ))}
+
         </div>
+
 
         {allTasksCompleted && (
           <div
@@ -877,6 +1333,7 @@ export default function JourneyDashboard({
                 "1px solid #A7F3D0",
             }}
           >
+
             <h3
               style={{
                 margin: 0,
@@ -887,6 +1344,7 @@ export default function JourneyDashboard({
               You've completed your
               current steps.
             </h3>
+
 
             <p
               style={{
@@ -901,6 +1359,7 @@ export default function JourneyDashboard({
               determine what should
               come next.
             </p>
+
 
             <button
               type="button"
@@ -918,9 +1377,12 @@ export default function JourneyDashboard({
             >
               Show Me What's Next →
             </button>
+
           </div>
         )}
+
       </section>
+
 
       <p
         style={{
@@ -936,9 +1398,11 @@ export default function JourneyDashboard({
         intended to help you identify possible
         next steps.
       </p>
+
     </main>
   );
 }
+
 
 /* =========================================================
    SNAPSHOT ITEM
@@ -953,6 +1417,7 @@ function SnapshotItem({
 }) {
   return (
     <div>
+
       <div
         style={{
           fontSize: "12px",
@@ -968,6 +1433,7 @@ function SnapshotItem({
         {label}
       </div>
 
+
       <div
         style={{
           fontSize: "16px",
@@ -977,9 +1443,11 @@ function SnapshotItem({
       >
         {value}
       </div>
+
     </div>
   );
 }
+
 
 /* =========================================================
    SECTION HEADING
@@ -996,6 +1464,7 @@ function SectionHeading({
 }) {
   return (
     <div>
+
       <div
         style={{
           color: "#2563EB",
@@ -1011,6 +1480,7 @@ function SectionHeading({
         {eyebrow}
       </div>
 
+
       <h2
         style={{
           margin: 0,
@@ -1022,6 +1492,7 @@ function SectionHeading({
       >
         {title}
       </h2>
+
 
       <p
         style={{
@@ -1035,9 +1506,11 @@ function SectionHeading({
       >
         {description}
       </p>
+
     </div>
   );
 }
+
 
 /* =========================================================
    GUIDANCE BLOCK
@@ -1052,6 +1525,7 @@ function GuidanceBlock({
 }) {
   return (
     <div>
+
       <div
         style={{
           color: "#334155",
@@ -1063,6 +1537,7 @@ function GuidanceBlock({
         {label}
       </div>
 
+
       <div
         style={{
           color: "#64748B",
@@ -1072,9 +1547,11 @@ function GuidanceBlock({
       >
         {text}
       </div>
+
     </div>
   );
 }
+
 
 /* =========================================================
    RESOURCE CARD
@@ -1097,6 +1574,7 @@ function ResourceCard({
           "0 5px 15px rgba(15, 23, 42, 0.03)",
       }}
     >
+
       <div
         style={{
           display: "inline-flex",
@@ -1121,6 +1599,7 @@ function ResourceCard({
         )}
       </div>
 
+
       <h3
         style={{
           margin: 0,
@@ -1131,6 +1610,7 @@ function ResourceCard({
       >
         {resource.title}
       </h3>
+
 
       <p
         style={{
@@ -1143,6 +1623,7 @@ function ResourceCard({
       >
         {resource.description}
       </p>
+
 
       {resource.whyItMayHelp && (
         <div
@@ -1166,6 +1647,7 @@ function ResourceCard({
         </div>
       )}
 
+
       {resource.sourceName && (
         <div
           style={{
@@ -1179,6 +1661,7 @@ function ResourceCard({
           {resource.sourceName}
         </div>
       )}
+
 
       {resource.url && (
         <a
@@ -1198,9 +1681,11 @@ function ResourceCard({
           View Resource →
         </a>
       )}
+
     </div>
   );
 }
+
 
 /* =========================================================
    TASK CARD
@@ -1231,6 +1716,7 @@ function TaskCard({
             : "#FFFFFF",
       }}
     >
+
       <button
         type="button"
         onClick={onToggle}
@@ -1260,11 +1746,13 @@ function TaskCard({
         {task.completed ? "✓" : ""}
       </button>
 
+
       <div
         style={{
           flex: 1,
         }}
       >
+
         <div
           style={{
             display: "flex",
@@ -1275,6 +1763,7 @@ function TaskCard({
             gap: "8px",
           }}
         >
+
           <h3
             style={{
               margin: 0,
@@ -1291,6 +1780,7 @@ function TaskCard({
           >
             {task.title}
           </h3>
+
 
           <span
             style={{
@@ -1322,7 +1812,9 @@ function TaskCard({
           >
             {task.priority}
           </span>
+
         </div>
+
 
         <p
           style={{
@@ -1336,6 +1828,7 @@ function TaskCard({
           {task.description}
         </p>
 
+
         <span
           style={{
             color: "#94A3B8",
@@ -1345,6 +1838,7 @@ function TaskCard({
           Estimated time:{" "}
           {task.estimatedTime}
         </span>
+
 
         {task.resourceLink && (
           <div
@@ -1368,7 +1862,9 @@ function TaskCard({
             </a>
           </div>
         )}
+
       </div>
+
     </div>
   );
 }
