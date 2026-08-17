@@ -40,6 +40,10 @@ import {
   savePendingJourney,
 } from "../../lib/journeyStorage";
 
+import {
+  canContinueToNextJourney,
+} from "../../lib/accountEntitlements";
+
 
 interface JourneyDashboardProps {
   personalizedJourney: PersonalizedJourney;
@@ -208,6 +212,11 @@ export default function JourneyDashboard({
     nextJourneyError,
     setNextJourneyError,
   ] = useState("");
+
+  const [
+    showNextAccountPrompt,
+    setShowNextAccountPrompt,
+  ] = useState(false);
 
 
   /*
@@ -460,6 +469,42 @@ export default function JourneyDashboard({
       return;
     }
 
+
+    /*
+     * ----------------------------------------------------------
+     * ACCOUNT GATE
+     * ----------------------------------------------------------
+     *
+     * Guests can complete the first task set, but an account
+     * is required before the AI generates the next stage.
+     *
+     * Preserve the completed current journey temporarily so
+     * the login/signup flow can save it to the user account.
+     */
+
+    if (!canContinueToNextJourney()) {
+
+      savePendingJourney(
+        familyProfile,
+        {
+          ...personalizedJourney,
+          tasks,
+        }
+      );
+
+      setNextJourneyError("");
+
+      setShowNextAccountPrompt(
+        true
+      );
+
+      return;
+    }
+
+
+    setShowNextAccountPrompt(
+      false
+    );
 
     setGeneratingNextJourney(
       true
@@ -2394,6 +2439,145 @@ export default function JourneyDashboard({
                   : "Show Me What's Next →"
               }
             </button>
+
+
+            {showNextAccountPrompt && (
+
+              <div
+                style={{
+                  margin:
+                    "22px auto 0",
+
+                  maxWidth:
+                    "650px",
+
+                  paddingTop:
+                    "20px",
+
+                  borderTop:
+                    "1px solid #A7F3D0",
+                }}
+              >
+
+                <div
+                  style={{
+                    color:
+                      "#065F46",
+
+                    fontSize:
+                      "15px",
+
+                    fontWeight:
+                      700,
+
+                    marginBottom:
+                      "7px",
+                  }}
+                >
+                  Your next stage is ready to unlock.
+                </div>
+
+
+                <p
+                  style={{
+                    margin:
+                      "0 auto 14px",
+
+                    color:
+                      "#047857",
+
+                    fontSize:
+                      "14px",
+
+                    lineHeight:
+                      1.6,
+                  }}
+                >
+                  Create a free account or log in to continue your personalized journey and keep your progress saved.
+                </p>
+
+
+                <div
+                  style={{
+                    display:
+                      "flex",
+
+                    justifyContent:
+                      "center",
+
+                    gap:
+                      "10px",
+
+                    flexWrap:
+                      "wrap",
+                  }}
+                >
+
+                  <Link
+                    href="/login"
+                    style={{
+                      padding:
+                        "10px 18px",
+
+                      borderRadius:
+                        "9px",
+
+                      background:
+                        "#2563EB",
+
+                      color:
+                        "#FFFFFF",
+
+                      fontSize:
+                        "14px",
+
+                      fontWeight:
+                        700,
+
+                      textDecoration:
+                        "none",
+                    }}
+                  >
+                    Log In
+                  </Link>
+
+
+                  <Link
+                    href="/signup"
+                    style={{
+                      padding:
+                        "10px 18px",
+
+                      borderRadius:
+                        "9px",
+
+                      border:
+                        "1px solid #2563EB",
+
+                      background:
+                        "#FFFFFF",
+
+                      color:
+                        "#2563EB",
+
+                      fontSize:
+                        "14px",
+
+                      fontWeight:
+                        700,
+
+                      textDecoration:
+                        "none",
+                    }}
+                  >
+                    Create Free Account
+                  </Link>
+
+                </div>
+
+              </div>
+
+            )}
 
           </div>
 

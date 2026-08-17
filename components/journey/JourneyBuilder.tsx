@@ -2,22 +2,16 @@
 
 import { useEffect, useState } from "react";
 
-import {
-  doc,
-  getDoc,
-} from "firebase/firestore";
-
 import type { FamilyProfile } from "../../types/familyProfile";
 import type { PersonalizedJourney } from "../../lib/ai/journeyTypes";
 
 import {
-  auth,
-  db,
-} from "../../lib/firebase";
-
-import {
   watchAuthState,
 } from "../../lib/auth";
+
+import {
+  getCurrentJourney,
+} from "../../lib/journeyRepository";
 
 import Welcome from "./Welcome";
 import ChildName from "./ChildName";
@@ -102,14 +96,13 @@ export default function JourneyBuilder() {
    * AUTH / SAVED JOURNEY STATE
    * ============================================================
    *
-   * We need to wait for Firebase to tell us whether the user
-   * is logged in before deciding whether to:
+   * We wait for Firebase authentication to resolve before
+   * deciding whether to:
    *
    *   1. Show the questionnaire
-   *   2. Load a saved journey
+   *   2. Load the user's saved journey
    *
-   * This prevents a returning user from briefly seeing the
-   * questionnaire while Firebase restores their session.
+   * The Firestore work itself is handled by journeyRepository.
    */
 
   const [
@@ -129,11 +122,9 @@ export default function JourneyBuilder() {
    * CHECK FOR SAVED JOURNEY
    * ============================================================
    *
-   * This runs whenever Firebase authentication changes.
-   *
    * Logged in:
    *
-   *   Check:
+   *   Load:
    *
    *   users/{uid}/journeys/current
    *
@@ -153,9 +144,9 @@ export default function JourneyBuilder() {
            * NO USER
            * ----------------------------------------------------
            *
-           * There is no saved account journey to load.
+           * There is no authenticated journey to restore.
            *
-           * The visitor can use the free questionnaire.
+           * Allow the visitor to use the free questionnaire.
            */
 
           if (!user) {
@@ -185,19 +176,17 @@ export default function JourneyBuilder() {
 
           try {
 
-            const journeyRef =
-              doc(
-                db,
-                "users",
-                user.uid,
-                "journeys",
-                "current"
-              );
+            /*
+             * --------------------------------------------------
+             * LOAD CURRENT JOURNEY
+             * --------------------------------------------------
+             *
+             * The repository owns the Firestore implementation.
+             */
 
-
-            const journeySnapshot =
-              await getDoc(
-                journeyRef
+            const savedJourney =
+              await getCurrentJourney(
+                user.uid
               );
 
 
@@ -206,14 +195,11 @@ export default function JourneyBuilder() {
              * NO SAVED JOURNEY
              * --------------------------------------------------
              *
-             * This is a new account.
-             *
-             * Allow the user to start the questionnaire.
+             * This is a new account, or the user has not saved
+             * a journey yet.
              */
 
-            if (
-              !journeySnapshot.exists()
-            ) {
+            if (!savedJourney) {
 
               setSavedJourneyLoaded(
                 false
@@ -229,21 +215,17 @@ export default function JourneyBuilder() {
 
             /*
              * --------------------------------------------------
-             * SAVED JOURNEY FOUND
+             * EXTRACT SAVED DATA
              * --------------------------------------------------
              */
 
-            const savedData =
-              journeySnapshot.data();
+            const savedProfile =
+              savedJourney.familyProfile;
 
 
-              const savedProfile = (
-                savedData?.familyProfile
-              ) as FamilyProfile | undefined;
-              
-              const savedJourney = (
-                savedData?.journey
-              ) as PersonalizedJourney | undefined;
+            const savedJourneyData =
+              savedJourney.journey;
+
 
             /*
              * --------------------------------------------------
@@ -256,7 +238,7 @@ export default function JourneyBuilder() {
 
             if (
               !savedProfile ||
-              !savedJourney
+              !savedJourneyData
             ) {
 
               console.warn(
@@ -278,7 +260,7 @@ export default function JourneyBuilder() {
 
             /*
              * --------------------------------------------------
-             * RESTORE PROFILE
+             * RESTORE FAMILY PROFILE
              * --------------------------------------------------
              */
 
@@ -294,7 +276,7 @@ export default function JourneyBuilder() {
              */
 
             setPersonalizedJourney(
-              savedJourney
+              savedJourneyData
             );
 
 
@@ -317,8 +299,8 @@ export default function JourneyBuilder() {
 
 
             /*
-             * Do not prevent the family from using
-             * the free questionnaire if loading fails.
+             * Do not prevent the family from using the free
+             * questionnaire if loading fails.
              */
 
             setSavedJourneyLoaded(
@@ -353,9 +335,6 @@ export default function JourneyBuilder() {
    * ============================================================
    * SCROLL TO TOP — QUESTIONNAIRE
    * ============================================================
-   *
-   * Automatically move the user to the top whenever the
-   * questionnaire step changes.
    */
 
   useEffect(() => {
@@ -376,9 +355,6 @@ export default function JourneyBuilder() {
    * ============================================================
    * SCROLL TO TOP — JOURNEY
    * ============================================================
-   *
-   * Prevents the results page from opening at the previous
-   * questionnaire scroll position.
    */
 
   useEffect(() => {
@@ -422,8 +398,6 @@ export default function JourneyBuilder() {
    * ============================================================
    * GENERATE PERSONALIZED JOURNEY
    * ============================================================
-   *
-   * Sends the completed questionnaire to the AI generation API.
    */
 
   async function generatePersonalizedJourney() {
@@ -521,13 +495,9 @@ export default function JourneyBuilder() {
    * START A NEW JOURNEY
    * ============================================================
    *
-   * A returning user may already have a saved journey but
-   * still want to begin a new questionnaire.
+   * This does NOT delete the saved Firestore journey.
    *
-   * This does NOT delete the saved journey from Firestore.
-   *
-   * It simply clears the current screen and starts a new
-   * questionnaire session.
+   * It simply starts a new questionnaire session.
    */
 
   function startNewJourney() {
@@ -686,9 +656,6 @@ export default function JourneyBuilder() {
    * ============================================================
    * AUTHENTICATION / SAVED JOURNEY LOADING SCREEN
    * ============================================================
-   *
-   * We don't want a returning user to see the questionnaire
-   * while we're checking Firestore.
    */
 
   if (
@@ -944,10 +911,8 @@ export default function JourneyBuilder() {
    * SAVED JOURNEY
    * ============================================================
    *
-   * If Firestore returned a saved journey, show the dashboard.
-   *
-   * This is what allows a returning user to log in and
-   * immediately continue where they left off.
+   * A returning authenticated user with a saved journey
+   * immediately sees the journey dashboard.
    */
 
   if (
@@ -1035,11 +1000,6 @@ export default function JourneyBuilder() {
    * ============================================================
    * NEWLY GENERATED JOURNEY
    * ============================================================
-   *
-   * This is the normal free journey experience.
-   *
-   * We intentionally show the dashboard even when the journey
-   * was just generated and has not yet been saved.
    */
 
   if (
