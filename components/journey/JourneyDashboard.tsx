@@ -44,6 +44,7 @@ import {
   canContinueToNextJourney,
 } from "../../lib/accountEntitlements";
 
+
 interface JourneyDashboardProps {
   personalizedJourney: PersonalizedJourney;
   familyProfile: FamilyProfile;
@@ -52,14 +53,16 @@ interface JourneyDashboardProps {
 
 /*
  * ============================================================
- * FORMAT QUESTIONNAIRE VALUES
+ * HELPERS
  * ============================================================
  */
 
 function formatDisplayValue(
   value: string
 ) {
-  if (!value) return "";
+  if (!value) {
+    return "";
+  }
 
   return value
     .replace(/[-_]/g, " ")
@@ -68,12 +71,6 @@ function formatDisplayValue(
     );
 }
 
-
-/*
- * ============================================================
- * FORMAT RESOURCE TYPE
- * ============================================================
- */
 
 function formatResourceType(
   type: AIResource["type"]
@@ -119,15 +116,8 @@ export default function JourneyDashboard({
 
   /*
    * ----------------------------------------------------------
-   * JOURNEY STATE
+   * ACTIVE JOURNEY
    * ----------------------------------------------------------
-   *
-   * This is the currently active journey stage.
-   *
-   * It begins with the AI's original journey.
-   *
-   * When What's Next is used, this state is replaced with
-   * the newly generated next stage.
    */
 
   const [
@@ -140,7 +130,7 @@ export default function JourneyDashboard({
 
   /*
    * ----------------------------------------------------------
-   * TASK STATE
+   * TASKS
    * ----------------------------------------------------------
    */
 
@@ -181,7 +171,19 @@ export default function JourneyDashboard({
 
   /*
    * ----------------------------------------------------------
-   * ACCOUNT STATE
+   * NEXT STAGE ACCOUNT PROMPT
+   * ----------------------------------------------------------
+   */
+
+  const [
+    showNextAccountPrompt,
+    setShowNextAccountPrompt,
+  ] = useState(false);
+
+
+  /*
+   * ----------------------------------------------------------
+   * ACCOUNT
    * ----------------------------------------------------------
    */
 
@@ -198,7 +200,7 @@ export default function JourneyDashboard({
 
   /*
    * ----------------------------------------------------------
-   * NEXT JOURNEY STATE
+   * NEXT JOURNEY
    * ----------------------------------------------------------
    */
 
@@ -212,15 +214,10 @@ export default function JourneyDashboard({
     setNextJourneyError,
   ] = useState("");
 
-  const [
-    showNextAccountPrompt,
-    setShowNextAccountPrompt,
-  ] = useState(false);
-
 
   /*
    * ----------------------------------------------------------
-   * AUTH STATE LISTENER
+   * AUTH STATE
    * ----------------------------------------------------------
    */
 
@@ -247,7 +244,7 @@ export default function JourneyDashboard({
 
   /*
    * ----------------------------------------------------------
-   * TASK PROGRESS
+   * PROGRESS
    * ----------------------------------------------------------
    */
 
@@ -275,15 +272,6 @@ export default function JourneyDashboard({
         )
       : 0;
 
-
-  /*
-   * ----------------------------------------------------------
-   * ALL TASKS COMPLETED
-   * ----------------------------------------------------------
-   *
-   * This is the only condition that unlocks the
-   * What's Next button.
-   */
 
   const allTasksCompleted =
     tasks.length > 0 &&
@@ -317,11 +305,6 @@ export default function JourneyDashboard({
         )
     );
 
-    /*
-     * Clear any previous next-stage error if the family
-     * changes task completion status again.
-     */
-
     setNextJourneyError("");
 
   }
@@ -345,7 +328,7 @@ export default function JourneyDashboard({
 
     /*
      * --------------------------------------------------------
-     * GUEST USER
+     * GUEST
      * --------------------------------------------------------
      */
 
@@ -371,7 +354,7 @@ export default function JourneyDashboard({
 
     /*
      * --------------------------------------------------------
-     * LOGGED-IN USER
+     * AUTHENTICATED USER
      * --------------------------------------------------------
      */
 
@@ -444,19 +427,18 @@ export default function JourneyDashboard({
 
   /*
    * ==========================================================
-   * GENERATE NEXT JOURNEY
+   * WHAT'S NEXT
    * ==========================================================
    *
-   * This is the new progression engine.
+   * Guest:
+   *   Save pending journey
+   *   Show account prompt
    *
-   * The AI receives:
-   *
-   * 1. Original family profile
-   * 2. Current journey
-   * 3. Completed task IDs
-   * 4. Completed task details
-   *
-   * It then determines what should come next.
+   * Logged in:
+   *   Get Firebase ID token
+   *   Send token to server
+   *   Generate next stage
+   *   Save next stage
    */
 
   async function handleShowNextJourney() {
@@ -467,31 +449,23 @@ export default function JourneyDashboard({
     ) {
       return;
     }
-  
-  
+
+
     /*
-     * ----------------------------------------------------------
-     * VERIFY ACCOUNT
-     * ----------------------------------------------------------
-     *
-     * Guests can complete the first journey, but an account
-     * is required before the AI generates the next stage.
+     * --------------------------------------------------------
+     * REQUIRE ACCOUNT
+     * --------------------------------------------------------
      */
-  
+
     const currentUser =
       getCurrentUser();
-  
-  
+
+
     if (
       !currentUser ||
       !canContinueToNextJourney()
     ) {
-  
-      /*
-       * Preserve the completed journey so the login/signup
-       * flow can continue from this point.
-       */
-  
+
       savePendingJourney(
         familyProfile,
         {
@@ -499,56 +473,58 @@ export default function JourneyDashboard({
           tasks,
         }
       );
-  
-  
+
+
       setShowNextAccountPrompt(
         true
       );
-  
-  
+
+
       return;
     }
-  
-  
+
+
     /*
-     * ----------------------------------------------------------
+     * --------------------------------------------------------
      * AUTHENTICATED USER
-     * ----------------------------------------------------------
+     * --------------------------------------------------------
      */
-  
+
     setShowNextAccountPrompt(
       false
     );
-  
-  
+
+    setNextJourneyError("");
+
     setGeneratingNextJourney(
       true
     );
-  
-    setNextJourneyError("");
-  
-  
+
+
     try {
-  
+
       /*
-       * --------------------------------------------------------
-       * FIREBASE ID TOKEN
-       * --------------------------------------------------------
+       * ------------------------------------------------------
+       * GET FIREBASE ID TOKEN
+       * ------------------------------------------------------
        *
-       * This token is sent to the server so the API can verify
-       * that the caller is actually authenticated.
+       * THIS IS THE IMPORTANT FIX.
+       *
+       * The server-side endpoint now requires:
+       *
+       * Authorization: Bearer <Firebase ID token>
        */
-  
+
       const idToken =
         await currentUser.getIdToken();
-  
-  
+
+
       /*
-       * --------------------------------------------------------
-       * GET COMPLETED TASK INFORMATION
-       * --------------------------------------------------------
+       * ------------------------------------------------------
+       * COMPLETED TASKS
+       * ------------------------------------------------------
        */
-  
+
       const completedTaskIds =
         tasks
           .filter(
@@ -559,129 +535,157 @@ export default function JourneyDashboard({
             (task) =>
               task.id
           );
-  
-  
+
+
       const completedTaskDetails =
         tasks.filter(
           (task) =>
             task.completed
         );
-  
-  
+
+
       /*
-       * --------------------------------------------------------
+       * ------------------------------------------------------
        * CURRENT JOURNEY SNAPSHOT
-       * --------------------------------------------------------
+       * ------------------------------------------------------
        */
-  
+
       const currentJourney = {
         ...personalizedJourney,
-  
         tasks,
       };
-  
-  
+
+
       /*
-       * --------------------------------------------------------
-       * CALL NEXT-JOURNEY API
-       * --------------------------------------------------------
+       * ------------------------------------------------------
+       * CALL API
+       * ------------------------------------------------------
        */
-  
+
       const response =
         await fetch(
           "/api/journey/next",
           {
             method:
               "POST",
-  
+
             headers: {
               "Content-Type":
                 "application/json",
-  
+
               Authorization:
                 `Bearer ${idToken}`,
             },
-  
+
             body:
               JSON.stringify({
                 familyProfile,
-  
+
                 currentJourney,
-  
+
                 completedTaskIds,
-  
+
                 completedTasks:
                   completedTaskDetails,
               }),
           }
         );
-  
-  
+
+
       const data =
         await response.json();
-  
-  
+
+
       /*
-       * --------------------------------------------------------
-       * API ERROR
-       * --------------------------------------------------------
+       * ------------------------------------------------------
+       * AUTH ERROR
+       * ------------------------------------------------------
        */
-  
+
+      if (
+        response.status === 401
+      ) {
+
+        savePendingJourney(
+          familyProfile,
+          {
+            ...personalizedJourney,
+            tasks,
+          }
+        );
+
+
+        setNextJourneyError(
+          "Your login session has expired. Please log in again to continue your journey."
+        );
+
+
+        setShowNextAccountPrompt(
+          true
+        );
+
+
+        return;
+      }
+
+
+      /*
+       * ------------------------------------------------------
+       * OTHER API ERROR
+       * ------------------------------------------------------
+       */
+
       if (!response.ok) {
-  
+
         throw new Error(
           data?.error ||
             "Unable to create the next stage of your journey."
         );
-  
+
       }
-  
-  
-      if (
-        !data?.journey
-      ) {
-  
+
+
+      if (!data?.journey) {
+
         throw new Error(
           "The next stage of your journey was not returned."
         );
-  
+
       }
-  
-  
+
+
       /*
-       * --------------------------------------------------------
+       * ------------------------------------------------------
        * RECEIVE NEXT JOURNEY
-       * --------------------------------------------------------
+       * ------------------------------------------------------
        */
-  
+
       const nextJourney =
         data.journey as PersonalizedJourney;
-  
-  
+
+
       /*
-       * --------------------------------------------------------
-       * UPDATE ACTIVE JOURNEY
-       * --------------------------------------------------------
+       * ------------------------------------------------------
+       * UPDATE SCREEN
+       * ------------------------------------------------------
        */
-  
+
       setPersonalizedJourney(
         nextJourney
       );
-  
-  
+
+
       setTasks(
         nextJourney.tasks || []
       );
-  
-  
+
+
       /*
-       * --------------------------------------------------------
-       * SAVE NEXT JOURNEY
-       * --------------------------------------------------------
-       *
-       * The user is authenticated, so save the new stage.
+       * ------------------------------------------------------
+       * SAVE NEW STAGE
+       * ------------------------------------------------------
        */
-  
+
       const journeyRef =
         doc(
           db,
@@ -690,30 +694,30 @@ export default function JourneyDashboard({
           "journeys",
           "current"
         );
-  
-  
+
+
       await setDoc(
         journeyRef,
         {
           familyProfile,
-  
+
           journey: {
             ...nextJourney,
-  
+
             tasks:
               nextJourney.tasks ||
               [],
           },
-  
+
           updatedAt:
             Date.now(),
-  
+
           createdBy:
             currentUser.uid,
-  
+
           previousCompletedTaskIds:
             completedTaskIds,
-  
+
           journeyReason:
             "tasks_completed",
         },
@@ -721,35 +725,35 @@ export default function JourneyDashboard({
           merge: true,
         }
       );
-  
-  
+
+
       setSaveMessage(
         "Your next journey stage has been saved."
       );
-  
-  
+
+
     } catch (error) {
-  
+
       console.error(
         "Unable to generate next journey:",
         error
       );
-  
-  
+
+
       setNextJourneyError(
         error instanceof Error
           ? error.message
           : "We couldn't create the next stage of your journey. Please try again."
       );
-  
-  
+
     } finally {
-  
+
       setGeneratingNextJourney(
         false
       );
-  
+
     }
+
   }
 
 
@@ -768,7 +772,6 @@ export default function JourneyDashboard({
 
       await signOut(auth);
 
-
       window.location.href =
         "/";
 
@@ -778,7 +781,6 @@ export default function JourneyDashboard({
         "Logout error:",
         error
       );
-
 
       setLoggingOut(false);
 
@@ -791,13 +793,6 @@ export default function JourneyDashboard({
    * ==========================================================
    * CURRENT ACTION
    * ==========================================================
-   *
-   * We continue displaying the first AI action.
-   *
-   * IMPORTANT:
-   *
-   * The separate "What's Next" action cards are NOT shown
-   * anymore. The next-stage AI engine controls what comes next.
    */
 
   const actions =
@@ -810,6 +805,12 @@ export default function JourneyDashboard({
       ? actions[0]
       : null;
 
+
+  /*
+   * ==========================================================
+   * RENDER
+   * ==========================================================
+   */
 
   return (
 
@@ -826,9 +827,9 @@ export default function JourneyDashboard({
       }}
     >
 
-      {/* =====================================================
+      {/* ====================================================
           HEADER
-      ====================================================== */}
+      ===================================================== */}
 
       <section
         style={{
@@ -918,9 +919,9 @@ export default function JourneyDashboard({
       </section>
 
 
-      {/* =====================================================
+      {/* ====================================================
           FAMILY SNAPSHOT
-      ====================================================== */}
+      ===================================================== */}
 
       <section
         style={{
@@ -1173,9 +1174,9 @@ export default function JourneyDashboard({
       </section>
 
 
-      {/* =====================================================
+      {/* ====================================================
           START HERE
-      ====================================================== */}
+      ===================================================== */}
 
       <section
         style={{
@@ -1429,9 +1430,9 @@ export default function JourneyDashboard({
       </section>
 
 
-      {/* =====================================================
+      {/* ====================================================
           HOW TO DO IT
-      ====================================================== */}
+      ===================================================== */}
 
       {primaryAction && (
 
@@ -1504,7 +1505,9 @@ export default function JourneyDashboard({
                   "13px",
               }}
             >
-              {primaryAction.priority} Priority
+              {primaryAction.priority}
+              {" "}
+              Priority
             </div>
 
 
@@ -1610,12 +1613,11 @@ export default function JourneyDashboard({
       )}
 
 
-      {/* =====================================================
+      {/* ====================================================
           RESOURCES
-      ====================================================== */}
+      ===================================================== */}
 
-      {personalizedJourney
-        .resources?.length >
+      {personalizedJourney.resources?.length >
         0 && (
 
         <section
@@ -1675,9 +1677,9 @@ export default function JourneyDashboard({
       )}
 
 
-      {/* =====================================================
+      {/* ====================================================
           SAVE JOURNEY
-      ====================================================== */}
+      ===================================================== */}
 
       <section
         style={{
@@ -1750,15 +1752,12 @@ export default function JourneyDashboard({
 
           <button
             type="button"
-
             onClick={
               handleSaveJourney
             }
-
             disabled={
               savingJourney
             }
-
             style={{
               padding:
                 "13px 22px",
@@ -1896,7 +1895,6 @@ export default function JourneyDashboard({
 
                 <Link
                   href="/login"
-
                   style={{
                     padding:
                       "10px 18px",
@@ -1926,7 +1924,6 @@ export default function JourneyDashboard({
 
                 <Link
                   href="/signup"
-
                   style={{
                     padding:
                       "10px 18px",
@@ -1967,9 +1964,9 @@ export default function JourneyDashboard({
       </section>
 
 
-      {/* =====================================================
+      {/* ====================================================
           ACCOUNT
-      ====================================================== */}
+      ===================================================== */}
 
       {currentUserEmail && (
 
@@ -2058,15 +2055,12 @@ export default function JourneyDashboard({
 
             <button
               type="button"
-
               onClick={
                 handleLogout
               }
-
               disabled={
                 loggingOut
               }
-
               style={{
                 padding:
                   "10px 18px",
@@ -2109,9 +2103,9 @@ export default function JourneyDashboard({
       )}
 
 
-      {/* =====================================================
+      {/* ====================================================
           PROGRESS
-      ====================================================== */}
+      ===================================================== */}
 
       <section
         style={{
@@ -2263,9 +2257,9 @@ export default function JourneyDashboard({
         </div>
 
 
-        {/* ===================================================
-            NEXT STAGE UNLOCK
-        ==================================================== */}
+        {/* ==================================================
+            NEXT STAGE
+        =================================================== */}
 
         {allTasksCompleted && (
 
@@ -2347,7 +2341,6 @@ export default function JourneyDashboard({
 
               <div
                 role="alert"
-
                 style={{
                   margin:
                     "0 auto 16px",
@@ -2386,102 +2379,60 @@ export default function JourneyDashboard({
             )}
 
 
-            <button
-              type="button"
-
-              onClick={
-                handleShowNextJourney
-              }
-
-              disabled={
-                generatingNextJourney
-              }
-
-              style={{
-                padding:
-                  "13px 22px",
-
-                borderRadius:
-                  "10px",
-
-                border:
-                  "none",
-
-                background:
-                  generatingNextJourney
-                    ? "#6EE7B7"
-                    : "#059669",
-
-                color:
-                  "#FFFFFF",
-
-                fontSize:
-                  "15px",
-
-                fontWeight:
-                  800,
-
-                cursor:
-                  generatingNextJourney
-                    ? "default"
-                    : "pointer",
-
-                minWidth:
-                  "210px",
-              }}
-            >
-              {
-                generatingNextJourney
-                  ? "Building What's Next..."
-                  : "Show Me What's Next →"
-              }
-            </button>
-
+            {/* ================================================
+                ACCOUNT GATE
+            ================================================= */}
 
             {showNextAccountPrompt && (
 
               <div
                 style={{
                   margin:
-                    "22px auto 0",
+                    "0 auto 18px",
 
                   maxWidth:
                     "650px",
 
-                  paddingTop:
+                  padding:
                     "20px",
 
-                  borderTop:
+                  borderRadius:
+                    "14px",
+
+                  background:
+                    "#FFFFFF",
+
+                  border:
                     "1px solid #A7F3D0",
                 }}
               >
 
-                <div
+                <h4
                   style={{
+                    margin:
+                      "0 0 8px",
+
                     color:
                       "#065F46",
 
                     fontSize:
-                      "15px",
+                      "17px",
 
                     fontWeight:
-                      700,
-
-                    marginBottom:
-                      "7px",
+                      800,
                   }}
                 >
                   Your next stage is ready to unlock.
-                </div>
+                </h4>
 
 
                 <p
                   style={{
                     margin:
-                      "0 auto 14px",
+                      "0 0 16px",
 
                     color:
-                      "#047857",
+                      "#475569",
 
                     fontSize:
                       "14px",
@@ -2490,7 +2441,9 @@ export default function JourneyDashboard({
                       1.6,
                   }}
                 >
-                  Create a free account or log in to continue your personalized journey and keep your progress saved.
+                  Create a free account or log in
+                  to continue your personalized
+                  journey and unlock your next steps.
                 </p>
 
 
@@ -2576,12 +2529,68 @@ export default function JourneyDashboard({
 
             )}
 
+
+            <button
+              type="button"
+
+              onClick={
+                handleShowNextJourney
+              }
+
+              disabled={
+                generatingNextJourney
+              }
+
+              style={{
+                padding:
+                  "13px 22px",
+
+                borderRadius:
+                  "10px",
+
+                border:
+                  "none",
+
+                background:
+                  generatingNextJourney
+                    ? "#6EE7B7"
+                    : "#059669",
+
+                color:
+                  "#FFFFFF",
+
+                fontSize:
+                  "15px",
+
+                fontWeight:
+                  800,
+
+                cursor:
+                  generatingNextJourney
+                    ? "default"
+                    : "pointer",
+
+                minWidth:
+                  "210px",
+              }}
+            >
+              {
+                generatingNextJourney
+                  ? "Building What's Next..."
+                  : "Show Me What's Next →"
+              }
+            </button>
+
           </div>
 
         )}
 
       </section>
 
+
+      {/* ====================================================
+          DISCLAIMER
+      ===================================================== */}
 
       <p
         style={{
@@ -2612,9 +2621,11 @@ export default function JourneyDashboard({
 }
 
 
-/* =========================================================
-   SNAPSHOT ITEM
-========================================================= */
+/*
+ * ============================================================
+ * SNAPSHOT ITEM
+ * ============================================================
+ */
 
 function SnapshotItem({
   label,
@@ -2674,9 +2685,11 @@ function SnapshotItem({
 }
 
 
-/* =========================================================
-   SECTION HEADING
-========================================================= */
+/*
+ * ============================================================
+ * SECTION HEADING
+ * ============================================================
+ */
 
 function SectionHeading({
   eyebrow,
@@ -2769,9 +2782,11 @@ function SectionHeading({
 }
 
 
-/* =========================================================
-   GUIDANCE BLOCK
-========================================================= */
+/*
+ * ============================================================
+ * GUIDANCE BLOCK
+ * ============================================================
+ */
 
 function GuidanceBlock({
   label,
@@ -2825,9 +2840,11 @@ function GuidanceBlock({
 }
 
 
-/* =========================================================
-   RESOURCE CARD
-========================================================= */
+/*
+ * ============================================================
+ * RESOURCE CARD
+ * ============================================================
+ */
 
 function ResourceCard({
   resource,
@@ -2985,7 +3002,7 @@ function ResourceCard({
 
             marginBottom:
               "12px",
-          }}
+        }}
         >
           Source:{" "}
           {
@@ -3035,9 +3052,11 @@ function ResourceCard({
 }
 
 
-/* =========================================================
-   TASK CARD
-========================================================= */
+/*
+ * ============================================================
+ * TASK CARD
+ * ============================================================
+ */
 
 function TaskCard({
   task,
