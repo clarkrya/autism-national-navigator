@@ -9,11 +9,6 @@ import {
 import Link from "next/link";
 
 import {
-  doc,
-  setDoc,
-} from "firebase/firestore";
-
-import {
   signOut,
 } from "firebase/auth";
 
@@ -28,7 +23,6 @@ import type { Task } from "../../lib/journeyEngine";
 
 import {
   auth,
-  db,
 } from "../../lib/firebase";
 
 import {
@@ -43,6 +37,16 @@ import {
 import {
   canContinueToNextJourney,
 } from "../../lib/accountEntitlements";
+
+import {
+  getCurrentJourney,
+  saveCurrentJourney,
+} from "../../lib/journeyRepository";
+
+import {
+  getCurrentStageNumber,
+  saveJourneyStage,
+} from "../../lib/journeyHistory";
 
 
 interface JourneyDashboardProps {
@@ -60,6 +64,7 @@ interface JourneyDashboardProps {
 function formatDisplayValue(
   value: string
 ) {
+
   if (!value) {
     return "";
   }
@@ -75,7 +80,9 @@ function formatDisplayValue(
 function formatResourceType(
   type: AIResource["type"]
 ) {
+
   switch (type) {
+
     case "grant":
       return "Grant";
 
@@ -99,7 +106,9 @@ function formatResourceType(
 
     default:
       return "Resource";
+
   }
+
 }
 
 
@@ -144,6 +153,24 @@ export default function JourneyDashboard({
 
   /*
    * ----------------------------------------------------------
+   * STAGE NUMBER
+   * ----------------------------------------------------------
+   */
+
+  const [
+    journeyStageNumber,
+    setJourneyStageNumber,
+  ] = useState(1);
+
+
+  const [
+    loadingStageNumber,
+    setLoadingStageNumber,
+  ] = useState(true);
+
+
+  /*
+   * ----------------------------------------------------------
    * SAVE STATE
    * ----------------------------------------------------------
    */
@@ -153,15 +180,18 @@ export default function JourneyDashboard({
     setSavingJourney,
   ] = useState(false);
 
+
   const [
     saveMessage,
     setSaveMessage,
   ] = useState("");
 
+
   const [
     saveError,
     setSaveError,
   ] = useState("");
+
 
   const [
     showSaveAccountPrompt,
@@ -171,7 +201,7 @@ export default function JourneyDashboard({
 
   /*
    * ----------------------------------------------------------
-   * NEXT STAGE ACCOUNT PROMPT
+   * NEXT ACCOUNT PROMPT
    * ----------------------------------------------------------
    */
 
@@ -192,6 +222,7 @@ export default function JourneyDashboard({
     setCurrentUserEmail,
   ] = useState<string | null>(null);
 
+
   const [
     loggingOut,
     setLoggingOut,
@@ -209,6 +240,7 @@ export default function JourneyDashboard({
     setGeneratingNextJourney,
   ] = useState(false);
 
+
   const [
     nextJourneyError,
     setNextJourneyError,
@@ -216,36 +248,144 @@ export default function JourneyDashboard({
 
 
   /*
-   * ----------------------------------------------------------
-   * AUTH STATE
-   * ----------------------------------------------------------
+   * ==========================================================
+   * LOAD ACCOUNT / STAGE INFORMATION
+   * ==========================================================
    */
 
   useEffect(() => {
 
+    let active = true;
+
+
     const unsubscribe =
       watchAuthState(
-        (user) => {
+        async (user) => {
+
+          if (!active) {
+            return;
+          }
+
 
           setCurrentUserEmail(
             user?.email ?? null
           );
+
+
+          if (!user) {
+
+            setJourneyStageNumber(
+              1
+            );
+
+            setLoadingStageNumber(
+              false
+            );
+
+            return;
+          }
+
+
+          setLoadingStageNumber(
+            true
+          );
+
+
+          try {
+
+            /*
+             * ------------------------------------------------
+             * First try the current journey record.
+             *
+             * This gives us an exact stage number for newly
+             * migrated/saved accounts.
+             * ------------------------------------------------
+             */
+
+            const savedJourney =
+              await getCurrentJourney(
+                user.uid
+              );
+
+
+            if (
+              savedJourney &&
+              savedJourney.stageNumber >= 1
+            ) {
+
+              setJourneyStageNumber(
+                savedJourney.stageNumber
+              );
+
+            } else {
+
+              /*
+               * ------------------------------------------------
+               * Fall back to history.
+               *
+               * If Stage 1 is complete and Stage 2 is current,
+               * history contains Stage 1, so current = 2.
+               * ------------------------------------------------
+               */
+
+              const lastCompletedStage =
+                await getCurrentStageNumber(
+                  user.uid
+                );
+
+
+              setJourneyStageNumber(
+                Math.max(
+                  1,
+                  lastCompletedStage + 1
+                )
+              );
+
+            }
+
+          } catch (error) {
+
+            console.error(
+              "Unable to determine journey stage:",
+              error
+            );
+
+
+            setJourneyStageNumber(
+              1
+            );
+
+          } finally {
+
+            if (active) {
+
+              setLoadingStageNumber(
+                false
+              );
+
+            }
+
+          }
 
         }
       );
 
 
     return () => {
+
+      active = false;
+
       unsubscribe();
+
     };
 
   }, []);
 
 
   /*
-   * ----------------------------------------------------------
+   * ============================================================
    * PROGRESS
-   * ----------------------------------------------------------
+   * ============================================================
    */
 
   const completedTasks =
@@ -282,9 +422,9 @@ export default function JourneyDashboard({
 
 
   /*
-   * ==========================================================
+   * ============================================================
    * TOGGLE TASK
-   * ==========================================================
+   * ============================================================
    */
 
   function toggleTask(
@@ -305,15 +445,16 @@ export default function JourneyDashboard({
         )
     );
 
+
     setNextJourneyError("");
 
   }
 
 
   /*
-   * ==========================================================
-   * SAVE JOURNEY
-   * ==========================================================
+   * ============================================================
+   * SAVE CURRENT JOURNEY
+   * ============================================================
    */
 
   async function handleSaveJourney() {
@@ -327,9 +468,9 @@ export default function JourneyDashboard({
 
 
     /*
-     * --------------------------------------------------------
+     * ----------------------------------------------------------
      * GUEST
-     * --------------------------------------------------------
+     * ----------------------------------------------------------
      */
 
     if (!currentUser) {
@@ -353,9 +494,9 @@ export default function JourneyDashboard({
 
 
     /*
-     * --------------------------------------------------------
+     * ----------------------------------------------------------
      * AUTHENTICATED USER
-     * --------------------------------------------------------
+     * ----------------------------------------------------------
      */
 
     setSavingJourney(true);
@@ -363,34 +504,21 @@ export default function JourneyDashboard({
 
     try {
 
-      const journeyRef =
-        doc(
-          db,
-          "users",
-          currentUser.uid,
-          "journeys",
-          "current"
-        );
-
-
-      await setDoc(
-        journeyRef,
+      await saveCurrentJourney(
+        currentUser.uid,
+        familyProfile,
         {
-          familyProfile,
-
-          journey: {
-            ...personalizedJourney,
-            tasks,
-          },
-
-          updatedAt:
-            Date.now(),
-
-          createdBy:
-            currentUser.uid,
+          ...personalizedJourney,
+          tasks,
         },
         {
-          merge: true,
+          stageNumber:
+            journeyStageNumber,
+
+          journeyReason:
+            journeyStageNumber === 1
+              ? "initial"
+              : "tasks_completed",
         }
       );
 
@@ -426,19 +554,21 @@ export default function JourneyDashboard({
 
 
   /*
-   * ==========================================================
+   * ============================================================
    * WHAT'S NEXT
-   * ==========================================================
+   * ============================================================
    *
-   * Guest:
-   *   Save pending journey
-   *   Show account prompt
+   * Logged-in users:
    *
-   * Logged in:
-   *   Get Firebase ID token
-   *   Send token to server
-   *   Generate next stage
-   *   Save next stage
+   *   1. Archive completed current stage.
+   *   2. Ask AI for next stage.
+   *   3. Save new stage as current.
+   *   4. Increase visible stage number.
+   *
+   * Guests:
+   *
+   *   Save pending journey.
+   *   Require account.
    */
 
   async function handleShowNextJourney() {
@@ -452,9 +582,9 @@ export default function JourneyDashboard({
 
 
     /*
-     * --------------------------------------------------------
+     * ----------------------------------------------------------
      * REQUIRE ACCOUNT
-     * --------------------------------------------------------
+     * ----------------------------------------------------------
      */
 
     const currentUser =
@@ -485,9 +615,9 @@ export default function JourneyDashboard({
 
 
     /*
-     * --------------------------------------------------------
+     * ----------------------------------------------------------
      * AUTHENTICATED USER
-     * --------------------------------------------------------
+     * ----------------------------------------------------------
      */
 
     setShowNextAccountPrompt(
@@ -504,15 +634,9 @@ export default function JourneyDashboard({
     try {
 
       /*
-       * ------------------------------------------------------
-       * GET FIREBASE ID TOKEN
-       * ------------------------------------------------------
-       *
-       * THIS IS THE IMPORTANT FIX.
-       *
-       * The server-side endpoint now requires:
-       *
-       * Authorization: Bearer <Firebase ID token>
+       * --------------------------------------------------------
+       * FIREBASE ID TOKEN
+       * --------------------------------------------------------
        */
 
       const idToken =
@@ -520,9 +644,9 @@ export default function JourneyDashboard({
 
 
       /*
-       * ------------------------------------------------------
+       * --------------------------------------------------------
        * COMPLETED TASKS
-       * ------------------------------------------------------
+       * --------------------------------------------------------
        */
 
       const completedTaskIds =
@@ -545,9 +669,9 @@ export default function JourneyDashboard({
 
 
       /*
-       * ------------------------------------------------------
+       * --------------------------------------------------------
        * CURRENT JOURNEY SNAPSHOT
-       * ------------------------------------------------------
+       * --------------------------------------------------------
        */
 
       const currentJourney = {
@@ -557,9 +681,80 @@ export default function JourneyDashboard({
 
 
       /*
-       * ------------------------------------------------------
-       * CALL API
-       * ------------------------------------------------------
+       * --------------------------------------------------------
+       * ARCHIVE CURRENT STAGE
+       * --------------------------------------------------------
+       *
+       * This happens BEFORE generating the next stage.
+       *
+       * If the current stage is Stage 1:
+       *
+       *   Stage 1 → history
+       *
+       * If current is Stage 2:
+       *
+       *   Stage 2 → history
+       *
+       * and so on.
+       */
+
+      const lastCompletedStageNumber =
+        await getCurrentStageNumber(
+          currentUser.uid
+        );
+
+
+      let completedStageNumber =
+        Math.max(
+          1,
+          journeyStageNumber
+        );
+
+
+      /*
+       * --------------------------------------------------------
+       * HANDLE LEGACY / RETRY SCENARIOS
+       * --------------------------------------------------------
+       *
+       * If history somehow indicates a stage number higher than
+       * our current UI state, use the next available number.
+       */
+
+      if (
+        lastCompletedStageNumber >=
+        completedStageNumber
+      ) {
+
+        completedStageNumber =
+          lastCompletedStageNumber + 1;
+
+      }
+
+
+      await saveJourneyStage(
+        currentUser.uid,
+
+        completedStageNumber,
+
+        familyProfile,
+
+        currentJourney,
+
+        completedTaskIds,
+
+        {
+          reason:
+            completedStageNumber === 1
+              ? "initial"
+              : "tasks_completed",
+        }
+      );
+
+
+      /*
+       * --------------------------------------------------------
+       * CALL NEXT JOURNEY API
+       * --------------------------------------------------------
        */
 
       const response =
@@ -597,13 +792,14 @@ export default function JourneyDashboard({
 
 
       /*
-       * ------------------------------------------------------
+       * --------------------------------------------------------
        * AUTH ERROR
-       * ------------------------------------------------------
+       * --------------------------------------------------------
        */
 
       if (
-        response.status === 401
+        response.status ===
+        401
       ) {
 
         savePendingJourney(
@@ -630,12 +826,14 @@ export default function JourneyDashboard({
 
 
       /*
-       * ------------------------------------------------------
-       * OTHER API ERROR
-       * ------------------------------------------------------
+       * --------------------------------------------------------
+       * API ERROR
+       * --------------------------------------------------------
        */
 
-      if (!response.ok) {
+      if (
+        !response.ok
+      ) {
 
         throw new Error(
           data?.error ||
@@ -645,7 +843,9 @@ export default function JourneyDashboard({
       }
 
 
-      if (!data?.journey) {
+      if (
+        !data?.journey
+      ) {
 
         throw new Error(
           "The next stage of your journey was not returned."
@@ -655,9 +855,9 @@ export default function JourneyDashboard({
 
 
       /*
-       * ------------------------------------------------------
+       * --------------------------------------------------------
        * RECEIVE NEXT JOURNEY
-       * ------------------------------------------------------
+       * --------------------------------------------------------
        */
 
       const nextJourney =
@@ -665,9 +865,19 @@ export default function JourneyDashboard({
 
 
       /*
-       * ------------------------------------------------------
+       * --------------------------------------------------------
+       * NEXT STAGE NUMBER
+       * --------------------------------------------------------
+       */
+
+      const nextStageNumber =
+        completedStageNumber + 1;
+
+
+      /*
+       * --------------------------------------------------------
        * UPDATE SCREEN
-       * ------------------------------------------------------
+       * --------------------------------------------------------
        */
 
       setPersonalizedJourney(
@@ -680,55 +890,45 @@ export default function JourneyDashboard({
       );
 
 
+      setJourneyStageNumber(
+        nextStageNumber
+      );
+
+
       /*
-       * ------------------------------------------------------
-       * SAVE NEW STAGE
-       * ------------------------------------------------------
+       * --------------------------------------------------------
+       * SAVE NEW ACTIVE JOURNEY
+       * --------------------------------------------------------
        */
 
-      const journeyRef =
-        doc(
-          db,
-          "users",
-          currentUser.uid,
-          "journeys",
-          "current"
-        );
+      await saveCurrentJourney(
+        currentUser.uid,
 
+        familyProfile,
 
-      await setDoc(
-        journeyRef,
         {
-          familyProfile,
+          ...nextJourney,
 
-          journey: {
-            ...nextJourney,
+          tasks:
+            nextJourney.tasks ||
+            [],
+        },
 
-            tasks:
-              nextJourney.tasks ||
-              [],
-          },
-
-          updatedAt:
-            Date.now(),
-
-          createdBy:
-            currentUser.uid,
+        {
+          stageNumber:
+            nextStageNumber,
 
           previousCompletedTaskIds:
             completedTaskIds,
 
           journeyReason:
             "tasks_completed",
-        },
-        {
-          merge: true,
         }
       );
 
 
       setSaveMessage(
-        "Your next journey stage has been saved."
+        `Journey Stage ${nextStageNumber} has been created and saved.`
       );
 
 
@@ -758,9 +958,9 @@ export default function JourneyDashboard({
 
 
   /*
-   * ==========================================================
+   * ============================================================
    * LOG OUT
-   * ==========================================================
+   * ============================================================
    */
 
   async function handleLogout() {
@@ -770,7 +970,10 @@ export default function JourneyDashboard({
 
     try {
 
-      await signOut(auth);
+      await signOut(
+        auth
+      );
+
 
       window.location.href =
         "/";
@@ -782,6 +985,7 @@ export default function JourneyDashboard({
         error
       );
 
+
       setLoggingOut(false);
 
     }
@@ -790,9 +994,9 @@ export default function JourneyDashboard({
 
 
   /*
-   * ==========================================================
+   * ============================================================
    * CURRENT ACTION
-   * ==========================================================
+   * ============================================================
    */
 
   const actions =
@@ -807,9 +1011,9 @@ export default function JourneyDashboard({
 
 
   /*
-   * ==========================================================
+   * ============================================================
    * RENDER
-   * ==========================================================
+   * ============================================================
    */
 
   return (
@@ -827,9 +1031,9 @@ export default function JourneyDashboard({
       }}
     >
 
-      {/* ====================================================
+      {/* =====================================================
           HEADER
-      ===================================================== */}
+      ====================================================== */}
 
       <section
         style={{
@@ -840,26 +1044,89 @@ export default function JourneyDashboard({
 
         <div
           style={{
-            color:
-              "#2563EB",
+            display:
+              "flex",
 
-            fontSize:
-              "13px",
+            justifyContent:
+              "space-between",
 
-            fontWeight:
-              800,
+            alignItems:
+              "center",
 
-            letterSpacing:
-              "0.08em",
+            gap:
+              "20px",
 
-            textTransform:
-              "uppercase",
+            flexWrap:
+              "wrap",
 
             marginBottom:
-              "12px",
+              "14px",
           }}
         >
-          Your Personalized Journey
+
+          <div
+            style={{
+              color:
+                "#2563EB",
+
+              fontSize:
+                "13px",
+
+              fontWeight:
+                800,
+
+              letterSpacing:
+                "0.08em",
+
+              textTransform:
+                "uppercase",
+            }}
+          >
+            Your Personalized Journey
+          </div>
+
+
+          {!loadingStageNumber && (
+
+            <div
+              style={{
+                display:
+                  "inline-flex",
+
+                alignItems:
+                  "center",
+
+                padding:
+                  "8px 13px",
+
+                borderRadius:
+                  "999px",
+
+                background:
+                  "#EFF6FF",
+
+                border:
+                  "1px solid #BFDBFE",
+
+                color:
+                  "#2563EB",
+
+                fontSize:
+                  "12px",
+
+                fontWeight:
+                  800,
+
+                letterSpacing:
+                  "0.04em",
+              }}
+            >
+              Journey Stage{" "}
+              {journeyStageNumber}
+            </div>
+
+          )}
+
         </div>
 
 
@@ -919,9 +1186,9 @@ export default function JourneyDashboard({
       </section>
 
 
-      {/* ====================================================
+      {/* =====================================================
           FAMILY SNAPSHOT
-      ===================================================== */}
+      ====================================================== */}
 
       <section
         style={{
@@ -1174,9 +1441,9 @@ export default function JourneyDashboard({
       </section>
 
 
-      {/* ====================================================
+      {/* =====================================================
           START HERE
-      ===================================================== */}
+      ====================================================== */}
 
       <section
         style={{
@@ -1217,7 +1484,7 @@ export default function JourneyDashboard({
 
               marginBottom:
                 "12px",
-            }}
+          }}
           >
 
             <span
@@ -1253,7 +1520,7 @@ export default function JourneyDashboard({
                   800,
               }}
             >
-              1
+              {journeyStageNumber}
             </span>
 
 
@@ -1275,7 +1542,7 @@ export default function JourneyDashboard({
                   "uppercase",
               }}
             >
-              Start Here
+              Current Focus
             </span>
 
           </div>
@@ -1430,9 +1697,9 @@ export default function JourneyDashboard({
       </section>
 
 
-      {/* ====================================================
+      {/* =====================================================
           HOW TO DO IT
-      ===================================================== */}
+      ====================================================== */}
 
       {primaryAction && (
 
@@ -1613,9 +1880,9 @@ export default function JourneyDashboard({
       )}
 
 
-      {/* ====================================================
+      {/* =====================================================
           RESOURCES
-      ===================================================== */}
+      ====================================================== */}
 
       {personalizedJourney.resources?.length >
         0 && (
@@ -1677,9 +1944,9 @@ export default function JourneyDashboard({
       )}
 
 
-      {/* ====================================================
+      {/* =====================================================
           SAVE JOURNEY
-      ===================================================== */}
+      ====================================================== */}
 
       <section
         style={{
@@ -1895,6 +2162,7 @@ export default function JourneyDashboard({
 
                 <Link
                   href="/login"
+
                   style={{
                     padding:
                       "10px 18px",
@@ -1924,6 +2192,7 @@ export default function JourneyDashboard({
 
                 <Link
                   href="/signup"
+
                   style={{
                     padding:
                       "10px 18px",
@@ -1964,9 +2233,9 @@ export default function JourneyDashboard({
       </section>
 
 
-      {/* ====================================================
+      {/* =====================================================
           ACCOUNT
-      ===================================================== */}
+      ====================================================== */}
 
       {currentUserEmail && (
 
@@ -2103,9 +2372,9 @@ export default function JourneyDashboard({
       )}
 
 
-      {/* ====================================================
+      {/* =====================================================
           PROGRESS
-      ===================================================== */}
+      ====================================================== */}
 
       <section
         style={{
@@ -2115,7 +2384,7 @@ export default function JourneyDashboard({
       >
 
         <SectionHeading
-          eyebrow="Your Progress"
+          eyebrow={`Journey Stage ${journeyStageNumber}`}
           title="Keep moving at your own pace"
           description="Complete the suggested tasks to unlock your next stage."
         />
@@ -2257,9 +2526,9 @@ export default function JourneyDashboard({
         </div>
 
 
-        {/* ==================================================
+        {/* ===================================================
             NEXT STAGE
-        =================================================== */}
+        ==================================================== */}
 
         {allTasksCompleted && (
 
@@ -2310,8 +2579,8 @@ export default function JourneyDashboard({
                   "22px",
               }}
             >
-              You've completed your
-              current steps.
+              You've completed Journey Stage{" "}
+              {journeyStageNumber}.
             </h3>
 
 
@@ -2330,10 +2599,9 @@ export default function JourneyDashboard({
                   "650px",
               }}
             >
-              Great work. Now let's use what
+              Great work. We'll build on what
               you've accomplished to determine
-              what should come next in your
-              journey.
+              what should come next.
             </p>
 
 
@@ -2341,6 +2609,7 @@ export default function JourneyDashboard({
 
               <div
                 role="alert"
+
                 style={{
                   margin:
                     "0 auto 16px",
@@ -2378,10 +2647,6 @@ export default function JourneyDashboard({
 
             )}
 
-
-            {/* ================================================
-                ACCOUNT GATE
-            ================================================= */}
 
             {showNextAccountPrompt && (
 
@@ -2465,6 +2730,7 @@ export default function JourneyDashboard({
 
                   <Link
                     href="/login"
+
                     style={{
                       padding:
                         "10px 18px",
@@ -2494,6 +2760,7 @@ export default function JourneyDashboard({
 
                   <Link
                     href="/signup"
+
                     style={{
                       padding:
                         "10px 18px",
@@ -2587,10 +2854,6 @@ export default function JourneyDashboard({
 
       </section>
 
-
-      {/* ====================================================
-          DISCLAIMER
-      ===================================================== */}
 
       <p
         style={{
@@ -3002,7 +3265,7 @@ function ResourceCard({
 
             marginBottom:
               "12px",
-        }}
+          }}
         >
           Source:{" "}
           {
