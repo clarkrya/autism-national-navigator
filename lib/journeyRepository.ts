@@ -29,6 +29,9 @@ import {
  * Completed historical stages are handled separately by:
  *
  * lib/journeyHistory.ts
+ *
+ * This repository also owns saving task completion changes
+ * for the currently active journey.
  * ============================================================
  */
 
@@ -247,6 +250,84 @@ export async function saveCurrentJourney(
   await setDoc(
     journeyRef,
     firestoreData,
+    {
+      merge: true,
+    }
+  );
+}
+
+
+/*
+ * ============================================================
+ * SAVE TASK PROGRESS
+ * ============================================================
+ *
+ * Saves the current task completion state without changing
+ * the journey stage or other journey metadata.
+ *
+ * This is used when a logged-in user checks or unchecks a task.
+ *
+ * IMPORTANT:
+ *
+ * The UI should update immediately.
+ *
+ * Firestore persistence happens asynchronously after that.
+ * ============================================================
+ */
+
+export async function saveTaskProgress(
+  userId: string,
+  familyProfile: FamilyProfile,
+  journey: PersonalizedJourney,
+  options?: {
+    stageNumber?: number;
+
+    journeyReason?:
+      | "initial"
+      | "tasks_completed"
+      | "manual_refresh";
+  }
+): Promise<void> {
+
+  const journeyRef =
+    getCurrentJourneyRef(
+      userId
+    );
+
+
+  const currentStageNumber =
+    options?.stageNumber &&
+    Number.isInteger(
+      options.stageNumber
+    ) &&
+    options.stageNumber >= 1
+      ? options.stageNumber
+      : 1;
+
+
+  await setDoc(
+    journeyRef,
+    {
+      familyProfile,
+
+      journey,
+
+      updatedAt:
+        Date.now(),
+
+      createdBy:
+        userId,
+
+      stageNumber:
+        currentStageNumber,
+
+      ...(options?.journeyReason
+        ? {
+            journeyReason:
+              options.journeyReason,
+          }
+        : {}),
+    },
     {
       merge: true,
     }

@@ -3,6 +3,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -41,6 +42,7 @@ import {
 import {
   getCurrentJourney,
   saveCurrentJourney,
+  saveTaskProgress,
 } from "../../lib/journeyRepository";
 
 import {
@@ -246,6 +248,21 @@ export default function JourneyDashboard({
     setNextJourneyError,
   ] = useState("");
 
+  const [
+    taskSaveStatus,
+    setTaskSaveStatus,
+  ] = useState<
+    "idle" | "saving" | "error"
+  >(
+    "idle"
+  );
+  
+  
+  const taskSaveQueueRef =
+    useRef<Promise<void>>(
+      Promise.resolve()
+    );
+
 
   /*
    * ==========================================================
@@ -430,24 +447,129 @@ export default function JourneyDashboard({
   function toggleTask(
     taskId: string
   ) {
-
+  
+    const currentUser =
+      getCurrentUser();
+  
+  
     setTasks(
-      (currentTasks) =>
-        currentTasks.map(
-          (task) =>
-            task.id === taskId
-              ? {
-                  ...task,
-                  completed:
-                    !task.completed,
+      (currentTasks) => {
+  
+        const nextTasks =
+          currentTasks.map(
+            (task) =>
+              task.id === taskId
+                ? {
+                    ...task,
+                    completed:
+                      !task.completed,
+                  }
+                : task
+          );
+  
+  
+        setNextJourneyError("");
+  
+  
+        /*
+         * --------------------------------------------------------
+         * GUEST USER
+         * --------------------------------------------------------
+         *
+         * Guests keep their progress locally until they create
+         * or log into an account.
+         */
+  
+        if (!currentUser) {
+  
+          setTaskSaveStatus(
+            "idle"
+          );
+  
+          return nextTasks;
+        }
+  
+  
+        /*
+         * --------------------------------------------------------
+         * LOGGED-IN USER
+         * --------------------------------------------------------
+         *
+         * Save every task change to Firestore.
+         *
+         * The queue prevents rapid checkbox clicks from causing
+         * Firestore writes to arrive out of order.
+         */
+  
+        setTaskSaveStatus(
+          "saving"
+        );
+  
+  
+        taskSaveQueueRef.current =
+          taskSaveQueueRef.current
+            .catch(() => undefined)
+            .then(
+              async () => {
+  
+                try {
+  
+                  await saveTaskProgress(
+                    currentUser.uid,
+  
+                    familyProfile,
+  
+                    {
+                      ...personalizedJourney,
+  
+                      tasks:
+                        nextTasks,
+                    },
+  
+                    {
+                      stageNumber:
+                        journeyStageNumber,
+  
+                      journeyReason:
+                        journeyStageNumber === 1
+                          ? "initial"
+                          : "tasks_completed",
+                    }
+                  );
+  
+  
+                  setTaskSaveStatus(
+                    "idle"
+                  );
+  
+                } catch (error) {
+  
+                  console.error(
+                    "Unable to save task progress:",
+                    error
+                  );
+  
+  
+                  setTaskSaveStatus(
+                    "error"
+                  );
+  
+  
+                  setSaveError(
+                    "Your task change is visible, but we couldn't save it right now. Please try again."
+                  );
+  
                 }
-              : task
-        )
+  
+              }
+            );
+  
+  
+        return nextTasks;
+  
+      }
     );
-
-
-    setNextJourneyError("");
-
+  
   }
 
 
@@ -2484,6 +2606,50 @@ export default function JourneyDashboard({
             />
 
           </div>
+          {taskSaveStatus === "saving" && (
+
+<div
+  style={{
+    marginTop:
+      "8px",
+
+    color:
+      "#64748B",
+
+    fontSize:
+      "12px",
+
+    textAlign:
+      "right",
+  }}
+>
+  Saving your progress...
+</div>
+
+)}
+
+
+{taskSaveStatus === "error" && (
+
+<div
+  style={{
+    marginTop:
+      "8px",
+
+    color:
+      "#B91C1C",
+
+    fontSize:
+      "12px",
+
+    textAlign:
+      "right",
+  }}
+>
+  We couldn't save your latest task change.
+</div>
+
+)}
 
         </div>
 
