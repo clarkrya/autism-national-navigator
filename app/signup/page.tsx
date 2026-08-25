@@ -2,6 +2,7 @@
 
 import {
   FormEvent,
+  useMemo,
   useState,
 } from "react";
 
@@ -55,51 +56,54 @@ export default function SignupPage() {
    * RETURN DESTINATION
    * ==========================================================
    *
+   * Only allow internal application paths.
+   *
    * Examples:
    *
    * /signup
    * /signup?returnTo=/community
-   *
-   * We only permit local application paths.
+   * /signup?returnTo=/community/abc123
    */
 
-  function getReturnTo(): string {
+  const returnTo =
+    useMemo(() => {
 
-    if (
-      typeof window ===
-      "undefined"
-    ) {
+      if (
+        typeof window ===
+        "undefined"
+      ) {
 
-      return "/journey";
+        return "/journey";
 
-    }
-
-
-    const params =
-      new URLSearchParams(
-        window.location.search
-      );
+      }
 
 
-    const returnTo =
-      params.get(
-        "returnTo"
-      );
+      const params =
+        new URLSearchParams(
+          window.location.search
+        );
 
 
-    if (
-      !returnTo ||
-      !returnTo.startsWith("/") ||
-      returnTo.startsWith("//")
-    ) {
-
-      return "/journey";
-
-    }
+      const requestedReturnTo =
+        params.get(
+          "returnTo"
+        );
 
 
-    return returnTo;
-  }
+      if (
+        !requestedReturnTo ||
+        !requestedReturnTo.startsWith("/") ||
+        requestedReturnTo.startsWith("//")
+      ) {
+
+        return "/journey";
+
+      }
+
+
+      return requestedReturnTo;
+
+    }, []);
 
 
   /*
@@ -109,19 +113,22 @@ export default function SignupPage() {
    */
 
   async function handleSignup(
-    event: FormEvent<HTMLFormElement>
+    event:
+      FormEvent<HTMLFormElement>
   ) {
 
     event.preventDefault();
 
     setError("");
+
     setMessage("");
+
     setLoading(true);
 
 
     /*
      * --------------------------------------------------------
-     * BASIC PASSWORD VALIDATION
+     * PASSWORD VALIDATION
      * --------------------------------------------------------
      */
 
@@ -136,6 +143,7 @@ export default function SignupPage() {
       setLoading(false);
 
       return;
+
     }
 
 
@@ -151,6 +159,7 @@ export default function SignupPage() {
       setLoading(false);
 
       return;
+
     }
 
 
@@ -158,11 +167,8 @@ export default function SignupPage() {
 
       /*
        * ------------------------------------------------------
-       * STEP 1 — CREATE FIREBASE ACCOUNT
+       * CREATE FIREBASE ACCOUNT
        * ------------------------------------------------------
-       *
-       * Firebase automatically signs the user in after
-       * successful account creation.
        */
 
       const credential =
@@ -179,11 +185,8 @@ export default function SignupPage() {
 
       /*
        * ------------------------------------------------------
-       * STEP 2 — CHECK FOR A PENDING GUEST JOURNEY
+       * CHECK FOR PENDING JOURNEY
        * ------------------------------------------------------
-       *
-       * A guest may have completed a journey before creating
-       * an account. Preserve that journey.
        */
 
       const pendingJourney =
@@ -192,7 +195,7 @@ export default function SignupPage() {
 
       /*
        * ------------------------------------------------------
-       * STEP 3 — SAVE PENDING JOURNEY
+       * SAVE PENDING JOURNEY
        * ------------------------------------------------------
        */
 
@@ -228,13 +231,14 @@ export default function SignupPage() {
                 user.uid,
             },
             {
-              merge: true,
+              merge:
+                true,
             }
           );
 
 
           /*
-           * Only remove the temporary journey after
+           * Only remove the temporary copy after
            * Firestore confirms the save.
            */
 
@@ -250,10 +254,6 @@ export default function SignupPage() {
           );
 
 
-          /*
-           * Keep the pending journey so it is not lost.
-           */
-
           setError(
             "Your account was created, but we couldn't save your journey yet. Your journey is still being kept temporarily. Please try again."
           );
@@ -261,6 +261,7 @@ export default function SignupPage() {
           setLoading(false);
 
           return;
+
         }
 
       }
@@ -268,24 +269,9 @@ export default function SignupPage() {
 
       /*
        * ------------------------------------------------------
-       * STEP 4 — RETURN TO ORIGINAL PAGE
+       * RETURN TO ORIGINAL DESTINATION
        * ------------------------------------------------------
-       *
-       * Examples:
-       *
-       * Community:
-       *   /community
-       *
-       * Journey:
-       *   /journey
-       *
-       * Default:
-       *   /journey
        */
-
-      const returnTo =
-        getReturnTo();
-
 
       window.location.href =
         returnTo;
@@ -605,8 +591,6 @@ export default function SignupPage() {
           }
         >
 
-          {/* EMAIL */}
-
           <div
             style={{
               marginBottom:
@@ -690,8 +674,6 @@ export default function SignupPage() {
 
           </div>
 
-
-          {/* PASSWORD */}
 
           <div
             style={{
@@ -777,8 +759,6 @@ export default function SignupPage() {
           </div>
 
 
-          {/* CONFIRM PASSWORD */}
-
           <div
             style={{
               marginBottom:
@@ -863,8 +843,6 @@ export default function SignupPage() {
           </div>
 
 
-          {/* CREATE ACCOUNT */}
-
           <button
             type="submit"
 
@@ -916,7 +894,7 @@ export default function SignupPage() {
 
 
         {/* ==================================================
-            LOGIN LINK
+            LOGIN
         =================================================== */}
 
         <div
@@ -954,7 +932,7 @@ export default function SignupPage() {
           <Link
             href={
               `/login?returnTo=${encodeURIComponent(
-                getReturnTo()
+                returnTo
               )}`
             }
 
@@ -1000,7 +978,7 @@ export default function SignupPage() {
 
           <Link
             href={
-              getReturnTo()
+              returnTo
             }
 
             style={{
@@ -1010,11 +988,19 @@ export default function SignupPage() {
               fontSize:
                 "13px",
 
+              fontWeight:
+                700,
+
               textDecoration:
                 "none",
             }}
           >
-            ← Back
+            {
+              returnTo ===
+              "/community"
+                ? "← Back to Community"
+                : "← Back"
+            }
           </Link>
 
         </div>
@@ -1022,5 +1008,6 @@ export default function SignupPage() {
       </section>
 
     </main>
+
   );
 }
