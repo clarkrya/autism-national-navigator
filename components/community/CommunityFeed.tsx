@@ -30,8 +30,6 @@ import type {
  * COMMUNITY FEED
  * ============================================================
  *
- * Community access:
- *
  * Guest:
  *   Must create an account or log in.
  *
@@ -72,104 +70,163 @@ const CATEGORY_OPTIONS:
 
     label:
       string;
+
+    description:
+      string;
   }[] = [
 
   {
     value:
       "all",
+
     label:
       "All Topics",
+
+    description:
+      "See recent conversations across the Community.",
   },
 
   {
     value:
       "general",
+
     label:
       "General",
+
+    description:
+      "Everyday questions, experiences, and support.",
   },
 
   {
     value:
       "newly_diagnosed",
+
     label:
       "Newly Diagnosed",
+
+    description:
+      "Early questions and navigating what comes next.",
   },
 
   {
     value:
       "school",
+
     label:
       "School",
+
+    description:
+      "School experiences, support, and transitions.",
   },
 
   {
     value:
       "therapy",
+
     label:
       "Therapy",
+
+    description:
+      "Therapy experiences, questions, and support.",
   },
 
   {
     value:
       "insurance",
+
     label:
       "Insurance",
+
+    description:
+      "Coverage, claims, and navigating insurance.",
   },
 
   {
     value:
       "financial_support",
+
     label:
       "Financial Support",
+
+    description:
+      "Financial assistance, costs, and support.",
   },
 
   {
     value:
       "parent_support",
+
     label:
       "Parent Support",
+
+    description:
+      "Support and encouragement for parents and caregivers.",
   },
 
   {
     value:
       "teen_transition",
+
     label:
       "Teen Transition",
+
+    description:
+      "Preparing for changing needs during the teen years.",
   },
 
   {
     value:
       "adult_transition",
+
     label:
       "Adult Transition",
+
+    description:
+      "Preparing for adulthood and greater independence.",
   },
 
   {
     value:
       "siblings_family",
+
     label:
       "Siblings & Family",
+
+    description:
+      "Family relationships, siblings, and shared experiences.",
   },
 
   {
     value:
       "success_stories",
+
     label:
       "Success Stories",
+
+    description:
+      "Celebrate progress, milestones, and encouraging moments.",
   },
 
   {
     value:
       "questions",
+
     label:
       "Questions",
+
+    description:
+      "Ask about something you're navigating.",
   },
 
   {
     value:
       "other",
+
     label:
       "Other",
+
+    description:
+      "Topics that don't fit another category.",
   },
 
 ];
@@ -188,7 +245,9 @@ function getCategoryLabel(
 
   const option =
     CATEGORY_OPTIONS.find(
-      (item) =>
+      (
+        item
+      ) =>
         item.value ===
         category
     );
@@ -198,6 +257,37 @@ function getCategoryLabel(
     option?.label ||
     "Community"
   );
+
+}
+
+
+/*
+ * ============================================================
+ * CATEGORY DESCRIPTION
+ * ============================================================
+ */
+
+function getCategoryDescription(
+  category:
+    CommunityCategory |
+    "all"
+): string {
+
+  const option =
+    CATEGORY_OPTIONS.find(
+      (
+        item
+      ) =>
+        item.value ===
+        category
+    );
+
+
+  return (
+    option?.description ||
+    "Explore Community conversations."
+  );
+
 }
 
 
@@ -208,7 +298,8 @@ function getCategoryLabel(
  */
 
 function formatPostDate(
-  timestamp: number
+  timestamp:
+    number
 ): string {
 
   if (
@@ -257,6 +348,12 @@ function formatPostDate(
 
 export default function CommunityFeed() {
 
+  /*
+   * ----------------------------------------------------------
+   * ACCOUNT ENTITLEMENTS
+   * ----------------------------------------------------------
+   */
+
   const {
     plan,
     loading:
@@ -266,13 +363,25 @@ export default function CommunityFeed() {
     useAccountEntitlements();
 
 
+  /*
+   * ----------------------------------------------------------
+   * POSTS
+   * ----------------------------------------------------------
+   */
+
   const [
     posts,
     setPosts,
-  ] = useState<CommunityPost[]>(
-    []
-  );
+  ] = useState<
+    CommunityPost[]
+  >([]);
 
+
+  /*
+   * ----------------------------------------------------------
+   * LOADING
+   * ----------------------------------------------------------
+   */
 
   const [
     loading,
@@ -280,11 +389,23 @@ export default function CommunityFeed() {
   ] = useState(true);
 
 
+  /*
+   * ----------------------------------------------------------
+   * ERROR
+   * ----------------------------------------------------------
+   */
+
   const [
     error,
     setError,
   ] = useState("");
 
+
+  /*
+   * ----------------------------------------------------------
+   * CATEGORY
+   * ----------------------------------------------------------
+   */
 
   const [
     selectedCategory,
@@ -351,6 +472,12 @@ export default function CommunityFeed() {
 
       try {
 
+        /*
+         * ----------------------------------------------------
+         * BUILD QUERY
+         * ----------------------------------------------------
+         */
+
         const feedFilters =
           selectedCategory ===
           "all"
@@ -379,6 +506,12 @@ export default function CommunityFeed() {
               };
 
 
+        /*
+         * ----------------------------------------------------
+         * LOAD
+         * ----------------------------------------------------
+         */
+
         const loadedPosts =
           await getCommunityPosts(
             feedFilters
@@ -393,6 +526,12 @@ export default function CommunityFeed() {
 
         }
 
+
+        /*
+         * ----------------------------------------------------
+         * ADDITIONAL CLIENT-SIDE SAFETY
+         * ----------------------------------------------------
+         */
 
         const visiblePosts =
           isPremium
@@ -451,6 +590,10 @@ export default function CommunityFeed() {
     }
 
 
+    /*
+     * Don't query before auth/entitlement state is ready.
+     */
+
     if (
       !entitlementLoading
     ) {
@@ -476,7 +619,7 @@ export default function CommunityFeed() {
 
   /*
    * ==========================================================
-   * GUEST
+   * GUEST VIEW
    * ==========================================================
    */
 
@@ -506,10 +649,10 @@ export default function CommunityFeed() {
         <div
           style={{
             marginTop:
-              "24px",
+              "26px",
 
             padding:
-              "35px",
+              "36px",
 
             borderRadius:
               "20px",
@@ -552,6 +695,9 @@ export default function CommunityFeed() {
               fontSize:
                 "26px",
 
+              lineHeight:
+                1.25,
+
               fontWeight:
                 800,
             }}
@@ -566,7 +712,7 @@ export default function CommunityFeed() {
                 "620px",
 
               margin:
-                "10px auto 20px",
+                "10px auto 22px",
 
               color:
                 "#64748B",
@@ -579,7 +725,7 @@ export default function CommunityFeed() {
             }}
           >
             Create a free account to explore
-            community conversations and learn
+            Community conversations and learn
             from other families.
           </p>
 
@@ -683,7 +829,7 @@ export default function CommunityFeed() {
 
   /*
    * ==========================================================
-   * MAIN FEED
+   * MAIN COMMUNITY
    * ==========================================================
    */
 
@@ -698,7 +844,7 @@ export default function CommunityFeed() {
           "0 auto",
 
         padding:
-          "40px 24px 80px",
+          "40px 24px 90px",
       }}
     >
 
@@ -740,12 +886,341 @@ export default function CommunityFeed() {
           }}
         >
           You're viewing the Community as a
-          Free member. Upgrade to Premium to
-          create posts, reply, and participate
-          in discussions.
+          Free member. You can read
+          conversations, while posting and
+          replying are available with Premium.
         </div>
 
       )}
+
+
+      {/* ======================================================
+          BROWSE BY TOPIC
+      ======================================================= */}
+
+      <section
+        style={{
+          marginTop:
+            "28px",
+
+          padding:
+            "22px",
+
+          borderRadius:
+            "18px",
+
+          border:
+            "1px solid #E2E8F0",
+
+          background:
+            "#FFFFFF",
+
+          boxShadow:
+            "0 4px 14px rgba(15, 23, 42, 0.03)",
+        }}
+      >
+
+        <div
+          style={{
+            display:
+              "flex",
+
+            alignItems:
+              "flex-start",
+
+            justifyContent:
+              "space-between",
+
+            gap:
+              "20px",
+
+            flexWrap:
+              "wrap",
+          }}
+        >
+
+          <div
+            style={{
+              flex:
+                "1 1 420px",
+            }}
+          >
+
+            <div
+              style={{
+                color:
+                  "#2563EB",
+
+                fontSize:
+                  "11px",
+
+                fontWeight:
+                  800,
+
+                letterSpacing:
+                  "0.08em",
+
+                textTransform:
+                  "uppercase",
+
+                marginBottom:
+                  "5px",
+              }}
+            >
+              Explore conversations
+            </div>
+
+
+            <h2
+              style={{
+                margin:
+                  0,
+
+                color:
+                  "#0F172A",
+
+                fontSize:
+                  "23px",
+
+                lineHeight:
+                  1.25,
+
+                fontWeight:
+                  800,
+              }}
+            >
+              Browse by topic
+            </h2>
+
+
+            <p
+              style={{
+                margin:
+                  "7px 0 0",
+
+                color:
+                  "#64748B",
+
+                fontSize:
+                  "14px",
+
+                lineHeight:
+                  1.55,
+              }}
+            >
+              {
+                getCategoryDescription(
+                  selectedCategory
+                )
+              }
+            </p>
+
+          </div>
+
+
+          {/* ==================================================
+              TOPIC SELECTOR
+          =================================================== */}
+
+          <div
+            style={{
+              flex:
+                "0 1 270px",
+
+              minWidth:
+                "230px",
+            }}
+          >
+
+            <label
+              htmlFor="community-category"
+
+              style={{
+                display:
+                  "block",
+
+                marginBottom:
+                  "7px",
+
+                color:
+                  "#334155",
+
+                fontSize:
+                  "12px",
+
+                fontWeight:
+                  800,
+              }}
+            >
+              Topic
+            </label>
+
+
+            <select
+              id="community-category"
+
+              value={
+                selectedCategory
+              }
+
+              onChange={(
+                event
+              ) => {
+
+                setSelectedCategory(
+                  event.target.value as
+                    CommunityCategory |
+                    "all"
+                );
+
+              }}
+
+              style={{
+                width:
+                  "100%",
+
+                boxSizing:
+                  "border-box",
+
+                padding:
+                  "11px 12px",
+
+                borderRadius:
+                  "10px",
+
+                border:
+                  "1px solid #CBD5E1",
+
+                background:
+                  "#FFFFFF",
+
+                color:
+                  "#0F172A",
+
+                fontSize:
+                  "14px",
+
+                fontWeight:
+                  700,
+
+                outline:
+                  "none",
+
+                cursor:
+                  "pointer",
+              }}
+            >
+
+              {CATEGORY_OPTIONS.map(
+                (
+                  option
+                ) => (
+
+                  <option
+                    key={
+                      option.value
+                    }
+
+                    value={
+                      option.value
+                    }
+                  >
+                    {
+                      option.label
+                    }
+                  </option>
+
+                )
+              )}
+
+            </select>
+
+          </div>
+
+        </div>
+
+
+        {/* ====================================================
+            SELECTED TOPIC CHIP
+        ===================================================== */}
+
+        <div
+          style={{
+            marginTop:
+              "17px",
+
+            paddingTop:
+              "15px",
+
+            borderTop:
+              "1px solid #F1F5F9",
+
+            display:
+              "flex",
+
+            alignItems:
+              "center",
+
+            gap:
+              "8px",
+
+            flexWrap:
+              "wrap",
+          }}
+        >
+
+          <span
+            style={{
+              color:
+                "#64748B",
+
+              fontSize:
+                "12px",
+
+              fontWeight:
+                700,
+            }}
+          >
+            Showing:
+          </span>
+
+
+          <span
+            style={{
+              padding:
+                "5px 10px",
+
+              borderRadius:
+                "999px",
+
+              background:
+                "#EFF6FF",
+
+              color:
+                "#1D4ED8",
+
+              fontSize:
+                "12px",
+
+              fontWeight:
+                800,
+            }}
+          >
+            {
+              selectedCategory ===
+              "all"
+
+                ? "All Topics"
+
+                : getCategoryLabel(
+                    selectedCategory
+                  )
+            }
+          </span>
+
+        </div>
+
+      </section>
 
 
       {/* ======================================================
@@ -757,7 +1232,7 @@ export default function CommunityFeed() {
         <div
           style={{
             marginTop:
-              "22px",
+              "20px",
 
             display:
               "flex",
@@ -771,6 +1246,15 @@ export default function CommunityFeed() {
             href="/community/create"
 
             style={{
+              display:
+                "inline-flex",
+
+              alignItems:
+                "center",
+
+              gap:
+                "7px",
+
               padding:
                 "11px 18px",
 
@@ -793,7 +1277,11 @@ export default function CommunityFeed() {
                 "none",
             }}
           >
-            + Create a Post
+            <span>
+              +
+            </span>
+
+            Create a Post
           </Link>
 
         </div>
@@ -802,13 +1290,13 @@ export default function CommunityFeed() {
 
 
       {/* ======================================================
-          CATEGORY FILTER
+          SECTION TITLE
       ======================================================= */}
 
       <div
         style={{
           marginTop:
-            "24px",
+            "32px",
 
           display:
             "flex",
@@ -816,101 +1304,89 @@ export default function CommunityFeed() {
           alignItems:
             "center",
 
+          justifyContent:
+            "space-between",
+
           gap:
-            "10px",
+            "15px",
 
           flexWrap:
             "wrap",
         }}
       >
 
-        <label
-          htmlFor="community-category"
+        <div>
 
-          style={{
-            color:
-              "#475569",
+          <h2
+            style={{
+              margin:
+                0,
 
-            fontSize:
-              "13px",
+              color:
+                "#0F172A",
 
-            fontWeight:
-              700,
-          }}
-        >
-          Browse:
-        </label>
+              fontSize:
+                "23px",
+
+              fontWeight:
+                800,
+            }}
+          >
+            Recent Conversations
+          </h2>
 
 
-        <select
-          id="community-category"
+          <p
+            style={{
+              margin:
+                "5px 0 0",
 
-          value={
-            selectedCategory
-          }
+              color:
+                "#64748B",
 
-          onChange={(
-            event
-          ) => {
+              fontSize:
+                "13px",
+            }}
+          >
+            {
+              selectedCategory ===
+              "all"
 
-            setSelectedCategory(
-              event.target.value as
-                CommunityCategory |
-                "all"
-            );
+                ? "The latest published Community conversations."
+                
+                : `Recent conversations about ${getCategoryLabel(
+                    selectedCategory
+                  ).toLowerCase()}.`
+            }
+          </p>
 
-          }}
+        </div>
 
-          style={{
-            minWidth:
-              "190px",
 
-            padding:
-              "9px 12px",
+        {!loading &&
+          !error &&
+          posts.length > 0 && (
 
-            borderRadius:
-              "9px",
+          <span
+            style={{
+              color:
+                "#94A3B8",
 
-            border:
-              "1px solid #CBD5E1",
+              fontSize:
+                "12px",
 
-            background:
-              "#FFFFFF",
+              fontWeight:
+                700,
+            }}
+          >
+            {posts.length}{" "}
+            {posts.length ===
+            1
+              ? "conversation"
+              : "conversations"}
+          </span>
 
-            color:
-              "#334155",
-
-            fontSize:
-              "13px",
-
-            outline:
-              "none",
-          }}
-        >
-
-          {CATEGORY_OPTIONS.map(
-            (
-              option
-            ) => (
-
-              <option
-                key={
-                  option.value
-                }
-
-                value={
-                  option.value
-                }
-              >
-                {
-                  option.label
-                }
-              </option>
-
-            )
-          )}
-
-        </select>
+        )}
 
       </div>
 
@@ -924,10 +1400,10 @@ export default function CommunityFeed() {
         <div
           style={{
             marginTop:
-              "24px",
+              "20px",
 
             padding:
-              "28px",
+              "30px",
 
             borderRadius:
               "18px",
@@ -966,7 +1442,7 @@ export default function CommunityFeed() {
 
           style={{
             marginTop:
-              "24px",
+              "20px",
 
             padding:
               "16px",
@@ -990,7 +1466,9 @@ export default function CommunityFeed() {
               1.5,
           }}
         >
-          {error}
+          {
+            error
+          }
         </div>
 
       )}
@@ -1007,10 +1485,10 @@ export default function CommunityFeed() {
         <div
           style={{
             marginTop:
-              "24px",
+              "20px",
 
             padding:
-              "35px",
+              "38px 24px",
 
             borderRadius:
               "18px",
@@ -1076,9 +1554,9 @@ export default function CommunityFeed() {
                 1.6,
             }}
           >
-            As the Community grows, you'll see
-            conversations from families navigating
-            different parts of the autism journey.
+            There aren't any published conversations
+            in this topic yet. Check another topic
+            or come back as the Community grows.
           </p>
 
         </div>
@@ -1103,7 +1581,7 @@ export default function CommunityFeed() {
               "14px",
 
             marginTop:
-              "24px",
+              "20px",
           }}
         >
 
@@ -1202,8 +1680,8 @@ export default function CommunityFeed() {
             }}
           >
             Premium members can create posts,
-            reply to other families, and participate
-            in Community discussions.
+            reply to other families, and
+            participate in Community discussions.
           </p>
 
 
@@ -1246,7 +1724,6 @@ export default function CommunityFeed() {
     </section>
 
   );
-
 }
 
 
@@ -1384,6 +1861,10 @@ function CommunityPostCard({
       }}
     >
 
+      {/* ====================================================
+          POST META
+      ===================================================== */}
+
       <div
         style={{
           display:
@@ -1513,7 +1994,11 @@ function CommunityPostCard({
       </div>
 
 
-      <h2
+      {/* ====================================================
+          TITLE
+      ===================================================== */}
+
+      <h3
         style={{
           margin:
             "0 0 8px",
@@ -1534,8 +2019,12 @@ function CommunityPostCard({
         {
           post.title
         }
-      </h2>
+      </h3>
 
+
+      {/* ====================================================
+          BODY
+      ===================================================== */}
 
       <p
         style={{
@@ -1560,6 +2049,10 @@ function CommunityPostCard({
         }
       </p>
 
+
+      {/* ====================================================
+          AUTHOR / STATS
+      ===================================================== */}
 
       <div
         style={{
@@ -1635,40 +2128,40 @@ function CommunityPostCard({
       </div>
 
 
-      {isPremium && (
+      {/* ====================================================
+          VIEW CONVERSATION
+      ===================================================== */}
 
-        <div
+      <div
+        style={{
+          marginTop:
+            "15px",
+        }}
+      >
+
+        <Link
+          href={
+            `/community/${post.id}`
+          }
+
           style={{
-            marginTop:
-              "15px",
+            color:
+              "#2563EB",
+
+            fontSize:
+              "13px",
+
+            fontWeight:
+              800,
+
+            textDecoration:
+              "none",
           }}
         >
+          View conversation →
+        </Link>
 
-          <Link
-            href={
-              `/community/${post.id}`
-            }
-
-            style={{
-              color:
-                "#2563EB",
-
-              fontSize:
-                "13px",
-
-              fontWeight:
-                800,
-
-              textDecoration:
-                "none",
-            }}
-          >
-            View conversation →
-          </Link>
-
-        </div>
-
-      )}
+      </div>
 
     </article>
 

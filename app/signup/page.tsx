@@ -2,11 +2,15 @@
 
 import {
   FormEvent,
-  useMemo,
   useState,
 } from "react";
 
 import Link from "next/link";
+
+import {
+  useRouter,
+  useSearchParams,
+} from "next/navigation";
 
 import {
   createUserWithEmailAndPassword,
@@ -28,82 +32,200 @@ import {
 } from "../../lib/journeyStorage";
 
 
+/*
+ * ============================================================
+ * SIGNUP PAGE
+ * ============================================================
+ *
+ * Supports returning users to the page they came from.
+ *
+ * Examples:
+ *
+ * /signup
+ * /signup?returnTo=/community
+ * /signup?returnTo=/community/abc123
+ * /signup?returnTo=/journey
+ *
+ * IMPORTANT:
+ *
+ * Only internal application paths are accepted.
+ * ============================================================
+ */
+
+
+/*
+ * ============================================================
+ * SAFE RETURN DESTINATION
+ * ============================================================
+ */
+
+function getSafeReturnTo(
+  value:
+    | string
+    | null
+): string {
+
+  if (
+    !value
+  ) {
+
+    return "/journey";
+
+  }
+
+
+  /*
+   * Only allow local application paths.
+   */
+
+  if (
+    !value.startsWith("/")
+  ) {
+
+    return "/journey";
+
+  }
+
+
+  /*
+   * Prevent protocol-relative external redirects.
+   */
+
+  if (
+    value.startsWith("//")
+  ) {
+
+    return "/journey";
+
+  }
+
+
+  return value;
+}
+
+
+/*
+ * ============================================================
+ * PAGE
+ * ============================================================
+ */
+
 export default function SignupPage() {
 
-  const [email, setEmail] =
-    useState("");
+  const router =
+    useRouter();
 
-  const [password, setPassword] =
-    useState("");
+
+  const searchParams =
+    useSearchParams();
+
+
+  /*
+   * Read the destination directly from the URL.
+   *
+   * This is intentionally NOT stored in React state.
+   */
+
+  const returnTo =
+    getSafeReturnTo(
+      searchParams.get(
+        "returnTo"
+      )
+    );
+
+
+  const [
+    email,
+    setEmail,
+  ] = useState("");
+
+
+  const [
+    password,
+    setPassword,
+  ] = useState("");
+
 
   const [
     confirmPassword,
     setConfirmPassword,
   ] = useState("");
 
-  const [loading, setLoading] =
-    useState(false);
 
-  const [error, setError] =
-    useState("");
+  const [
+    loading,
+    setLoading,
+  ] = useState(false);
 
-  const [message, setMessage] =
-    useState("");
+
+  const [
+    error,
+    setError,
+  ] = useState("");
+
+
+  const [
+    message,
+    setMessage,
+  ] = useState("");
 
 
   /*
    * ==========================================================
-   * RETURN DESTINATION
+   * NAVIGATION LABEL
    * ==========================================================
-   *
-   * Only allow internal application paths.
-   *
-   * Examples:
-   *
-   * /signup
-   * /signup?returnTo=/community
-   * /signup?returnTo=/community/abc123
    */
 
-  const returnTo =
-    useMemo(() => {
+  const backLabel =
+    returnTo ===
+    "/community"
 
-      if (
-        typeof window ===
-        "undefined"
-      ) {
+      ? "← Back to Community"
 
-        return "/journey";
+      : returnTo.startsWith(
+          "/community/"
+        )
 
-      }
+        ? "← Back to Conversation"
 
-
-      const params =
-        new URLSearchParams(
-          window.location.search
-        );
+        : "← Back";
 
 
-      const requestedReturnTo =
-        params.get(
-          "returnTo"
-        );
+  /*
+   * ==========================================================
+   * LOGIN URL
+   * ==========================================================
+   */
+
+  const loginUrl =
+    `/login?returnTo=${encodeURIComponent(
+      returnTo
+    )}`;
 
 
-      if (
-        !requestedReturnTo ||
-        !requestedReturnTo.startsWith("/") ||
-        requestedReturnTo.startsWith("//")
-      ) {
+  /*
+   * ==========================================================
+   * BACK
+   * ==========================================================
+   *
+   * Uses the URL value directly.
+   *
+   * This is the important part:
+   *
+   * /signup?returnTo=/community
+   *
+   * will ALWAYS go to:
+   *
+   * /community
+   */
 
-        return "/journey";
+  function handleBack() {
 
-      }
+    router.replace(
+      returnTo
+    );
 
-
-      return requestedReturnTo;
-
-    }, []);
+  }
 
 
   /*
@@ -237,11 +359,6 @@ export default function SignupPage() {
           );
 
 
-          /*
-           * Only remove the temporary copy after
-           * Firestore confirms the save.
-           */
-
           clearPendingJourney();
 
         } catch (
@@ -269,12 +386,13 @@ export default function SignupPage() {
 
       /*
        * ------------------------------------------------------
-       * RETURN TO ORIGINAL DESTINATION
+       * RETURN TO ORIGINAL PAGE
        * ------------------------------------------------------
        */
 
-      window.location.href =
-        returnTo;
+      router.replace(
+        returnTo
+      );
 
     } catch (
       error: unknown
@@ -582,7 +700,7 @@ export default function SignupPage() {
 
 
         {/* ==================================================
-            SIGNUP FORM
+            FORM
         =================================================== */}
 
         <form
@@ -590,6 +708,8 @@ export default function SignupPage() {
             handleSignup
           }
         >
+
+          {/* EMAIL */}
 
           <div
             style={{
@@ -675,6 +795,8 @@ export default function SignupPage() {
           </div>
 
 
+          {/* PASSWORD */}
+
           <div
             style={{
               marginBottom:
@@ -759,6 +881,8 @@ export default function SignupPage() {
           </div>
 
 
+          {/* CONFIRM PASSWORD */}
+
           <div
             style={{
               marginBottom:
@@ -842,6 +966,8 @@ export default function SignupPage() {
 
           </div>
 
+
+          {/* CREATE ACCOUNT */}
 
           <button
             type="submit"
@@ -931,9 +1057,7 @@ export default function SignupPage() {
 
           <Link
             href={
-              `/login?returnTo=${encodeURIComponent(
-                returnTo
-              )}`
+              loginUrl
             }
 
             style={{
@@ -976,12 +1100,23 @@ export default function SignupPage() {
           }}
         >
 
-          <Link
-            href={
-              returnTo
+          <button
+            type="button"
+
+            onClick={
+              handleBack
             }
 
             style={{
+              border:
+                "none",
+
+              background:
+                "transparent",
+
+              padding:
+                0,
+
               color:
                 "#64748B",
 
@@ -991,17 +1126,14 @@ export default function SignupPage() {
               fontWeight:
                 700,
 
-              textDecoration:
-                "none",
+              cursor:
+                "pointer",
             }}
           >
             {
-              returnTo ===
-              "/community"
-                ? "← Back to Community"
-                : "← Back"
+              backLabel
             }
-          </Link>
+          </button>
 
         </div>
 
@@ -1010,4 +1142,5 @@ export default function SignupPage() {
     </main>
 
   );
+
 }
