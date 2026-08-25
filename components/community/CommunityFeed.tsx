@@ -30,16 +30,13 @@ import type {
  * COMMUNITY FEED
  * ============================================================
  *
- * Read-only Community experience for Free accounts.
- *
- * ACCESS
+ * Community access:
  *
  * Guest:
- *   Community requires an account.
+ *   Must create an account or log in.
  *
  * Free:
- *   Read published posts.
- *   Cannot participate.
+ *   Read-only Community access.
  *
  * Premium:
  *   Read + participate.
@@ -49,6 +46,16 @@ import type {
  *
  * ============================================================
  */
+
+
+/*
+ * ============================================================
+ * COMMUNITY RETURN PATH
+ * ============================================================
+ */
+
+const COMMUNITY_RETURN_TO =
+  "/community";
 
 
 /*
@@ -70,7 +77,6 @@ const CATEGORY_OPTIONS:
   {
     value:
       "all",
-
     label:
       "All Topics",
   },
@@ -78,7 +84,6 @@ const CATEGORY_OPTIONS:
   {
     value:
       "general",
-
     label:
       "General",
   },
@@ -86,7 +91,6 @@ const CATEGORY_OPTIONS:
   {
     value:
       "newly_diagnosed",
-
     label:
       "Newly Diagnosed",
   },
@@ -94,7 +98,6 @@ const CATEGORY_OPTIONS:
   {
     value:
       "school",
-
     label:
       "School",
   },
@@ -102,7 +105,6 @@ const CATEGORY_OPTIONS:
   {
     value:
       "therapy",
-
     label:
       "Therapy",
   },
@@ -110,7 +112,6 @@ const CATEGORY_OPTIONS:
   {
     value:
       "insurance",
-
     label:
       "Insurance",
   },
@@ -118,7 +119,6 @@ const CATEGORY_OPTIONS:
   {
     value:
       "financial_support",
-
     label:
       "Financial Support",
   },
@@ -126,7 +126,6 @@ const CATEGORY_OPTIONS:
   {
     value:
       "parent_support",
-
     label:
       "Parent Support",
   },
@@ -134,7 +133,6 @@ const CATEGORY_OPTIONS:
   {
     value:
       "teen_transition",
-
     label:
       "Teen Transition",
   },
@@ -142,7 +140,6 @@ const CATEGORY_OPTIONS:
   {
     value:
       "adult_transition",
-
     label:
       "Adult Transition",
   },
@@ -150,7 +147,6 @@ const CATEGORY_OPTIONS:
   {
     value:
       "siblings_family",
-
     label:
       "Siblings & Family",
   },
@@ -158,7 +154,6 @@ const CATEGORY_OPTIONS:
   {
     value:
       "success_stories",
-
     label:
       "Success Stories",
   },
@@ -166,7 +161,6 @@ const CATEGORY_OPTIONS:
   {
     value:
       "questions",
-
     label:
       "Questions",
   },
@@ -174,7 +168,6 @@ const CATEGORY_OPTIONS:
   {
     value:
       "other",
-
     label:
       "Other",
   },
@@ -218,8 +211,12 @@ function formatPostDate(
   timestamp: number
 ): string {
 
-  if (!timestamp) {
+  if (
+    !timestamp
+  ) {
+
     return "";
+
   }
 
 
@@ -260,12 +257,6 @@ function formatPostDate(
 
 export default function CommunityFeed() {
 
-  /*
-   * ----------------------------------------------------------
-   * ENTITLEMENTS
-   * ----------------------------------------------------------
-   */
-
   const {
     plan,
     loading:
@@ -275,12 +266,6 @@ export default function CommunityFeed() {
     useAccountEntitlements();
 
 
-  /*
-   * ----------------------------------------------------------
-   * POSTS
-   * ----------------------------------------------------------
-   */
-
   const [
     posts,
     setPosts,
@@ -288,12 +273,6 @@ export default function CommunityFeed() {
     []
   );
 
-
-  /*
-   * ----------------------------------------------------------
-   * UI STATE
-   * ----------------------------------------------------------
-   */
 
   const [
     loading,
@@ -326,24 +305,29 @@ export default function CommunityFeed() {
 
   useEffect(() => {
 
-    let active = true;
+    let active =
+      true;
 
 
     async function loadPosts() {
-
-      /*
-       * ------------------------------------------------------
-       * AUTH CHECK
-       * ------------------------------------------------------
-       */
 
       const currentUser =
         getCurrentUser();
 
 
-      if (!currentUser) {
+      /*
+       * ------------------------------------------------------
+       * GUEST
+       * ------------------------------------------------------
+       */
 
-        if (active) {
+      if (
+        !currentUser
+      ) {
+
+        if (
+          active
+        ) {
 
           setPosts([]);
 
@@ -367,20 +351,10 @@ export default function CommunityFeed() {
 
       try {
 
-        /*
-         * ----------------------------------------------------
-         * BUILD FILTERS
-         * ----------------------------------------------------
-         *
-         * Free users should only request public/non-Premium
-         * posts.
-         *
-         * Premium users can request both.
-         */
-
         const feedFilters =
           selectedCategory ===
           "all"
+
             ? {
                 premiumOnly:
                   isPremium
@@ -390,6 +364,7 @@ export default function CommunityFeed() {
                 limit:
                   50,
               }
+
             : {
                 category:
                   selectedCategory,
@@ -410,29 +385,24 @@ export default function CommunityFeed() {
           );
 
 
-        if (!active) {
+        if (
+          !active
+        ) {
+
           return;
+
         }
 
 
-        /*
-         * ----------------------------------------------------
-         * PREMIUM SAFETY FILTER
-         * ----------------------------------------------------
-         *
-         * The Firestore rules provide the actual security
-         * boundary.
-         *
-         * This additional client-side filter keeps the UI
-         * consistent in case data returned contains a
-         * Premium-only record.
-         */
-
         const visiblePosts =
           isPremium
+
             ? loadedPosts
+
             : loadedPosts.filter(
-                (post) =>
+                (
+                  post
+                ) =>
                   !post.isPremiumOnly
               );
 
@@ -441,7 +411,9 @@ export default function CommunityFeed() {
           visiblePosts
         );
 
-      } catch (loadError) {
+      } catch (
+        loadError
+      ) {
 
         console.error(
           "Unable to load Community posts:",
@@ -449,8 +421,12 @@ export default function CommunityFeed() {
         );
 
 
-        if (!active) {
+        if (
+          !active
+        ) {
+
           return;
+
         }
 
 
@@ -460,7 +436,9 @@ export default function CommunityFeed() {
 
       } finally {
 
-        if (active) {
+        if (
+          active
+        ) {
 
           setLoading(
             false
@@ -473,11 +451,6 @@ export default function CommunityFeed() {
     }
 
 
-    /*
-     * Don't query until the subscription/auth state is
-     * established.
-     */
-
     if (
       !entitlementLoading
     ) {
@@ -489,7 +462,8 @@ export default function CommunityFeed() {
 
     return () => {
 
-      active = false;
+      active =
+        false;
 
     };
 
@@ -502,7 +476,7 @@ export default function CommunityFeed() {
 
   /*
    * ==========================================================
-   * GUEST STATE
+   * GUEST
    * ==========================================================
    */
 
@@ -605,8 +579,8 @@ export default function CommunityFeed() {
             }}
           >
             Create a free account to explore
-            community conversations and
-            learn from other families.
+            community conversations and learn
+            from other families.
           </p>
 
 
@@ -627,7 +601,11 @@ export default function CommunityFeed() {
           >
 
             <Link
-              href="/signup"
+              href={
+                `/signup?returnTo=${encodeURIComponent(
+                  COMMUNITY_RETURN_TO
+                )}`
+              }
 
               style={{
                 padding:
@@ -657,7 +635,11 @@ export default function CommunityFeed() {
 
 
             <Link
-              href="/login"
+              href={
+                `/login?returnTo=${encodeURIComponent(
+                  COMMUNITY_RETURN_TO
+                )}`
+              }
 
               style={{
                 padding:
@@ -767,7 +749,7 @@ export default function CommunityFeed() {
 
 
       {/* ======================================================
-          PREMIUM CONTROLS
+          PREMIUM CREATE POST
       ======================================================= */}
 
       {isPremium && (
@@ -844,6 +826,7 @@ export default function CommunityFeed() {
 
         <label
           htmlFor="community-category"
+
           style={{
             color:
               "#475569",
@@ -906,7 +889,9 @@ export default function CommunityFeed() {
         >
 
           {CATEGORY_OPTIONS.map(
-            (option) => (
+            (
+              option
+            ) => (
 
               <option
                 key={
@@ -917,7 +902,9 @@ export default function CommunityFeed() {
                   option.value
                 }
               >
-                {option.label}
+                {
+                  option.label
+                }
               </option>
 
             )
@@ -1121,7 +1108,9 @@ export default function CommunityFeed() {
         >
 
           {posts.map(
-            (post) => (
+            (
+              post
+            ) => (
 
               <CommunityPostCard
                 key={
@@ -1147,7 +1136,7 @@ export default function CommunityFeed() {
 
 
       {/* ======================================================
-          PREMIUM CONVERSION
+          FREE ACCOUNT CONVERSION
       ======================================================= */}
 
       {!entitlementLoading &&
@@ -1257,6 +1246,7 @@ export default function CommunityFeed() {
     </section>
 
   );
+
 }
 
 
@@ -1394,10 +1384,6 @@ function CommunityPostCard({
       }}
     >
 
-      {/* ====================================================
-          POST META
-      ===================================================== */}
-
       <div
         style={{
           display:
@@ -1527,10 +1513,6 @@ function CommunityPostCard({
       </div>
 
 
-      {/* ====================================================
-          TITLE
-      ===================================================== */}
-
       <h2
         style={{
           margin:
@@ -1549,13 +1531,11 @@ function CommunityPostCard({
             800,
         }}
       >
-        {post.title}
+        {
+          post.title
+        }
       </h2>
 
-
-      {/* ====================================================
-          BODY
-      ===================================================== */}
 
       <p
         style={{
@@ -1575,13 +1555,11 @@ function CommunityPostCard({
             "pre-wrap",
         }}
       >
-        {post.body}
+        {
+          post.body
+        }
       </p>
 
-
-      {/* ====================================================
-          AUTHOR / STATS
-      ===================================================== */}
 
       <div
         style={{
@@ -1619,13 +1597,16 @@ function CommunityPostCard({
 
         <span>
           Shared by{" "}
+
           <strong
             style={{
               color:
                 "#64748B",
             }}
           >
-            {displayAuthor}
+            {
+              displayAuthor
+            }
           </strong>
         </span>
 
@@ -1653,10 +1634,6 @@ function CommunityPostCard({
 
       </div>
 
-
-      {/* ====================================================
-          PREMIUM INTERACTION
-      ===================================================== */}
 
       {isPremium && (
 

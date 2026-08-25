@@ -52,6 +52,58 @@ export default function SignupPage() {
 
   /*
    * ==========================================================
+   * RETURN DESTINATION
+   * ==========================================================
+   *
+   * Examples:
+   *
+   * /signup
+   * /signup?returnTo=/community
+   *
+   * We only permit local application paths.
+   */
+
+  function getReturnTo(): string {
+
+    if (
+      typeof window ===
+      "undefined"
+    ) {
+
+      return "/journey";
+
+    }
+
+
+    const params =
+      new URLSearchParams(
+        window.location.search
+      );
+
+
+    const returnTo =
+      params.get(
+        "returnTo"
+      );
+
+
+    if (
+      !returnTo ||
+      !returnTo.startsWith("/") ||
+      returnTo.startsWith("//")
+    ) {
+
+      return "/journey";
+
+    }
+
+
+    return returnTo;
+  }
+
+
+  /*
+   * ==========================================================
    * SIGN UP
    * ==========================================================
    */
@@ -73,7 +125,9 @@ export default function SignupPage() {
      * --------------------------------------------------------
      */
 
-    if (password.length < 6) {
+    if (
+      password.length < 6
+    ) {
 
       setError(
         "Your password must be at least 6 characters."
@@ -128,9 +182,8 @@ export default function SignupPage() {
        * STEP 2 — CHECK FOR A PENDING GUEST JOURNEY
        * ------------------------------------------------------
        *
-       * If the visitor clicked "Save My Journey" before
-       * creating an account, the journey is temporarily
-       * stored in sessionStorage.
+       * A guest may have completed a journey before creating
+       * an account. Preserve that journey.
        */
 
       const pendingJourney =
@@ -143,7 +196,9 @@ export default function SignupPage() {
        * ------------------------------------------------------
        */
 
-      if (pendingJourney) {
+      if (
+        pendingJourney
+      ) {
 
         try {
 
@@ -179,13 +234,15 @@ export default function SignupPage() {
 
 
           /*
-           * Only remove the temporary copy AFTER
+           * Only remove the temporary journey after
            * Firestore confirms the save.
            */
 
           clearPendingJourney();
 
-        } catch (saveError) {
+        } catch (
+          saveError
+        ) {
 
           console.error(
             "Unable to save pending journey after signup:",
@@ -194,11 +251,7 @@ export default function SignupPage() {
 
 
           /*
-           * Keep the pending journey in storage.
-           *
-           * The account exists, but we don't want to
-           * lose the family's journey if Firestore
-           * temporarily fails.
+           * Keep the pending journey so it is not lost.
            */
 
           setError(
@@ -209,22 +262,37 @@ export default function SignupPage() {
 
           return;
         }
+
       }
 
 
       /*
        * ------------------------------------------------------
-       * STEP 4 — RETURN TO JOURNEY
+       * STEP 4 — RETURN TO ORIGINAL PAGE
        * ------------------------------------------------------
        *
-       * JourneyBuilder will now detect the authenticated
-       * user and load users/{uid}/journeys/current.
+       * Examples:
+       *
+       * Community:
+       *   /community
+       *
+       * Journey:
+       *   /journey
+       *
+       * Default:
+       *   /journey
        */
 
-      window.location.href =
-        "/journey";
+      const returnTo =
+        getReturnTo();
 
-    } catch (error: unknown) {
+
+      window.location.href =
+        returnTo;
+
+    } catch (
+      error: unknown
+    ) {
 
       console.error(
         "Signup error:",
@@ -234,7 +302,8 @@ export default function SignupPage() {
 
       if (
         error &&
-        typeof error === "object" &&
+        typeof error ===
+          "object" &&
         "code" in error
       ) {
 
@@ -248,7 +317,9 @@ export default function SignupPage() {
           );
 
 
-        switch (code) {
+        switch (
+          code
+        ) {
 
           case "auth/email-already-in-use":
 
@@ -304,9 +375,12 @@ export default function SignupPage() {
 
     } finally {
 
-      setLoading(false);
+      setLoading(
+        false
+      );
 
     }
+
   }
 
 
@@ -571,7 +645,9 @@ export default function SignupPage() {
 
               autoComplete="email"
 
-              value={email}
+              value={
+                email
+              }
 
               onChange={(
                 event
@@ -583,8 +659,7 @@ export default function SignupPage() {
 
               required
 
-              placeholder=
-                "you@example.com"
+              placeholder="you@example.com"
 
               style={{
                 width:
@@ -654,10 +729,11 @@ export default function SignupPage() {
 
               type="password"
 
-              autoComplete=
-                "new-password"
+              autoComplete="new-password"
 
-              value={password}
+              value={
+                password
+              }
 
               onChange={(
                 event
@@ -669,8 +745,7 @@ export default function SignupPage() {
 
               required
 
-              placeholder=
-                "At least 6 characters"
+              placeholder="At least 6 characters"
 
               style={{
                 width:
@@ -740,8 +815,7 @@ export default function SignupPage() {
 
               type="password"
 
-              autoComplete=
-                "new-password"
+              autoComplete="new-password"
 
               value={
                 confirmPassword
@@ -757,8 +831,7 @@ export default function SignupPage() {
 
               required
 
-              placeholder=
-                "Re-enter your password"
+              placeholder="Re-enter your password"
 
               style={{
                 width:
@@ -832,9 +905,11 @@ export default function SignupPage() {
                   : "pointer",
             }}
           >
-            {loading
-              ? "Creating Account..."
-              : "Create Free Account"}
+            {
+              loading
+                ? "Creating Account..."
+                : "Create Free Account"
+            }
           </button>
 
         </form>
@@ -877,7 +952,11 @@ export default function SignupPage() {
 
 
           <Link
-            href="/login"
+            href={
+              `/login?returnTo=${encodeURIComponent(
+                getReturnTo()
+              )}`
+            }
 
             style={{
               display:
@@ -920,7 +999,9 @@ export default function SignupPage() {
         >
 
           <Link
-            href="/journey"
+            href={
+              getReturnTo()
+            }
 
             style={{
               color:
@@ -933,7 +1014,7 @@ export default function SignupPage() {
                 "none",
             }}
           >
-            ← Back to my journey
+            ← Back
           </Link>
 
         </div>

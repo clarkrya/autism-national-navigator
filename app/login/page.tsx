@@ -1,6 +1,10 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import {
+  FormEvent,
+  useState,
+} from "react";
+
 import Link from "next/link";
 
 import {
@@ -9,189 +13,149 @@ import {
 } from "firebase/auth";
 
 import {
-  doc,
-  setDoc,
-} from "firebase/firestore";
-
-import { auth, db } from "../../lib/firebase";
-
-import {
-  getPendingJourney,
-  clearPendingJourney,
-} from "../../lib/journeyStorage";
+  auth,
+} from "../../lib/firebase";
 
 
 export default function LoginPage() {
 
-  const [email, setEmail] =
-    useState("");
+  const [
+    email,
+    setEmail,
+  ] = useState("");
 
-  const [password, setPassword] =
-    useState("");
+  const [
+    password,
+    setPassword,
+  ] = useState("");
 
-  const [loading, setLoading] =
-    useState(false);
+  const [
+    loading,
+    setLoading,
+  ] = useState(false);
 
-  const [resetting, setResetting] =
-    useState(false);
+  const [
+    resetting,
+    setResetting,
+  ] = useState(false);
 
-  const [error, setError] =
-    useState("");
+  const [
+    error,
+    setError,
+  ] = useState("");
 
-  const [message, setMessage] =
-    useState("");
+  const [
+    message,
+    setMessage,
+  ] = useState("");
 
 
   /*
-   * ==========================================================
+   * ============================================================
+   * DETERMINE RETURN LOCATION
+   * ============================================================
+   *
+   * Examples:
+   *
+   * /login
+   * /login?returnTo=/community
+   *
+   * We only allow local paths beginning with "/" so an external
+   * website cannot be supplied as the redirect destination.
+   */
+
+  function getReturnTo(): string {
+
+    if (
+      typeof window ===
+      "undefined"
+    ) {
+
+      return "/journey";
+
+    }
+
+
+    const params =
+      new URLSearchParams(
+        window.location.search
+      );
+
+
+    const returnTo =
+      params.get(
+        "returnTo"
+      );
+
+
+    if (
+      !returnTo ||
+      !returnTo.startsWith("/") ||
+      returnTo.startsWith("//")
+    ) {
+
+      return "/journey";
+
+    }
+
+
+    return returnTo;
+  }
+
+
+  /*
+   * ============================================================
    * LOGIN
-   * ==========================================================
+   * ============================================================
    */
 
   async function handleLogin(
-    event: FormEvent<HTMLFormElement>
+    event:
+      FormEvent<HTMLFormElement>
   ) {
 
     event.preventDefault();
 
     setError("");
+
     setMessage("");
+
     setLoading(true);
 
 
     try {
 
-      /*
-       * --------------------------------------------------------
-       * STEP 1 — AUTHENTICATE
-       * --------------------------------------------------------
-       */
-
-      const credential =
-        await signInWithEmailAndPassword(
-          auth,
-          email.trim(),
-          password
-        );
-
-
-      const user =
-        credential.user;
+      await signInWithEmailAndPassword(
+        auth,
+        email.trim(),
+        password
+      );
 
 
       /*
-       * --------------------------------------------------------
-       * STEP 2 — CHECK FOR PENDING GUEST JOURNEY
-       * --------------------------------------------------------
+       * Return the user to the page that sent them here.
        *
-       * A family may have completed a journey before
-       * creating/logging into an account.
+       * Examples:
        *
-       * If they clicked Save My Journey, that journey
-       * was temporarily stored in sessionStorage.
+       * Community → Community
+       * Journey   → Journey
+       * Pricing   → Pricing
        *
-       * We now move that journey into their Firebase
-       * account.
+       * Default:
+       *
+       * Journey
        */
 
-      const pendingJourney =
-        getPendingJourney();
+      const returnTo =
+        getReturnTo();
 
-
-      if (pendingJourney) {
-
-        try {
-
-          /*
-           * ----------------------------------------------------
-           * SAVE PENDING JOURNEY
-           * ----------------------------------------------------
-           */
-
-          const journeyRef =
-            doc(
-              db,
-              "users",
-              user.uid,
-              "journeys",
-              "current"
-            );
-
-
-          await setDoc(
-            journeyRef,
-            {
-              familyProfile:
-                pendingJourney.familyProfile,
-
-              journey:
-                pendingJourney
-                  .personalizedJourney,
-
-              updatedAt:
-                Date.now(),
-
-              createdBy:
-                user.uid,
-            },
-            {
-              merge: true,
-            }
-          );
-
-
-          /*
-           * ----------------------------------------------------
-           * ONLY CLEAR TEMPORARY JOURNEY AFTER SUCCESSFUL SAVE
-           * ----------------------------------------------------
-           */
-
-          clearPendingJourney();
-
-        } catch (saveError) {
-
-          console.error(
-            "Unable to save pending journey after login:",
-            saveError
-          );
-
-
-          /*
-           * The user successfully logged in,
-           * but their pending journey could not
-           * be transferred to Firestore.
-           *
-           * DO NOT clear the pending journey.
-           *
-           * This gives us another opportunity to
-           * save it instead of losing the family's work.
-           */
-
-          setError(
-            "You logged in successfully, but we couldn't save your pending journey. Your journey is still being kept temporarily. Please try again."
-          );
-
-          setLoading(false);
-
-          return;
-        }
-      }
-
-
-      /*
-       * --------------------------------------------------------
-       * STEP 3 — GO TO JOURNEY
-       * --------------------------------------------------------
-       *
-       * JourneyBuilder will be responsible for determining
-       * whether this user already has a saved journey and
-       * loading it instead of starting over.
-       */
 
       window.location.href =
-        "/journey";
+        returnTo;
 
-    } catch (error: unknown) {
+    } catch (
+      error: unknown
+    ) {
 
       console.error(
         "Login error:",
@@ -201,19 +165,24 @@ export default function LoginPage() {
 
       if (
         error &&
-        typeof error === "object" &&
+        typeof error ===
+          "object" &&
         "code" in error
       ) {
 
         const code =
           String(
-            (error as {
-              code?: unknown;
-            }).code
+            (
+              error as {
+                code?: unknown;
+              }
+            ).code
           );
 
 
-        switch (code) {
+        switch (
+          code
+        ) {
 
           case "auth/invalid-credential":
 
@@ -251,6 +220,7 @@ export default function LoginPage() {
             setError(
               "We couldn't log you in right now. Please try again."
             );
+
         }
 
       } else {
@@ -258,39 +228,49 @@ export default function LoginPage() {
         setError(
           "We couldn't log you in right now. Please try again."
         );
+
       }
 
     } finally {
 
-      setLoading(false);
+      setLoading(
+        false
+      );
 
     }
+
   }
 
 
   /*
-   * ==========================================================
+   * ============================================================
    * PASSWORD RESET
-   * ==========================================================
+   * ============================================================
    */
 
   async function handlePasswordReset() {
 
     setError("");
+
     setMessage("");
 
 
-    if (!email.trim()) {
+    if (
+      !email.trim()
+    ) {
 
       setError(
         "Enter your email address first, then select Forgot password."
       );
 
       return;
+
     }
 
 
-    setResetting(true);
+    setResetting(
+      true
+    );
 
 
     try {
@@ -305,7 +285,9 @@ export default function LoginPage() {
         "If an account exists for this email, we've sent instructions to reset your password."
       );
 
-    } catch (error: unknown) {
+    } catch (
+      error: unknown
+    ) {
 
       console.error(
         "Password reset error:",
@@ -319,16 +301,19 @@ export default function LoginPage() {
 
     } finally {
 
-      setResetting(false);
+      setResetting(
+        false
+      );
 
     }
+
   }
 
 
   /*
-   * ==========================================================
-   * PAGE
-   * ==========================================================
+   * ============================================================
+   * RETURN
+   * ============================================================
    */
 
   return (
@@ -338,7 +323,8 @@ export default function LoginPage() {
         minHeight:
           "calc(100vh - 120px)",
 
-        display: "flex",
+        display:
+          "flex",
 
         justifyContent:
           "center",
@@ -356,31 +342,33 @@ export default function LoginPage() {
 
       <section
         style={{
-          width: "100%",
+          width:
+            "100%",
 
-          maxWidth: "480px",
+          maxWidth:
+            "480px",
 
-          background: "#FFFFFF",
+          background:
+            "#FFFFFF",
 
           border:
             "1px solid #E2E8F0",
 
-          borderRadius: "22px",
+          borderRadius:
+            "22px",
 
-          padding: "40px",
+          padding:
+            "40px",
 
           boxShadow:
             "0 12px 35px rgba(15, 23, 42, 0.08)",
         }}
       >
 
-        {/* ==================================================
-            HEADER
-        =================================================== */}
-
         <div
           style={{
-            textAlign: "center",
+            textAlign:
+              "center",
 
             marginBottom:
               "30px",
@@ -389,7 +377,8 @@ export default function LoginPage() {
 
           <div
             style={{
-              fontSize: "38px",
+              fontSize:
+                "38px",
 
               marginBottom:
                 "12px",
@@ -401,15 +390,20 @@ export default function LoginPage() {
 
           <h1
             style={{
-              margin: 0,
+              margin:
+                0,
 
-              color: "#0F172A",
+              color:
+                "#0F172A",
 
-              fontSize: "32px",
+              fontSize:
+                "32px",
 
-              lineHeight: 1.2,
+              lineHeight:
+                1.2,
 
-              fontWeight: 800,
+              fontWeight:
+                800,
             }}
           >
             Welcome Back
@@ -418,15 +412,20 @@ export default function LoginPage() {
 
           <p
             style={{
-              marginTop: "12px",
+              marginTop:
+                "12px",
 
-              marginBottom: 0,
+              marginBottom:
+                0,
 
-              color: "#64748B",
+              color:
+                "#64748B",
 
-              fontSize: "16px",
+              fontSize:
+                "16px",
 
-              lineHeight: 1.6,
+              lineHeight:
+                1.6,
             }}
           >
             Log in to save and continue your
@@ -436,14 +435,11 @@ export default function LoginPage() {
         </div>
 
 
-        {/* ==================================================
-            ERROR
-        =================================================== */}
-
         {error && (
 
           <div
             role="alert"
+
             style={{
               marginBottom:
                 "20px",
@@ -476,14 +472,11 @@ export default function LoginPage() {
         )}
 
 
-        {/* ==================================================
-            MESSAGE
-        =================================================== */}
-
         {message && (
 
           <div
             role="status"
+
             style={{
               marginBottom:
                 "20px",
@@ -516,17 +509,11 @@ export default function LoginPage() {
         )}
 
 
-        {/* ==================================================
-            LOGIN FORM
-        =================================================== */}
-
         <form
           onSubmit={
             handleLogin
           }
         >
-
-          {/* EMAIL */}
 
           <div
             style={{
@@ -537,6 +524,7 @@ export default function LoginPage() {
 
             <label
               htmlFor="email"
+
               style={{
                 display:
                   "block",
@@ -565,7 +553,9 @@ export default function LoginPage() {
 
               autoComplete="email"
 
-              value={email}
+              value={
+                email
+              }
 
               onChange={(
                 event
@@ -580,7 +570,8 @@ export default function LoginPage() {
               placeholder="you@example.com"
 
               style={{
-                width: "100%",
+                width:
+                  "100%",
 
                 boxSizing:
                   "border-box",
@@ -608,8 +599,6 @@ export default function LoginPage() {
           </div>
 
 
-          {/* PASSWORD */}
-
           <div
             style={{
               marginBottom:
@@ -619,6 +608,7 @@ export default function LoginPage() {
 
             <label
               htmlFor="password"
+
               style={{
                 display:
                   "block",
@@ -645,10 +635,11 @@ export default function LoginPage() {
 
               type="password"
 
-              autoComplete=
-                "current-password"
+              autoComplete="current-password"
 
-              value={password}
+              value={
+                password
+              }
 
               onChange={(
                 event
@@ -660,11 +651,11 @@ export default function LoginPage() {
 
               required
 
-              placeholder=
-                "Enter your password"
+              placeholder="Enter your password"
 
               style={{
-                width: "100%",
+                width:
+                  "100%",
 
                 boxSizing:
                   "border-box",
@@ -691,8 +682,6 @@ export default function LoginPage() {
 
           </div>
 
-
-          {/* PASSWORD RESET */}
 
           <div
             style={{
@@ -722,7 +711,8 @@ export default function LoginPage() {
                 background:
                   "transparent",
 
-                padding: 0,
+                padding:
+                  0,
 
                 color:
                   "#2563EB",
@@ -739,15 +729,15 @@ export default function LoginPage() {
                     : "pointer",
               }}
             >
-              {resetting
-                ? "Sending..."
-                : "Forgot password?"}
+              {
+                resetting
+                  ? "Sending..."
+                  : "Forgot password?"
+              }
             </button>
 
           </div>
 
-
-          {/* LOGIN BUTTON */}
 
           <button
             type="submit"
@@ -757,7 +747,8 @@ export default function LoginPage() {
             }
 
             style={{
-              width: "100%",
+              width:
+                "100%",
 
               padding:
                 "14px 18px",
@@ -788,17 +779,15 @@ export default function LoginPage() {
                   : "pointer",
             }}
           >
-            {loading
-              ? "Logging in..."
-              : "Log In"}
+            {
+              loading
+                ? "Logging in..."
+                : "Log In"
+            }
           </button>
 
         </form>
 
-
-        {/* ==================================================
-            SIGN UP
-        =================================================== */}
 
         <div
           style={{
@@ -818,7 +807,8 @@ export default function LoginPage() {
 
           <p
             style={{
-              margin: 0,
+              margin:
+                0,
 
               color:
                 "#64748B",
@@ -832,7 +822,11 @@ export default function LoginPage() {
 
 
           <Link
-            href="/signup"
+            href={
+              `/signup?returnTo=${encodeURIComponent(
+                getReturnTo()
+              )}`
+            }
 
             style={{
               display:
@@ -860,10 +854,6 @@ export default function LoginPage() {
         </div>
 
 
-        {/* ==================================================
-            BACK TO JOURNEY
-        =================================================== */}
-
         <div
           style={{
             marginTop:
@@ -875,7 +865,9 @@ export default function LoginPage() {
         >
 
           <Link
-            href="/journey"
+            href={
+              getReturnTo()
+            }
 
             style={{
               color:
@@ -888,7 +880,7 @@ export default function LoginPage() {
                 "none",
             }}
           >
-            ← Back to my journey
+            ← Back
           </Link>
 
         </div>
@@ -896,5 +888,7 @@ export default function LoginPage() {
       </section>
 
     </main>
+
   );
+
 }
