@@ -15,6 +15,10 @@ import {
   useAccountEntitlements,
 } from "../../lib/useAccountEntitlements";
 
+import {
+  auth,
+} from "../../lib/firebase";
+
 import type {
   CommunityCategory,
 } from "../../lib/communityTypes";
@@ -25,30 +29,18 @@ import type {
  * CREATE COMMUNITY POST
  * ============================================================
  *
- * Premium/Premium+ participation feature.
+ * Premium and Premium+ Community participation.
  *
- * Free users:
- *   Cannot access the form.
+ * Free:
+ *   Read-only Community access.
  *
  * Premium:
- *   Can create posts.
+ *   Create posts.
  *
  * Premium+:
- *   Can create posts.
+ *   Create posts.
  *
- * Posts are sent to the protected server API:
- *
- *   POST /api/community/posts
- *
- * The server is responsible for verifying:
- *
- *   - Firebase authentication
- *   - Premium entitlement
- *
- * New posts enter:
- *
- *   pending_review
- *
+ * The server API is still the real authorization boundary.
  * ============================================================
  */
 
@@ -59,159 +51,101 @@ import type {
  * ============================================================
  */
 
-const CATEGORY_OPTIONS:
-  {
-    value:
-      CommunityCategory;
-
-    label:
-      string;
-
-    description:
-      string;
-  }[] = [
+const CATEGORY_OPTIONS: {
+  value: CommunityCategory;
+  label: string;
+  description: string;
+}[] = [
 
   {
-    value:
-      "general",
-
-    label:
-      "General",
-
+    value: "general",
+    label: "General",
     description:
       "Everyday questions, experiences, and support.",
   },
 
   {
-    value:
-      "newly_diagnosed",
-
-    label:
-      "Newly Diagnosed",
-
+    value: "newly_diagnosed",
+    label: "Newly Diagnosed",
     description:
       "Early questions and navigating what comes next.",
   },
 
   {
-    value:
-      "school",
-
-    label:
-      "School",
-
+    value: "school",
+    label: "School",
     description:
       "School experiences, support, and transitions.",
   },
 
   {
-    value:
-      "therapy",
-
-    label:
-      "Therapy",
-
+    value: "therapy",
+    label: "Therapy",
     description:
       "Therapy experiences, questions, and support.",
   },
 
   {
-    value:
-      "insurance",
-
-    label:
-      "Insurance",
-
+    value: "insurance",
+    label: "Insurance",
     description:
       "Coverage, claims, and navigating insurance.",
   },
 
   {
-    value:
-      "financial_support",
-
-    label:
-      "Financial Support",
-
+    value: "financial_support",
+    label: "Financial Support",
     description:
       "Financial assistance, costs, and support.",
   },
 
   {
-    value:
-      "parent_support",
-
-    label:
-      "Parent Support",
-
+    value: "parent_support",
+    label: "Parent Support",
     description:
       "Support and encouragement for parents and caregivers.",
   },
 
   {
-    value:
-      "teen_transition",
-
-    label:
-      "Teen Transition",
-
+    value: "teen_transition",
+    label: "Teen Transition",
     description:
       "Changing needs during the teen years.",
   },
 
   {
-    value:
-      "adult_transition",
-
-    label:
-      "Adult Transition",
-
+    value: "adult_transition",
+    label: "Adult Transition",
     description:
       "Preparing for adulthood and greater independence.",
   },
 
   {
-    value:
-      "siblings_family",
-
-    label:
-      "Siblings & Family",
-
+    value: "siblings_family",
+    label: "Siblings & Family",
     description:
       "Family relationships, siblings, and shared experiences.",
   },
 
   {
-    value:
-      "success_stories",
-
-    label:
-      "Success Stories",
-
+    value: "success_stories",
+    label: "Success Stories",
     description:
       "Celebrate progress and encouraging moments.",
   },
 
   {
-    value:
-      "questions",
-
-    label:
-      "Questions",
-
+    value: "questions",
+    label: "Questions",
     description:
       "Ask about something you're navigating.",
   },
 
   {
-    value:
-      "other",
-
-    label:
-      "Other",
-
+    value: "other",
+    label: "Other",
     description:
-      "Topics that don't fit another category.",
+      "Topics that do not fit another category.",
   },
 
 ];
@@ -219,7 +153,7 @@ const CATEGORY_OPTIONS:
 
 /*
  * ============================================================
- * CREATE COMMUNITY POST
+ * COMPONENT
  * ============================================================
  */
 
@@ -229,25 +163,17 @@ export default function CreateCommunityPost() {
     useRouter();
 
 
-  /*
-   * ----------------------------------------------------------
-   * ENTITLEMENTS
-   * ----------------------------------------------------------
-   */
-
   const {
-    plan,
-    loading:
-      entitlementLoading,
+    loading: entitlementLoading,
     isPremium,
   } =
     useAccountEntitlements();
 
 
   /*
-   * ----------------------------------------------------------
+   * ==========================================================
    * FORM STATE
-   * ----------------------------------------------------------
+   * ==========================================================
    */
 
   const [
@@ -265,31 +191,28 @@ export default function CreateCommunityPost() {
   const [
     category,
     setCategory,
-  ] = useState<CommunityCategory>(
-    "general"
-  );
+  ] =
+    useState<CommunityCategory>(
+      "general"
+    );
 
 
   const [
     isAnonymous,
     setIsAnonymous,
-  ] = useState(
-    true
-  );
+  ] = useState(true);
 
 
   const [
     isPremiumOnly,
     setIsPremiumOnly,
-  ] = useState(
-    false
-  );
+  ] = useState(false);
 
 
   /*
-   * ----------------------------------------------------------
-   * REQUEST STATE
-   * ----------------------------------------------------------
+   * ==========================================================
+   * UI STATE
+   * ==========================================================
    */
 
   const [
@@ -303,12 +226,6 @@ export default function CreateCommunityPost() {
     setError,
   ] = useState("");
 
-
-  /*
-   * ----------------------------------------------------------
-   * SUCCESS STATE
-   * ----------------------------------------------------------
-   */
 
   const [
     submitted,
@@ -324,64 +241,44 @@ export default function CreateCommunityPost() {
 
   /*
    * ==========================================================
-   * CATEGORY DETAILS
+   * SELECTED CATEGORY
    * ==========================================================
    */
 
   const selectedCategory =
     CATEGORY_OPTIONS.find(
-      (
-        option
-      ) =>
-        option.value ===
-        category
+      (option) =>
+        option.value === category
     );
 
 
   /*
    * ==========================================================
-   * SUBMIT
+   * SUBMIT POST
    * ==========================================================
    */
 
   async function handleSubmit(
-    event:
-      FormEvent<HTMLFormElement>
+    event: FormEvent<HTMLFormElement>
   ) {
 
     event.preventDefault();
 
+
     setError("");
-
-    setSubmitted(
-      false
-    );
-
-    setSubmitting(
-      true
-    );
+    setSubmitted(false);
 
 
     /*
      * --------------------------------------------------------
-     * CLIENT-SIDE ENTITLEMENT CHECK
+     * PREMIUM CHECK
      * --------------------------------------------------------
-     *
-     * This improves the user experience.
-     *
-     * The server still performs the real security check.
      */
 
-    if (
-      !isPremium
-    ) {
+    if (!isPremium) {
 
       setError(
         "Community participation is available with Premium."
-      );
-
-      setSubmitting(
-        false
       );
 
       return;
@@ -411,10 +308,6 @@ export default function CreateCommunityPost() {
         "Please enter a meaningful post title."
       );
 
-      setSubmitting(
-        false
-      );
-
       return;
 
     }
@@ -426,10 +319,6 @@ export default function CreateCommunityPost() {
 
       setError(
         "Your post title must be 140 characters or fewer."
-      );
-
-      setSubmitting(
-        false
       );
 
       return;
@@ -445,10 +334,6 @@ export default function CreateCommunityPost() {
         "Please enter a meaningful post message."
       );
 
-      setSubmitting(
-        false
-      );
-
       return;
 
     }
@@ -462,54 +347,40 @@ export default function CreateCommunityPost() {
         "Your post message must be 5,000 characters or fewer."
       );
 
-      setSubmitting(
-        false
-      );
-
       return;
 
     }
+
+
+    setSubmitting(true);
 
 
     try {
 
       /*
        * ------------------------------------------------------
-       * GET FIREBASE ID TOKEN
+       * CURRENT USER
        * ------------------------------------------------------
-       *
-       * The server verifies this token and determines whether
-       * the account is actually Premium or Premium+.
        */
-
-      const {
-        auth,
-      } =
-        await import(
-          "../../lib/firebase"
-        );
-
 
       const currentUser =
         auth.currentUser;
 
 
-      if (
-        !currentUser
-      ) {
+      if (!currentUser) {
 
-        setError(
+        throw new Error(
           "Your login session is no longer active. Please log in again."
         );
 
-        setSubmitting(
-          false
-        );
-
-        return;
-
       }
 
+
+      /*
+       * ------------------------------------------------------
+       * FIREBASE TOKEN
+       * ------------------------------------------------------
+       */
 
       const idToken =
         await currentUser.getIdToken();
@@ -517,7 +388,7 @@ export default function CreateCommunityPost() {
 
       /*
        * ------------------------------------------------------
-       * CREATE POST
+       * API REQUEST
        * ------------------------------------------------------
        */
 
@@ -525,17 +396,15 @@ export default function CreateCommunityPost() {
         await fetch(
           "/api/community/posts",
           {
-            method:
-              "POST",
+            method: "POST",
 
-            headers:
-              {
-                "Content-Type":
-                  "application/json",
+            headers: {
+              "Content-Type":
+                "application/json",
 
-                Authorization:
-                  `Bearer ${idToken}`,
-              },
+              Authorization:
+                `Bearer ${idToken}`,
+            },
 
             body:
               JSON.stringify({
@@ -545,11 +414,14 @@ export default function CreateCommunityPost() {
                 body:
                   cleanBody,
 
-                category,
+                category:
+                  category,
 
-                isAnonymous,
+                isAnonymous:
+                  isAnonymous,
 
-                isPremiumOnly,
+                isPremiumOnly:
+                  isPremiumOnly,
               }),
           }
         );
@@ -557,20 +429,16 @@ export default function CreateCommunityPost() {
 
       /*
        * ------------------------------------------------------
-       * READ RESPONSE
+       * RESPONSE
        * ------------------------------------------------------
        */
 
-      let data:
-        {
-          success?: boolean;
-
-          postId?: string;
-
-          status?: string;
-
-          error?: string;
-        };
+      let data: {
+        success?: boolean;
+        postId?: string;
+        status?: string;
+        error?: string;
+      };
 
 
       try {
@@ -587,18 +455,12 @@ export default function CreateCommunityPost() {
       }
 
 
-      /*
-       * ------------------------------------------------------
-       * HANDLE SERVER ERROR
-       * ------------------------------------------------------
-       */
-
       if (
         !response.ok
       ) {
 
         throw new Error(
-          data?.error ||
+          data.error ||
           "We couldn't create your post right now."
         );
 
@@ -612,39 +474,18 @@ export default function CreateCommunityPost() {
        */
 
       setSubmittedPostId(
-        data?.postId ||
-        ""
+        data.postId || ""
       );
 
 
-      setSubmitted(
-        true
-      );
+      setSubmitted(true);
 
 
-      setTitle(
-        ""
-      );
-
-
-      setBody(
-        ""
-      );
-
-
-      setCategory(
-        "general"
-      );
-
-
-      setIsAnonymous(
-        true
-      );
-
-
-      setIsPremiumOnly(
-        false
-      );
+      setTitle("");
+      setBody("");
+      setCategory("general");
+      setIsAnonymous(true);
+      setIsPremiumOnly(false);
 
     } catch (
       submitError
@@ -664,9 +505,7 @@ export default function CreateCommunityPost() {
 
     } finally {
 
-      setSubmitting(
-        false
-      );
+      setSubmitting(false);
 
     }
 
@@ -675,7 +514,7 @@ export default function CreateCommunityPost() {
 
   /*
    * ==========================================================
-   * ENTITLEMENT LOADING
+   * LOADING
    * ==========================================================
    */
 
@@ -734,7 +573,7 @@ export default function CreateCommunityPost() {
 
   /*
    * ==========================================================
-   * NON-PREMIUM
+   * FREE USER
    * ==========================================================
    */
 
@@ -995,7 +834,7 @@ export default function CreateCommunityPost() {
 
               fontWeight:
                 800,
-            }}
+          }}
           >
             Your post was submitted
           </h1>
@@ -1147,10 +986,6 @@ export default function CreateCommunityPost() {
       }}
     >
 
-      {/* ======================================================
-          BACK
-      ======================================================= */}
-
       <Link
         href="/community"
 
@@ -1171,10 +1006,6 @@ export default function CreateCommunityPost() {
         ← Back to Community
       </Link>
 
-
-      {/* ======================================================
-          HEADER
-      ======================================================= */}
 
       <header
         style={{
@@ -1259,10 +1090,6 @@ export default function CreateCommunityPost() {
       </header>
 
 
-      {/* ======================================================
-          ERROR
-      ======================================================= */}
-
       {error && (
 
         <div
@@ -1294,17 +1121,11 @@ export default function CreateCommunityPost() {
               1.5,
           }}
         >
-          {
-            error
-          }
+          {error}
         </div>
 
       )}
 
-
-      {/* ======================================================
-          FORM
-      ======================================================= */}
 
       <form
         onSubmit={
@@ -1378,8 +1199,7 @@ export default function CreateCommunityPost() {
               ) => {
 
                 setCategory(
-                  event.target.value as
-                    CommunityCategory
+                  event.target.value as CommunityCategory
                 );
 
               }}
@@ -1431,9 +1251,7 @@ export default function CreateCommunityPost() {
                       option.value
                     }
                   >
-                    {
-                      option.label
-                    }
+                    {option.label}
                   </option>
 
                 )
@@ -1525,8 +1343,7 @@ export default function CreateCommunityPost() {
 
               required
 
-              placeholder:
-                "What would you like the Community to know?"
+              placeholder="What would you like the Community to know?"
 
               style={{
                 width:
@@ -1571,9 +1388,7 @@ export default function CreateCommunityPost() {
                   "11px",
               }}
             >
-              {
-                title.length
-              } / 140
+              {title.length} / 140
             </div>
 
           </div>
@@ -1641,8 +1456,7 @@ export default function CreateCommunityPost() {
                 9
               }
 
-              placeholder:
-                "Share what's going on, what you've experienced, or what you're trying to figure out."
+              placeholder="Share what's going on, what you've experienced, or what you're trying to figure out."
 
               style={{
                 width:
@@ -1693,9 +1507,7 @@ export default function CreateCommunityPost() {
                   "11px",
               }}
             >
-              {
-                body.length
-              } / 5,000
+              {body.length} / 5,000
             </div>
 
           </div>
@@ -1821,7 +1633,7 @@ export default function CreateCommunityPost() {
 
 
           {/* ==================================================
-              PREMIUM-ONLY
+              PREMIUM ONLY
           =================================================== */}
 
           <div
@@ -1928,8 +1740,8 @@ export default function CreateCommunityPost() {
                       1.5,
                   }}
                 >
-                  Limit this conversation to
-                  Premium and Premium+ members.
+                  Limit this conversation to Premium
+                  and Premium+ members.
                 </span>
 
               </span>
