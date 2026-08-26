@@ -20,13 +20,20 @@ import {
  *
  * Stripe is NOT connected yet.
  *
- * The upgrade buttons currently lead to the signup/login flow.
+ * Upgrade buttons currently lead to the signup/login flow
+ * while preserving the Pricing page as the return destination.
  *
  * Once Stripe is implemented, these buttons can launch the
  * appropriate checkout session.
  * ============================================================
  */
 
+
+/*
+ * ============================================================
+ * PLAN ORDER
+ * ============================================================
+ */
 
 const planOrder:
   SubscriptionPlan[] = [
@@ -95,6 +102,12 @@ function getFeatureLabel(
 }
 
 
+/*
+ * ============================================================
+ * PLAN DESCRIPTION
+ * ============================================================
+ */
+
 function getPlanDescription(
   plan: SubscriptionPlan
 ): string {
@@ -105,6 +118,12 @@ function getPlanDescription(
 
 }
 
+
+/*
+ * ============================================================
+ * MONTHLY PRICE
+ * ============================================================
+ */
 
 function getMonthlyPrice(
   plan: SubscriptionPlan
@@ -117,6 +136,16 @@ function getMonthlyPrice(
   );
 
 }
+
+
+/*
+ * ============================================================
+ * RETURN TO PRICING
+ * ============================================================
+ */
+
+const pricingReturnTo =
+  "/pricing";
 
 
 /*
@@ -635,7 +664,11 @@ export default function PricingPage() {
                   ) : (
 
                     <Link
-                      href="/signup"
+                      href={
+                        `/signup?returnTo=${encodeURIComponent(
+                          pricingReturnTo
+                        )}`
+                      }
 
                       style={{
                         display:
@@ -651,17 +684,12 @@ export default function PricingPage() {
                           "10px",
 
                         border:
-                          isPremium ||
-                          isPremiumPlus
-                            ? "none"
-                            : "1px solid #CBD5E1",
+                          "none",
 
                         background:
                           isPremium
                             ? "#2563EB"
-                            : isPremiumPlus
-                            ? "#0F766E"
-                            : "#FFFFFF",
+                            : "#0F766E",
 
                         color:
                           "#FFFFFF",
@@ -679,9 +707,11 @@ export default function PricingPage() {
                           "border-box",
                       }}
                     >
-                      {isPremium
-                        ? "Upgrade to Premium"
-                        : "Upgrade to Premium+"}
+                      {
+                        isPremium
+                          ? "Upgrade to Premium"
+                          : "Upgrade to Premium+"
+                      }
                     </Link>
 
                   )}
@@ -739,7 +769,9 @@ export default function PricingPage() {
                   >
 
                     {definition.features.map(
-                      (feature) => (
+                      (
+                        feature
+                      ) => (
 
                         <div
                           key={
@@ -935,7 +967,11 @@ export default function PricingPage() {
 
 
         <Link
-          href="/login"
+          href={
+            `/login?returnTo=${encodeURIComponent(
+              pricingReturnTo
+            )}`
+          }
 
           style={{
             color:
@@ -990,4 +1026,5 @@ export default function PricingPage() {
     </main>
 
   );
+
 }
