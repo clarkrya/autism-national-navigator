@@ -1255,7 +1255,7 @@ The new stage should:
       ...nextJourney,
 
       tasks:
-        nextJourney.tasks.map(
+        (nextJourney.tasks || []).map(
           (task) => ({
             ...task,
 
@@ -1289,7 +1289,7 @@ The new stage should:
       ...validatedJourney,
 
       tasks:
-        validatedJourney.tasks.map(
+        (validatedJourney.tasks || []).map(
           (task) => ({
             ...task,
 
