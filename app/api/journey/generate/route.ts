@@ -188,23 +188,25 @@ export async function POST(
 
 
     /*
-     * ==========================================================
-     * STEP 6 — FINAL INTENT GUARD
-     * ==========================================================
-     *
-     * IMPORTANT:
-     *
-     * The current journeyValidation implementation expects
-     * the family's priority as a string.
-     *
-     * We therefore pass only:
-     *
-     *   familyProfile.priority
-     *
-     * rather than the entire FamilyProfile object.
-     *
-     * This matches the validator's current TypeScript contract.
-     */
+ * ==========================================================
+ * STEP 6 — FINAL INTENT GUARD
+ * ==========================================================
+ *
+ * IMPORTANT:
+ *
+ * The journey validation engine evaluates the generated
+ * journey against the complete FamilyProfile.
+ *
+ * This allows the validator to consider the family's:
+ *
+ *   - Priority
+ *   - Existing supports
+ *   - Insurance
+ *   - Journey stage
+ *   - Other family context
+ *
+ * Only the validated journey is returned to the browser.
+ */
 
     const finalJourney =
   validateJourney(
