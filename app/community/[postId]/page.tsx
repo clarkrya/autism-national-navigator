@@ -68,27 +68,24 @@ type CommunityPostPageProps = {
  * ============================================================
  * COMMUNITY CATEGORIES
  * ============================================================
- *
- * These are the same CommunityCategory values used by the
- * Community application.
  */
 
 const COMMUNITY_CATEGORIES:
   CommunityCategory[] = [
-  "general",
-  "newly_diagnosed",
-  "school",
-  "therapy",
-  "insurance",
-  "financial_support",
-  "parent_support",
-  "teen_transition",
-  "adult_transition",
-  "siblings_family",
-  "success_stories",
-  "questions",
-  "other",
-];
+    "general",
+    "newly_diagnosed",
+    "school",
+    "therapy",
+    "insurance",
+    "financial_support",
+    "parent_support",
+    "teen_transition",
+    "adult_transition",
+    "siblings_family",
+    "success_stories",
+    "questions",
+    "other",
+  ];
 
 
 function isCommunityCategory(
@@ -109,10 +106,6 @@ function isCommunityCategory(
  * ============================================================
  * COMMUNITY POST STATUSES
  * ============================================================
- *
- * Firestore returns generic strings.
- *
- * CommunityPost expects one of these specific statuses.
  */
 
 const COMMUNITY_POST_STATUSES = [
@@ -135,6 +128,38 @@ function isCommunityPostStatus(
     typeof value === "string" &&
     COMMUNITY_POST_STATUSES.includes(
       value as CommunityPostStatus
+    )
+  );
+
+}
+
+
+/*
+ * ============================================================
+ * COMMUNITY MODERATION STATUSES
+ * ============================================================
+ */
+
+const COMMUNITY_MODERATION_STATUSES = [
+  "removed",
+  "not_reviewed",
+  "reviewed",
+  "flagged",
+] as const;
+
+
+type CommunityModerationStatus =
+  (typeof COMMUNITY_MODERATION_STATUSES)[number];
+
+
+function isCommunityModerationStatus(
+  value: unknown
+): value is CommunityModerationStatus {
+
+  return (
+    typeof value === "string" &&
+    COMMUNITY_MODERATION_STATUSES.includes(
+      value as CommunityModerationStatus
     )
   );
 
@@ -473,11 +498,6 @@ export default function CommunityPostPage({
          * ----------------------------------------------------
          * BUILD POST
          * ----------------------------------------------------
-         *
-         * Firestore returns generic values.
-         *
-         * Validate category and status before assigning them
-         * to the strongly typed CommunityPost object.
          */
 
         const loadedPost:
@@ -515,6 +535,11 @@ export default function CommunityPostPage({
               : "",
 
 
+          /*
+           * Firestore returns a generic string.
+           * Validate it before assigning it to CommunityPost.
+           */
+
           category:
             isCommunityCategory(
               data.category
@@ -528,6 +553,11 @@ export default function CommunityPostPage({
             true,
 
 
+          /*
+           * Firestore returns a generic string.
+           * Validate it against the allowed post statuses.
+           */
+
           status:
             isCommunityPostStatus(
               data.status
@@ -536,11 +566,17 @@ export default function CommunityPostPage({
               : "published",
 
 
+          /*
+           * Firestore returns a generic string.
+           * Validate it against the allowed moderation statuses.
+           */
+
           moderationStatus:
-            typeof data.moderationStatus ===
-            "string"
+            isCommunityModerationStatus(
+              data.moderationStatus
+            )
               ? data.moderationStatus
-              : "",
+              : "not_reviewed",
 
 
           replyCount:
@@ -639,6 +675,7 @@ export default function CommunityPostPage({
           loadedReplies
         );
 
+
       } catch (
         loadError
       ) {
@@ -681,6 +718,7 @@ export default function CommunityPostPage({
         setReplies(
           []
         );
+
 
       } finally {
 
@@ -742,6 +780,7 @@ export default function CommunityPostPage({
 
         <Link
           href="/community"
+
           style={{
             color:
               "#2563EB",
@@ -1416,10 +1455,13 @@ export default function CommunityPostPage({
             }}
           >
             💬{" "}
-            {post.replyCount}
+            {
+              post.replyCount
+            }
             {" "}
             {
-              post.replyCount === 1
+              post.replyCount ===
+              1
                 ? "reply"
                 : "replies"
             }
@@ -1488,7 +1530,9 @@ export default function CommunityPostPage({
                 "13px",
             }}
           >
-            {replies.length}{" "}
+            {
+              replies.length
+            }{" "}
             {
               replies.length ===
               1
@@ -1500,170 +1544,177 @@ export default function CommunityPostPage({
         </div>
 
 
-        {replies.length === 0 ? (
+        {
+          replies.length ===
+          0
+            ? (
 
-          <div
-            style={{
-              padding:
-                "28px",
+              <div
+                style={{
+                  padding:
+                    "28px",
 
-              borderRadius:
-                "16px",
+                  borderRadius:
+                    "16px",
 
-              border:
-                "1px solid #E2E8F0",
+                  border:
+                    "1px solid #E2E8F0",
 
-              background:
-                "#FFFFFF",
+                  background:
+                    "#FFFFFF",
 
-              textAlign:
-                "center",
+                  textAlign:
+                    "center",
 
-              color:
-                "#64748B",
+                  color:
+                    "#64748B",
 
-              fontSize:
-                "14px",
+                  fontSize:
+                    "14px",
 
-              lineHeight:
-                1.6,
-            }}
-          >
-            No replies yet.
-          </div>
+                  lineHeight:
+                    1.6,
+                }}
+              >
+                No replies yet.
+              </div>
 
-        ) : (
+            )
+            : (
 
-          <div
-            style={{
-              display:
-                "grid",
+              <div
+                style={{
+                  display:
+                    "grid",
 
-              gap:
-                "12px",
-            }}
-          >
+                  gap:
+                    "12px",
+                }}
+              >
 
-            {replies.map(
-              (
-                reply
-              ) => {
+                {
+                  replies.map(
+                    (
+                      reply
+                    ) => {
 
-                const replyAuthor =
-                  reply.isAnonymous
-                    ? "Anonymous"
-                    : reply.authorDisplayName ||
-                      "Community Member";
+                      const replyAuthor =
+                        reply.isAnonymous
+                          ? "Anonymous"
+                          : reply.authorDisplayName ||
+                            "Community Member";
 
 
-                return (
+                      return (
 
-                  <article
-                    key={
-                      reply.id
+                        <article
+                          key={
+                            reply.id
+                          }
+
+                          style={{
+                            padding:
+                              "20px",
+
+                            borderRadius:
+                              "16px",
+
+                            border:
+                              "1px solid #E2E8F0",
+
+                            background:
+                              "#FFFFFF",
+                          }}
+                        >
+
+                          <div
+                            style={{
+                              display:
+                                "flex",
+
+                              justifyContent:
+                                "space-between",
+
+                              gap:
+                                "12px",
+
+                              flexWrap:
+                                "wrap",
+
+                              marginBottom:
+                                "9px",
+                            }}
+                          >
+
+                            <strong
+                              style={{
+                                color:
+                                  "#334155",
+
+                                fontSize:
+                                  "13px",
+                              }}
+                            >
+                              {
+                                replyAuthor
+                              }
+                            </strong>
+
+
+                            <span
+                              style={{
+                                color:
+                                  "#94A3B8",
+
+                                fontSize:
+                                  "11px",
+                              }}
+                            >
+                              {
+                                formatDate(
+                                  reply.createdAt
+                                )
+                              }
+                            </span>
+
+                          </div>
+
+
+                          <p
+                            style={{
+                              margin:
+                                0,
+
+                              color:
+                                "#475569",
+
+                              fontSize:
+                                "14px",
+
+                              lineHeight:
+                                1.7,
+
+                              whiteSpace:
+                                "pre-wrap",
+                            }}
+                          >
+                            {
+                              reply.body
+                            }
+                          </p>
+
+                        </article>
+
+                      );
+
                     }
+                  )
+                }
 
-                    style={{
-                      padding:
-                        "20px",
+              </div>
 
-                      borderRadius:
-                        "16px",
-
-                      border:
-                        "1px solid #E2E8F0",
-
-                      background:
-                        "#FFFFFF",
-                    }}
-                  >
-
-                    <div
-                      style={{
-                        display:
-                          "flex",
-
-                        justifyContent:
-                          "space-between",
-
-                        gap:
-                          "12px",
-
-                        flexWrap:
-                          "wrap",
-
-                        marginBottom:
-                          "9px",
-                      }}
-                    >
-
-                      <strong
-                        style={{
-                          color:
-                            "#334155",
-
-                          fontSize:
-                            "13px",
-                        }}
-                      >
-                        {
-                          replyAuthor
-                        }
-                      </strong>
-
-
-                      <span
-                        style={{
-                          color:
-                            "#94A3B8",
-
-                          fontSize:
-                            "11px",
-                        }}
-                      >
-                        {
-                          formatDate(
-                            reply.createdAt
-                          )
-                        }
-                      </span>
-
-                    </div>
-
-
-                    <p
-                      style={{
-                        margin:
-                          0,
-
-                        color:
-                          "#475569",
-
-                        fontSize:
-                          "14px",
-
-                        lineHeight:
-                          1.7,
-
-                        whiteSpace:
-                          "pre-wrap",
-                      }}
-                    >
-                      {
-                        reply.body
-                      }
-                    </p>
-
-                  </article>
-
-                );
-
-              }
-            )}
-
-          </div>
-
-        )}
+            )
+        }
 
       </section>
 
@@ -1672,183 +1723,189 @@ export default function CommunityPostPage({
           PREMIUM MEMBER MESSAGE
       =================================================== */}
 
-      {plan === "premium" && (
+      {
+        plan ===
+        "premium" && (
 
-        <section
-          style={{
-            marginTop:
-              "28px",
-
-            padding:
-              "22px",
-
-            borderRadius:
-              "16px",
-
-            border:
-              "1px solid #BFDBFE",
-
-            background:
-              "#EFF6FF",
-
-            textAlign:
-              "center",
-          }}
-        >
-
-          <h3
+          <section
             style={{
-              margin:
-                0,
+              marginTop:
+                "28px",
 
-              color:
-                "#0F172A",
+              padding:
+                "22px",
 
-              fontSize:
-                "18px",
+              borderRadius:
+                "16px",
 
-              fontWeight:
-                800,
+              border:
+                "1px solid #BFDBFE",
+
+              background:
+                "#EFF6FF",
+
+              textAlign:
+                "center",
             }}
           >
-            Premium community participation
-          </h3>
+
+            <h3
+              style={{
+                margin:
+                  0,
+
+                color:
+                  "#0F172A",
+
+                fontSize:
+                  "18px",
+
+                fontWeight:
+                  800,
+              }}
+            >
+              Premium community participation
+            </h3>
 
 
-          <p
-            style={{
-              maxWidth:
-                "620px",
+            <p
+              style={{
+                maxWidth:
+                  "620px",
 
-              margin:
-                "8px auto 0",
+                margin:
+                  "8px auto 0",
 
-              color:
-                "#64748B",
+                color:
+                  "#64748B",
 
-              fontSize:
-                "13px",
+                fontSize:
+                  "13px",
 
-              lineHeight:
-                1.6,
-            }}
-          >
-            Posting and replying are temporarily
-            unavailable while we prepare the Community
-            experience for testing.
-          </p>
+                lineHeight:
+                  1.6,
+              }}
+            >
+              Posting and replying are temporarily
+              unavailable while we prepare the Community
+              experience for testing.
+            </p>
 
-        </section>
+          </section>
 
-      )}
+        )
+      }
 
 
       {/* ==================================================
           FREE MEMBER MESSAGE
       =================================================== */}
 
-      {plan === "free" && (
+      {
+        plan ===
+        "free" && (
 
-        <section
-          style={{
-            marginTop:
-              "25px",
-
-            padding:
-              "22px",
-
-            borderRadius:
-              "16px",
-
-            border:
-              "1px solid #E2E8F0",
-
-            background:
-              "#F8FAFC",
-
-            textAlign:
-              "center",
-          }}
-        >
-
-          <h3
+          <section
             style={{
-              margin:
-                0,
-
-              color:
-                "#0F172A",
-
-              fontSize:
-                "19px",
-
-              fontWeight:
-                800,
-            }}
-          >
-            Want to join the conversation?
-          </h3>
-
-
-          <p
-            style={{
-              maxWidth:
-                "600px",
-
-              margin:
-                "8px auto 16px",
-
-              color:
-                "#64748B",
-
-              fontSize:
-                "13px",
-
-              lineHeight:
-                1.6,
-            }}
-          >
-            Free members can read Community
-            conversations. Community participation
-            is part of Premium.
-          </p>
-
-
-          <Link
-            href="/pricing"
-
-            style={{
-              display:
-                "inline-block",
+              marginTop:
+                "25px",
 
               padding:
-                "10px 18px",
+                "22px",
 
               borderRadius:
-                "9px",
+                "16px",
+
+              border:
+                "1px solid #E2E8F0",
 
               background:
-                "#2563EB",
+                "#F8FAFC",
 
-              color:
-                "#FFFFFF",
-
-              fontSize:
-                "13px",
-
-              fontWeight:
-                800,
-
-              textDecoration:
-                "none",
+              textAlign:
+                "center",
             }}
           >
-            Explore Premium
-          </Link>
 
-        </section>
+            <h3
+              style={{
+                margin:
+                  0,
 
-      )}
+                color:
+                  "#0F172A",
+
+                fontSize:
+                  "19px",
+
+                fontWeight:
+                  800,
+              }}
+            >
+              Want to join the conversation?
+            </h3>
+
+
+            <p
+              style={{
+                maxWidth:
+                  "600px",
+
+                margin:
+                  "8px auto 16px",
+
+                color:
+                  "#64748B",
+
+                fontSize:
+                  "13px",
+
+                lineHeight:
+                  1.6,
+              }}
+            >
+              Free members can read Community
+              conversations. Community participation
+              is part of Premium.
+            </p>
+
+
+            <Link
+              href="/pricing"
+
+              style={{
+                display:
+                  "inline-block",
+
+                padding:
+                  "10px 18px",
+
+                borderRadius:
+                  "9px",
+
+                background:
+                  "#2563EB",
+
+                color:
+                  "#FFFFFF",
+
+                fontSize:
+                  "13px",
+
+                fontWeight:
+                  800,
+
+                textDecoration:
+                  "none",
+              }}
+            >
+              Explore Premium
+            </Link>
+
+          </section>
+
+        )
+      }
 
     </main>
 
