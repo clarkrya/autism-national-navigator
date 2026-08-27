@@ -16,7 +16,6 @@ import {
 } from "../../lib/firebase";
 
 import {
-  getCurrentUser,
   watchAuthState,
 } from "../../lib/auth";
 
@@ -26,52 +25,52 @@ import {
  * APP HEADER
  * ============================================================
  *
- * Shared navigation for Myriad Autism Journey.
- *
- * NAVIGATION
+ * Single global navigation for Myriad Autism Journey.
  *
  * Guest:
  *   My Journey
  *   Community
- *   Pricing
+ *   Log In ▾
+ *
+ * Log In dropdown:
  *   Log In
+ *   Pricing
+ *   Create Free Account
  *
  * Authenticated:
  *   My Journey
  *   Community
+ *   Account ▾
+ *
+ * Account dropdown:
+ *   My Journey
  *   Pricing
- *   Account
+ *   Log Out
  *
- * Logout is intentionally located inside the Account menu
- * rather than being presented as the primary way to leave a
- * section.
- *
+ * The header remains sticky while the user scrolls.
  * ============================================================
  */
 
-
-/*
- * ============================================================
- * NAVIGATION LINK
- * ============================================================
- */
 
 type NavigationLinkProps = {
   href: string;
-
   label: string;
+  onClick?: () => void;
 };
 
 
 function NavigationLink({
   href,
   label,
+  onClick,
 }: NavigationLinkProps) {
 
   return (
 
     <Link
       href={href}
+
+      onClick={onClick}
 
       style={{
         color:
@@ -104,13 +103,13 @@ function NavigationLink({
 }
 
 
-/*
- * ============================================================
- * APP HEADER
- * ============================================================
- */
-
 export default function AppHeader() {
+
+  /*
+   * ==========================================================
+   * AUTH STATE
+   * ==========================================================
+   */
 
   const [
     currentUserEmail,
@@ -120,11 +119,23 @@ export default function AppHeader() {
   >(null);
 
 
+  /*
+   * ==========================================================
+   * DROPDOWN STATE
+   * ==========================================================
+   */
+
   const [
-    accountMenuOpen,
-    setAccountMenuOpen,
+    menuOpen,
+    setMenuOpen,
   ] = useState(false);
 
+
+  /*
+   * ==========================================================
+   * LOGOUT STATE
+   * ==========================================================
+   */
 
   const [
     loggingOut,
@@ -134,7 +145,7 @@ export default function AppHeader() {
 
   /*
    * ==========================================================
-   * AUTH STATE
+   * AUTH LISTENER
    * ==========================================================
    */
 
@@ -146,16 +157,12 @@ export default function AppHeader() {
 
           setCurrentUserEmail(
             user?.email ??
-              null
+            null
           );
 
         }
       );
 
-
-    /*
-     * Keep the header in sync with Firebase authentication.
-     */
 
     return () => {
 
@@ -168,67 +175,7 @@ export default function AppHeader() {
 
   /*
    * ==========================================================
-   * LOG OUT
-   * ==========================================================
-   */
-
-  async function handleLogout() {
-
-    if (
-      loggingOut
-    ) {
-
-      return;
-
-    }
-
-
-    setLoggingOut(
-      true
-    );
-
-
-    try {
-
-      await signOut(
-        auth
-      );
-
-
-      setAccountMenuOpen(
-        false
-      );
-
-
-      /*
-       * Return to the public landing page after logout.
-       */
-
-      window.location.href =
-        "/";
-
-    } catch (
-      error
-    ) {
-
-      console.error(
-        "Logout error:",
-        error
-      );
-
-
-      setLoggingOut(
-        false
-      );
-
-    }
-
-  }
-
-
-  /*
-   * ==========================================================
-   * CLOSE ACCOUNT MENU WHEN CLICKING OUTSIDE
+   * CLOSE MENU ON OUTSIDE CLICK
    * ==========================================================
    */
 
@@ -255,11 +202,11 @@ export default function AppHeader() {
 
       if (
         !target.closest(
-          "[data-account-menu]"
+          "[data-header-menu]"
         )
       ) {
 
-        setAccountMenuOpen(
+        setMenuOpen(
           false
         );
 
@@ -288,7 +235,107 @@ export default function AppHeader() {
 
   /*
    * ==========================================================
-   * HEADER
+   * CLOSE MENU WITH ESCAPE
+   * ==========================================================
+   */
+
+  useEffect(() => {
+
+    function handleEscape(
+      event: KeyboardEvent
+    ) {
+
+      if (
+        event.key ===
+        "Escape"
+      ) {
+
+        setMenuOpen(
+          false
+        );
+
+      }
+
+    }
+
+
+    document.addEventListener(
+      "keydown",
+      handleEscape
+    );
+
+
+    return () => {
+
+      document.removeEventListener(
+        "keydown",
+        handleEscape
+      );
+
+    };
+
+  }, []);
+
+
+  /*
+   * ==========================================================
+   * LOGOUT
+   * ==========================================================
+   */
+
+  async function handleLogout() {
+
+    if (
+      loggingOut
+    ) {
+
+      return;
+
+    }
+
+
+    setLoggingOut(
+      true
+    );
+
+
+    try {
+
+      await signOut(
+        auth
+      );
+
+
+      setMenuOpen(
+        false
+      );
+
+
+      window.location.href =
+        "/";
+
+    } catch (
+      error
+    ) {
+
+      console.error(
+        "Logout error:",
+        error
+      );
+
+
+      setLoggingOut(
+        false
+      );
+
+    }
+
+  }
+
+
+  /*
+   * ==========================================================
+   * BRAND
    * ==========================================================
    */
 
@@ -352,7 +399,13 @@ export default function AppHeader() {
         =================================================== */}
 
         <Link
-          href="/journey"
+          href="/"
+
+          onClick={() =>
+            setMenuOpen(
+              false
+            )
+          }
 
           style={{
             display:
@@ -492,18 +545,24 @@ export default function AppHeader() {
           <NavigationLink
             href="/journey"
             label="My Journey"
+
+            onClick={() =>
+              setMenuOpen(
+                false
+              )
+            }
           />
 
 
           <NavigationLink
             href="/community"
             label="Community"
-          />
 
-
-          <NavigationLink
-            href="/pricing"
-            label="Pricing"
+            onClick={() =>
+              setMenuOpen(
+                false
+              )
+            }
           />
 
 
@@ -514,7 +573,8 @@ export default function AppHeader() {
           {currentUserEmail ? (
 
             <div
-              data-account-menu
+              data-header-menu
+
               style={{
                 position:
                   "relative",
@@ -527,20 +587,20 @@ export default function AppHeader() {
               <button
                 type="button"
 
-                onClick={() => {
-
-                  setAccountMenuOpen(
-                    (current) =>
-                      !current
-                  );
-
-                }}
-
                 aria-expanded={
-                  accountMenuOpen
+                  menuOpen
                 }
 
                 aria-haspopup="menu"
+
+                onClick={() =>
+                  setMenuOpen(
+                    (
+                      current
+                    ) =>
+                      !current
+                  )
+                }
 
                 style={{
                   display:
@@ -553,16 +613,16 @@ export default function AppHeader() {
                     "7px",
 
                   border:
-                    "1px solid #CBD5E1",
+                    "1px solid #2563EB",
 
                   background:
-                    "#FFFFFF",
+                    "#2563EB",
 
                   color:
-                    "#334155",
+                    "#FFFFFF",
 
                   padding:
-                    "8px 11px",
+                    "9px 14px",
 
                   borderRadius:
                     "9px",
@@ -571,10 +631,13 @@ export default function AppHeader() {
                     "14px",
 
                   fontWeight:
-                    700,
+                    800,
 
                   cursor:
                     "pointer",
+
+                  whiteSpace:
+                    "nowrap",
                 }}
               >
 
@@ -585,12 +648,13 @@ export default function AppHeader() {
 
                 <span
                   aria-hidden="true"
+
                   style={{
                     fontSize:
                       "10px",
                   }}
                 >
-                  {accountMenuOpen
+                  {menuOpen
                     ? "▲"
                     : "▼"}
                 </span>
@@ -598,7 +662,7 @@ export default function AppHeader() {
               </button>
 
 
-              {accountMenuOpen && (
+              {menuOpen && (
 
                 <div
                   role="menu"
@@ -695,7 +759,9 @@ export default function AppHeader() {
                           "nowrap",
                       }}
                     >
-                      {currentUserEmail}
+                      {
+                        currentUserEmail
+                      }
                     </div>
 
                   </div>
@@ -706,13 +772,11 @@ export default function AppHeader() {
 
                     role="menuitem"
 
-                    onClick={() => {
-
-                      setAccountMenuOpen(
+                    onClick={() =>
+                      setMenuOpen(
                         false
-                      );
-
-                    }}
+                      )
+                    }
 
                     style={{
                       display:
@@ -746,13 +810,11 @@ export default function AppHeader() {
 
                     role="menuitem"
 
-                    onClick={() => {
-
-                      setAccountMenuOpen(
+                    onClick={() =>
+                      setMenuOpen(
                         false
-                      );
-
-                    }}
+                      )
+                    }
 
                     style={{
                       display:
@@ -777,7 +839,7 @@ export default function AppHeader() {
                         "none",
                     }}
                   >
-                    My Subscription
+                    Pricing
                   </Link>
 
 
@@ -831,9 +893,11 @@ export default function AppHeader() {
                           : "pointer",
                     }}
                   >
-                    {loggingOut
-                      ? "Logging out..."
-                      : "Log Out"}
+                    {
+                      loggingOut
+                        ? "Logging out..."
+                        : "Log Out"
+                    }
                   </button>
 
                 </div>
@@ -844,48 +908,255 @@ export default function AppHeader() {
 
           ) : (
 
-            /* ==================================================
-               GUEST
-            =================================================== */
+            /*
+             * ==================================================
+             * GUEST LOGIN DROPDOWN
+             * ==================================================
+             */
 
-            <Link
-              href={
-                `/login?returnTo=${encodeURIComponent(
-                  typeof window !==
-                  "undefined"
-                    ? window.location.pathname
-                    : "/journey"
-                )}`
-              }
+            <div
+              data-header-menu
 
               style={{
-                padding:
-                  "9px 15px",
+                position:
+                  "relative",
 
-                borderRadius:
-                  "9px",
-
-                background:
-                  "#2563EB",
-
-                color:
-                  "#FFFFFF",
-
-                fontSize:
-                  "14px",
-
-                fontWeight:
-                  800,
-
-                textDecoration:
-                  "none",
-
-                whiteSpace:
-                  "nowrap",
+                marginLeft:
+                  "4px",
               }}
             >
-              Log In
-            </Link>
+
+              <button
+                type="button"
+
+                aria-expanded={
+                  menuOpen
+                }
+
+                aria-haspopup="menu"
+
+                onClick={() =>
+                  setMenuOpen(
+                    (
+                      current
+                    ) =>
+                      !current
+                  )
+                }
+
+                style={{
+                  display:
+                    "flex",
+
+                  alignItems:
+                    "center",
+
+                  gap:
+                    "7px",
+
+                  border:
+                    "1px solid #2563EB",
+
+                  background:
+                    "#2563EB",
+
+                  color:
+                    "#FFFFFF",
+
+                  padding:
+                    "9px 14px",
+
+                  borderRadius:
+                    "9px",
+
+                  fontSize:
+                    "14px",
+
+                  fontWeight:
+                    800,
+
+                  cursor:
+                    "pointer",
+
+                  whiteSpace:
+                    "nowrap",
+                }}
+              >
+
+                <span>
+                  Log In
+                </span>
+
+
+                <span
+                  aria-hidden="true"
+
+                  style={{
+                    fontSize:
+                      "10px",
+                  }}
+                >
+                  {menuOpen
+                    ? "▲"
+                    : "▼"}
+                </span>
+
+              </button>
+
+
+              {menuOpen && (
+
+                <div
+                  role="menu"
+
+                  style={{
+                    position:
+                      "absolute",
+
+                    right:
+                      0,
+
+                    top:
+                      "calc(100% + 8px)",
+
+                    width:
+                      "220px",
+
+                    background:
+                      "#FFFFFF",
+
+                    border:
+                      "1px solid #E2E8F0",
+
+                    borderRadius:
+                      "14px",
+
+                    boxShadow:
+                      "0 12px 30px rgba(15, 23, 42, 0.12)",
+
+                    padding:
+                      "8px",
+                  }}
+                >
+
+                  <Link
+                    href="/login"
+
+                    role="menuitem"
+
+                    onClick={() =>
+                      setMenuOpen(
+                        false
+                      )
+                    }
+
+                    style={{
+                      display:
+                        "block",
+
+                      padding:
+                        "10px 11px",
+
+                      borderRadius:
+                        "8px",
+
+                      color:
+                        "#334155",
+
+                      fontSize:
+                        "14px",
+
+                      fontWeight:
+                        700,
+
+                      textDecoration:
+                        "none",
+                    }}
+                  >
+                    Log In
+                  </Link>
+
+
+                  <Link
+                    href="/pricing"
+
+                    role="menuitem"
+
+                    onClick={() =>
+                      setMenuOpen(
+                        false
+                      )
+                    }
+
+                    style={{
+                      display:
+                        "block",
+
+                      padding:
+                        "10px 11px",
+
+                      borderRadius:
+                        "8px",
+
+                      color:
+                        "#334155",
+
+                      fontSize:
+                        "14px",
+
+                      fontWeight:
+                        700,
+
+                      textDecoration:
+                        "none",
+                    }}
+                  >
+                    Pricing
+                  </Link>
+
+
+                  <Link
+                    href="/signup"
+
+                    role="menuitem"
+
+                    onClick={() =>
+                      setMenuOpen(
+                        false
+                      )
+                    }
+
+                    style={{
+                      display:
+                        "block",
+
+                      padding:
+                        "10px 11px",
+
+                      borderRadius:
+                        "8px",
+
+                      color:
+                        "#2563EB",
+
+                      fontSize:
+                        "14px",
+
+                      fontWeight:
+                        800,
+
+                      textDecoration:
+                        "none",
+                    }}
+                  >
+                    Create Free Account
+                  </Link>
+
+                </div>
+
+              )}
+
+            </div>
 
           )}
 

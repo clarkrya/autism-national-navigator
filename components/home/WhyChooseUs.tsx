@@ -3,6 +3,7 @@ import Container from "../ui/Container";
 import Heading from "../ui/Heading";
 import Section from "../ui/Section";
 
+
 const reasons = [
   {
     title: "Personalized to Your Family",
@@ -26,35 +27,67 @@ const reasons = [
   },
 ];
 
+
 export default function WhyChooseUs() {
+
   return (
+
     <Section>
+
       <Container>
+
         <Heading
-          title="Why Families Choose Autism Journey Navigator"
+          title="Why Families Choose Myriad Autism Journey"
           subtitle="A simpler way to understand what comes next and find guidance that fits your family's journey."
         />
 
+
         <div
           style={{
-            display: "grid",
+            display:
+              "grid",
+
             gridTemplateColumns:
               "repeat(auto-fit, minmax(280px, 1fr))",
-            gap: "24px",
-            marginTop: "40px",
+
+            gap:
+              "24px",
+
+            marginTop:
+              "40px",
           }}
         >
-          {reasons.map((reason) => (
-            <Card
-              key={reason.title}
-              title={reason.title}
-              subtitle={reason.description}
-            >
-              <div />
-            </Card>
-          ))}
+
+          {reasons.map(
+            (reason) => (
+
+              <Card
+                key={
+                  reason.title
+                }
+
+                title={
+                  reason.title
+                }
+
+                subtitle={
+                  reason.description
+                }
+              >
+
+                <div />
+
+              </Card>
+
+            )
+          )}
+
         </div>
+
       </Container>
+
     </Section>
+
   );
+
 }

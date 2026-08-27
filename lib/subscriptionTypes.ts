@@ -209,7 +209,6 @@ export const PLAN_DEFINITIONS:
       "next_journey",
       "journey_history",
       "community_read",
-      "community_participate",
     ],
   },
 
