@@ -207,11 +207,10 @@ export async function POST(
      */
 
     const finalJourney =
-      validateJourney(
-        generatedJourney,
-        familyProfile.priority ||
-          ""
-      );
+  validateJourney(
+    generatedJourney,
+    familyProfile
+  );
 
 
     /*
