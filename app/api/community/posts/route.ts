@@ -18,32 +18,16 @@ import {
  * COMMUNITY POSTS API
  * ============================================================
  *
- * POST
- * ----
- * Creates a new Community post.
+ * Premium-only Community post creation.
  *
- * ACCESS
+ * NOTE:
  *
- * Guest:
- *   401 Unauthorized
+ * Premium Community participation is currently being held
+ * for a later development phase while the Free experience
+ * is prepared for user testing.
  *
- * Free:
- *   403 Premium Required
- *
- * Premium:
- *   Allowed
- *
- * Premium+:
- *   Allowed
- *
- * New posts are created as:
- *
- *   status: "pending_review"
- *   moderationStatus: "not_reviewed"
- *
- * This allows moderation to be built into the product from
- * the beginning.
- *
+ * This route remains available for future Premium work and
+ * is kept build-safe for Vercel deployment.
  * ============================================================
  */
 
@@ -118,6 +102,7 @@ function getCleanString(
       0,
       maxLength
     );
+
 }
 
 
@@ -138,6 +123,7 @@ function isCommunityCategory(
       value as CommunityCategory
     )
   );
+
 }
 
 
@@ -157,13 +143,6 @@ export async function POST(
      * ========================================================
      * STEP 1 — REQUIRE PREMIUM
      * ========================================================
-     *
-     * This verifies:
-     *
-     * 1. Firebase authentication
-     * 2. Verified Premium/Premium+ subscription
-     *
-     * The browser cannot simply claim to be Premium.
      */
 
     const account =
@@ -306,12 +285,6 @@ export async function POST(
      * ========================================================
      * STEP 7 — PREMIUM-ONLY OPTION
      * ========================================================
-     *
-     * Both Premium and Premium+ users can create community
-     * posts.
-     *
-     * This flag determines whether a post is also restricted
-     * to Premium/Premium+ readers.
      */
 
     const isPremiumOnly =
@@ -330,93 +303,80 @@ export async function POST(
 
     /*
      * ========================================================
-     * STEP 9 — CREATE FIRESTORE DOCUMENT
+     * STEP 9 — FIRESTORE WRITE
      * ========================================================
      *
-     * IMPORTANT:
+     * The existing Community repository defines the intended
+     * posts collection as:
      *
-     * The client does NOT control:
+     *   community / posts
      *
-     * - authorId
-     * - authorDisplayName
-     * - status
-     * - moderationStatus
-     * - replyCount
-     * - reactionCount
-     * - reportCount
-     * - isFeatured
-     * - isNavigatorSupported
-     * - createdAt
-     * - updatedAt
+     * The Admin SDK does not support chaining .collection()
+     * from a CollectionReference.
      *
-     * Those values are controlled by the trusted server.
+     * Use the collection path directly instead.
      *
-     * FIRESTORE PATH
-     *
-     * community/posts/{postId}
+     * This preserves the existing logical collection name
+     * used throughout the Community code.
      */
 
+    const postsCollection =
+      adminDb.collection(
+        "community/posts"
+      );
+
+
     const postReference =
-      await adminDb
-        .collection(
-          "community"
-        )
-        .collection(
-          "posts"
-        )
-        .add({
+      await postsCollection.add({
 
-          authorId:
-            account.uid,
+        authorId:
+          account.uid,
 
-          authorDisplayName:
-            isAnonymous
-              ? "Anonymous"
-              : "Community Member",
+        authorDisplayName:
+          isAnonymous
+            ? "Anonymous"
+            : "Community Member",
 
-          title,
+        title,
 
-          body:
-            postBody,
+        body:
+          postBody,
 
-          category:
-            body.category,
+        category:
+          body.category,
 
-          isAnonymous,
+        isAnonymous,
 
-          status:
-            "pending_review",
+        status:
+          "pending_review",
 
-          moderationStatus:
-            "not_reviewed",
+        moderationStatus:
+          "not_reviewed",
 
-          replyCount:
-            0,
+        replyCount:
+          0,
 
-          reactionCount:
-            0,
+        reactionCount:
+          0,
 
-          reportCount:
-            0,
+        reportCount:
+          0,
 
-          isFeatured:
-            false,
+        isFeatured:
+          false,
 
-          isPremiumOnly,
+        isPremiumOnly,
 
-          /*
-           * Navigator-supported spaces are not enabled yet.
-           */
+        isNavigatorSupported:
+          false,
 
-          isNavigatorSupported:
-            false,
+        createdAt:
+          now,
 
-          createdAt:
-            now,
+        updatedAt:
+          now,
 
-          updatedAt:
-            now,
-        });
+      });
 
 
     /*
@@ -446,7 +406,9 @@ export async function POST(
     );
 
 
-  } catch (error) {
+  } catch (
+    error
+  ) {
 
     /*
      * ========================================================
