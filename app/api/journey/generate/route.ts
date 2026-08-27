@@ -52,6 +52,7 @@ import {
   validateJourney,
 } from "../engine/journeyValidation";
 
+
 /*
  * ============================================================
  * POST
@@ -106,6 +107,7 @@ export async function POST(
             400,
         }
       );
+
     }
 
 
@@ -135,6 +137,7 @@ export async function POST(
             400,
         }
       );
+
     }
 
 
@@ -142,13 +145,6 @@ export async function POST(
      * ==========================================================
      * ENGINE DEBUG INFORMATION
      * ==========================================================
-     *
-     * Useful during development.
-     *
-     * We intentionally log only the information needed to
-     * understand how personalization is working.
-     *
-     * Do not add unnecessary personal information here.
      */
 
     console.log(
@@ -182,12 +178,7 @@ export async function POST(
      *
      * The AI creates the initial journey.
      *
-     * IMPORTANT:
-     *
      * This is NOT yet considered the final journey.
-     *
-     * The result must pass through the final intent guard
-     * below.
      */
 
     const generatedJourney =
@@ -201,58 +192,25 @@ export async function POST(
      * STEP 6 — FINAL INTENT GUARD
      * ==========================================================
      *
-     * This is the most important step.
+     * IMPORTANT:
      *
-     * The guard evaluates the generated journey against the
-     * family's actual stated priority.
+     * The current journeyValidation implementation expects
+     * the family's priority as a string.
      *
-     * Examples:
+     * We therefore pass only:
      *
-     * ----------------------------------------------------------
+     *   familyProfile.priority
      *
-     * Therapy + School Services
+     * rather than the entire FamilyProfile object.
      *
-     *     Priority = Therapy
-     *     Supports = School Services
-     *
-     *     RESULT:
-     *     Therapy remains the focus.
-     *
-     * ----------------------------------------------------------
-     *
-     * Financial + Private Insurance
-     *
-     *     Priority = Financial
-     *     Insurance = Private
-     *
-     *     RESULT:
-     *     Financial assistance remains the focus.
-     *
-     *     Private insurance alone does NOT create an
-     *     insurance-navigation journey.
-     *
-     * ----------------------------------------------------------
-     *
-     * School + no supports
-     *
-     *     RESULT:
-     *     School/educational support remains the focus.
-     *
-     * ----------------------------------------------------------
-     *
-     * Unsure
-     *
-     *     RESULT:
-     *     The engine asks the family to clarify their concern
-     *     instead of guessing.
-     *
-     * ==========================================================
+     * This matches the validator's current TypeScript contract.
      */
 
     const finalJourney =
-    validateJourney(
+      validateJourney(
         generatedJourney,
-        familyProfile
+        familyProfile.priority ||
+          ""
       );
 
 
@@ -260,19 +218,6 @@ export async function POST(
      * ==========================================================
      * STEP 7 — FINAL DEBUG LOG
      * ==========================================================
-     *
-     * This lets us see what the engine actually decided.
-     *
-     * Particularly useful while testing:
-     *
-     *   - Therapy
-     *   - Financial
-     *   - School
-     *   - Insurance
-     *   - Unsure
-     *
-     * We can compare the family's stated priority against
-     * the final journey that reaches the website.
      */
 
     console.log(
@@ -326,10 +271,7 @@ export async function POST(
      * STEP 8 — RETURN FINAL JOURNEY
      * ==========================================================
      *
-     * Only the guarded/sanitized journey is returned.
-     *
-     * The raw AI journey is NEVER returned directly to the
-     * browser.
+     * Only the guarded journey is returned.
      */
 
     return NextResponse.json(
@@ -379,5 +321,7 @@ export async function POST(
           500,
       }
     );
+
   }
+
 }
