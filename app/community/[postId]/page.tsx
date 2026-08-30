@@ -8,28 +8,19 @@ import {
 import Link from "next/link";
 
 import {
-  doc,
-  getDoc,
-} from "firebase/firestore";
-
-import {
   getCurrentUser,
 } from "../../../lib/auth";
-
-import {
-  db,
-} from "../../../lib/firebase";
 
 import {
   useAccountEntitlements,
 } from "../../../lib/useAccountEntitlements";
 
 import {
+  getCommunityPost,
   getCommunityReplies,
 } from "../../../lib/communityRepository";
 
 import type {
-  CommunityCategory,
   CommunityPost,
   CommunityReply,
 } from "../../../lib/communityTypes";
@@ -40,19 +31,33 @@ import type {
  * COMMUNITY CONVERSATION
  * ============================================================
  *
- * CURRENT TESTING VERSION
+ * ACCESS
  *
  * Guest:
  *   Login/create account required.
  *
  * Free:
- *   Read-only.
+ *   Read published Community conversations.
  *
  * Premium:
- *   Premium participation is temporarily hidden while the
- *   Free experience is prepared for user testing.
+ *   Read + participate.
  *
- * Existing replies remain readable.
+ * Premium+:
+ *   Read + participate.
+ *
+ *
+ * IMPORTANT
+ *
+ * Community reads are handled through:
+ *
+ *   communityRepository.ts
+ *
+ * Community writes are handled through protected server API
+ * routes.
+ *
+ * The client does not write Community content directly
+ * to Firestore.
+ *
  * ============================================================
  */
 
@@ -66,108 +71,6 @@ type CommunityPostPageProps = {
 
 /*
  * ============================================================
- * COMMUNITY CATEGORIES
- * ============================================================
- */
-
-const COMMUNITY_CATEGORIES:
-  CommunityCategory[] = [
-    "general",
-    "newly_diagnosed",
-    "school",
-    "therapy",
-    "insurance",
-    "financial_support",
-    "parent_support",
-    "teen_transition",
-    "adult_transition",
-    "siblings_family",
-    "success_stories",
-    "questions",
-    "other",
-  ];
-
-
-function isCommunityCategory(
-  value: unknown
-): value is CommunityCategory {
-
-  return (
-    typeof value === "string" &&
-    COMMUNITY_CATEGORIES.includes(
-      value as CommunityCategory
-    )
-  );
-
-}
-
-
-/*
- * ============================================================
- * COMMUNITY POST STATUSES
- * ============================================================
- */
-
-const COMMUNITY_POST_STATUSES = [
-  "published",
-  "hidden",
-  "removed",
-  "pending_review",
-] as const;
-
-
-type CommunityPostStatus =
-  (typeof COMMUNITY_POST_STATUSES)[number];
-
-
-function isCommunityPostStatus(
-  value: unknown
-): value is CommunityPostStatus {
-
-  return (
-    typeof value === "string" &&
-    COMMUNITY_POST_STATUSES.includes(
-      value as CommunityPostStatus
-    )
-  );
-
-}
-
-
-/*
- * ============================================================
- * COMMUNITY MODERATION STATUSES
- * ============================================================
- */
-
-const COMMUNITY_MODERATION_STATUSES = [
-  "removed",
-  "not_reviewed",
-  "reviewed",
-  "flagged",
-] as const;
-
-
-type CommunityModerationStatus =
-  (typeof COMMUNITY_MODERATION_STATUSES)[number];
-
-
-function isCommunityModerationStatus(
-  value: unknown
-): value is CommunityModerationStatus {
-
-  return (
-    typeof value === "string" &&
-    COMMUNITY_MODERATION_STATUSES.includes(
-      value as CommunityModerationStatus
-    )
-  );
-
-}
-
-
-/*
- * ============================================================
  * FORMAT DATE
  * ============================================================
  */
@@ -176,8 +79,12 @@ function formatDate(
   timestamp: number
 ): string {
 
-  if (!timestamp) {
+  if (
+    !timestamp
+  ) {
+
     return "";
+
   }
 
 
@@ -186,14 +93,25 @@ function formatDate(
     return new Intl.DateTimeFormat(
       "en-US",
       {
-        month: "long",
-        day: "numeric",
-        year: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
+        month:
+          "long",
+
+        day:
+          "numeric",
+
+        year:
+          "numeric",
+
+        hour:
+          "numeric",
+
+        minute:
+          "2-digit",
       }
     ).format(
-      new Date(timestamp)
+      new Date(
+        timestamp
+      )
     );
 
   } catch {
@@ -222,7 +140,9 @@ function getCategoryLabel(
     )
     .replace(
       /\b\w/g,
-      (letter) =>
+      (
+        letter
+      ) =>
         letter.toUpperCase()
     );
 
@@ -248,7 +168,9 @@ export default function CommunityPostPage({
   const [
     postId,
     setPostId,
-  ] = useState("");
+  ] = useState(
+    ""
+  );
 
 
   /*
@@ -259,8 +181,10 @@ export default function CommunityPostPage({
 
   const {
     plan,
+
     loading:
       entitlementLoading,
+
     isPremium,
   } =
     useAccountEntitlements();
@@ -278,7 +202,9 @@ export default function CommunityPostPage({
   ] = useState<
     CommunityPost |
     null
-  >(null);
+  >(
+    null
+  );
 
 
   /*
@@ -292,7 +218,9 @@ export default function CommunityPostPage({
     setReplies,
   ] = useState<
     CommunityReply[]
-  >([]);
+  >(
+    []
+  );
 
 
   /*
@@ -304,18 +232,68 @@ export default function CommunityPostPage({
   const [
     loading,
     setLoading,
-  ] = useState(true);
+  ] = useState(
+    true
+  );
 
 
   const [
     error,
     setError,
-  ] = useState("");
+  ] = useState(
+    ""
+  );
 
 
   /*
    * ==========================================================
-   * RESOLVE PARAMS
+   * REPLY FORM
+   * ==========================================================
+   */
+
+  const [
+    replyBody,
+    setReplyBody,
+  ] = useState(
+    ""
+  );
+
+
+  const [
+    replyAnonymously,
+    setReplyAnonymously,
+  ] = useState(
+    false
+  );
+
+
+  const [
+    submittingReply,
+    setSubmittingReply,
+  ] = useState(
+    false
+  );
+
+
+  const [
+    replyError,
+    setReplyError,
+  ] = useState(
+    ""
+  );
+
+
+  const [
+    replySuccess,
+    setReplySuccess,
+  ] = useState(
+    ""
+  );
+
+
+  /*
+   * ==========================================================
+   * RESOLVE POST ID
    * ==========================================================
    */
 
@@ -333,8 +311,23 @@ export default function CommunityPostPage({
           await params;
 
 
-        if (!active) {
+        if (
+          !active
+        ) {
+
           return;
+
+        }
+
+
+        if (
+          !resolved.postId
+        ) {
+
+          throw new Error(
+            "POST_ID_REQUIRED"
+          );
+
         }
 
 
@@ -342,15 +335,19 @@ export default function CommunityPostPage({
           resolved.postId
         );
 
-      } catch (error) {
+      } catch (
+        resolveError
+      ) {
 
         console.error(
           "Unable to resolve Community post parameters:",
-          error
+          resolveError
         );
 
 
-        if (active) {
+        if (
+          active
+        ) {
 
           setError(
             "We couldn't open that Community conversation."
@@ -406,25 +403,30 @@ export default function CommunityPostPage({
 
     async function loadConversation() {
 
+      /*
+       * ------------------------------------------------------
+       * GUESTS DO NOT LOAD COMMUNITY CONTENT
+       * ------------------------------------------------------
+       */
+
       const currentUser =
         getCurrentUser();
 
 
-      /*
-       * ------------------------------------------------------
-       * GUEST
-       * ------------------------------------------------------
-       */
+      if (
+        !currentUser
+      ) {
 
-      if (!currentUser) {
-
-        if (active) {
+        if (
+          active
+        ) {
 
           setLoading(
             false
           );
 
         }
+
 
         return;
 
@@ -435,7 +437,9 @@ export default function CommunityPostPage({
         true
       );
 
-      setError("");
+      setError(
+        ""
+      );
 
 
       try {
@@ -446,45 +450,14 @@ export default function CommunityPostPage({
          * ----------------------------------------------------
          */
 
-        const postRef =
-          doc(
-            db,
-            "community",
-            "posts",
+        const loadedPost =
+          await getCommunityPost(
             postId
           );
 
 
-        const postSnapshot =
-          await getDoc(
-            postRef
-          );
-
-
         if (
-          !postSnapshot.exists()
-        ) {
-
-          throw new Error(
-            "POST_NOT_FOUND"
-          );
-
-        }
-
-
-        const data =
-          postSnapshot.data();
-
-
-        /*
-         * ----------------------------------------------------
-         * ONLY SHOW PUBLISHED POSTS
-         * ----------------------------------------------------
-         */
-
-        if (
-          data.status !==
-          "published"
+          !loadedPost
         ) {
 
           throw new Error(
@@ -496,162 +469,7 @@ export default function CommunityPostPage({
 
         /*
          * ----------------------------------------------------
-         * BUILD POST
-         * ----------------------------------------------------
-         */
-
-        const loadedPost:
-          CommunityPost = {
-
-          id:
-            postSnapshot.id,
-
-
-          authorId:
-            typeof data.authorId ===
-            "string"
-              ? data.authorId
-              : "",
-
-
-          authorDisplayName:
-            typeof data.authorDisplayName ===
-            "string"
-              ? data.authorDisplayName
-              : "Community Member",
-
-
-          title:
-            typeof data.title ===
-            "string"
-              ? data.title
-              : "",
-
-
-          body:
-            typeof data.body ===
-            "string"
-              ? data.body
-              : "",
-
-
-          /*
-           * Firestore returns a generic string.
-           * Validate it before assigning it to CommunityPost.
-           */
-
-          category:
-            isCommunityCategory(
-              data.category
-            )
-              ? data.category
-              : "other",
-
-
-          isAnonymous:
-            data.isAnonymous ===
-            true,
-
-
-          /*
-           * Firestore returns a generic string.
-           * Validate it against the allowed post statuses.
-           */
-
-          status:
-            isCommunityPostStatus(
-              data.status
-            )
-              ? data.status
-              : "published",
-
-
-          /*
-           * Firestore returns a generic string.
-           * Validate it against the allowed moderation statuses.
-           */
-
-          moderationStatus:
-            isCommunityModerationStatus(
-              data.moderationStatus
-            )
-              ? data.moderationStatus
-              : "not_reviewed",
-
-
-          replyCount:
-            typeof data.replyCount ===
-            "number"
-              ? data.replyCount
-              : 0,
-
-
-          reactionCount:
-            typeof data.reactionCount ===
-            "number"
-              ? data.reactionCount
-              : 0,
-
-
-          reportCount:
-            typeof data.reportCount ===
-            "number"
-              ? data.reportCount
-              : 0,
-
-
-          isFeatured:
-            data.isFeatured ===
-            true,
-
-
-          isPremiumOnly:
-            data.isPremiumOnly ===
-            true,
-
-
-          isNavigatorSupported:
-            data.isNavigatorSupported ===
-            true,
-
-
-          createdAt:
-            typeof data.createdAt ===
-            "number"
-              ? data.createdAt
-              : 0,
-
-
-          updatedAt:
-            typeof data.updatedAt ===
-            "number"
-              ? data.updatedAt
-              : 0,
-
-        };
-
-
-        /*
-         * ----------------------------------------------------
-         * PREMIUM-ONLY POST
-         * ----------------------------------------------------
-         */
-
-        if (
-          loadedPost.isPremiumOnly &&
-          !isPremium
-        ) {
-
-          throw new Error(
-            "PREMIUM_REQUIRED"
-          );
-
-        }
-
-
-        /*
-         * ----------------------------------------------------
-         * LOAD EXISTING REPLIES
+         * LOAD PUBLISHED REPLIES
          * ----------------------------------------------------
          */
 
@@ -661,8 +479,12 @@ export default function CommunityPostPage({
           );
 
 
-        if (!active) {
+        if (
+          !active
+        ) {
+
           return;
+
         }
 
 
@@ -675,7 +497,6 @@ export default function CommunityPostPage({
           loadedReplies
         );
 
-
       } catch (
         loadError
       ) {
@@ -686,26 +507,11 @@ export default function CommunityPostPage({
         );
 
 
-        if (!active) {
-          return;
-        }
-
-
         if (
-          loadError instanceof Error &&
-          loadError.message ===
-            "PREMIUM_REQUIRED"
+          !active
         ) {
 
-          setError(
-            "This conversation is available to Premium members."
-          );
-
-        } else {
-
-          setError(
-            "We couldn't find that Community conversation."
-          );
+          return;
 
         }
 
@@ -720,9 +526,15 @@ export default function CommunityPostPage({
         );
 
 
+        setError(
+          "We couldn't find that Community conversation."
+        );
+
       } finally {
 
-        if (active) {
+        if (
+          active
+        ) {
 
           setLoading(
             false
@@ -748,8 +560,437 @@ export default function CommunityPostPage({
   }, [
     postId,
     entitlementLoading,
-    isPremium,
   ]);
+
+
+  /*
+   * ==========================================================
+   * SUBMIT REPLY
+   * ==========================================================
+   */
+
+  async function handleSubmitReply() {
+
+    /*
+     * --------------------------------------------------------
+     * PREMIUM CHECK
+     * --------------------------------------------------------
+     */
+
+    if (
+      !postId ||
+      !isPremium
+    ) {
+
+      setReplyError(
+        "Premium membership is required to participate in the Community."
+      );
+
+      return;
+
+    }
+
+
+    /*
+     * --------------------------------------------------------
+     * VALIDATE BODY
+     * --------------------------------------------------------
+     */
+
+    const trimmedBody =
+      replyBody.trim();
+
+
+    if (
+      !trimmedBody
+    ) {
+
+      setReplyError(
+        "Please enter a reply before posting."
+      );
+
+      return;
+
+    }
+
+
+    if (
+      trimmedBody.length <
+      2
+    ) {
+
+      setReplyError(
+        "Please enter a meaningful reply."
+      );
+
+      return;
+
+    }
+
+
+    if (
+      trimmedBody.length >
+      3000
+    ) {
+
+      setReplyError(
+        "Replies must be 3,000 characters or fewer."
+      );
+
+      return;
+
+    }
+
+
+    setSubmittingReply(
+      true
+    );
+
+    setReplyError(
+      ""
+    );
+
+    setReplySuccess(
+      ""
+    );
+
+
+    try {
+
+      /*
+       * ------------------------------------------------------
+       * AUTHENTICATED USER
+       * ------------------------------------------------------
+       */
+
+      const currentUser =
+        getCurrentUser();
+
+
+      if (
+        !currentUser
+      ) {
+
+        throw new Error(
+          "AUTH_REQUIRED"
+        );
+
+      }
+
+
+      /*
+       * ------------------------------------------------------
+       * FIREBASE TOKEN
+       * ------------------------------------------------------
+       */
+
+      const idToken =
+        await currentUser.getIdToken();
+
+
+      /*
+       * ------------------------------------------------------
+       * PROTECTED SERVER REQUEST
+       * ------------------------------------------------------
+       */
+
+      const response =
+        await fetch(
+          "/api/community/replies",
+          {
+            method:
+              "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+
+              Authorization:
+                `Bearer ${idToken}`,
+            },
+
+            body:
+              JSON.stringify({
+                postId:
+                  postId,
+
+                body:
+                  trimmedBody,
+
+                isAnonymous:
+                  replyAnonymously,
+              }),
+          }
+        );
+
+
+      /*
+       * ------------------------------------------------------
+       * READ RESPONSE
+       * ------------------------------------------------------
+       */
+
+      const result =
+        await response
+          .json()
+          .catch(
+            () =>
+              null
+          );
+
+
+      /*
+       * ------------------------------------------------------
+       * HANDLE SERVER ERRORS
+       * ------------------------------------------------------
+       */
+
+      if (
+        !response.ok
+      ) {
+
+        if (
+          response.status ===
+          401
+        ) {
+
+          throw new Error(
+            "AUTH_REQUIRED"
+          );
+
+        }
+
+
+        if (
+          response.status ===
+          403
+        ) {
+
+          throw new Error(
+            "PREMIUM_REQUIRED"
+          );
+
+        }
+
+
+        if (
+          response.status ===
+          404
+        ) {
+
+          throw new Error(
+            "POST_NOT_FOUND"
+          );
+
+        }
+
+
+        if (
+          response.status ===
+          409
+        ) {
+
+          throw new Error(
+            "POST_NOT_AVAILABLE"
+          );
+
+        }
+
+
+        const serverMessage =
+          result &&
+          typeof result.error ===
+            "string"
+            ? result.error
+            : "";
+
+
+        throw new Error(
+          serverMessage ||
+          "REPLY_FAILED"
+        );
+
+      }
+
+
+      /*
+       * ------------------------------------------------------
+       * RELOAD REPLIES
+       * ------------------------------------------------------
+       *
+       * The server has written the reply.
+       *
+       * Now reload the published replies through our
+       * read-focused Community repository.
+       * ------------------------------------------------------
+       */
+
+      const updatedReplies =
+        await getCommunityReplies(
+          postId
+        );
+
+
+      setReplies(
+        updatedReplies
+      );
+
+
+      /*
+       * ------------------------------------------------------
+       * REFRESH POST
+       * ------------------------------------------------------
+       *
+       * The server transaction also updates replyCount.
+       *
+       * Re-reading the post ensures the UI reflects the
+       * authoritative Firestore count.
+       * ------------------------------------------------------
+       */
+
+      const updatedPost =
+        await getCommunityPost(
+          postId
+        );
+
+
+      if (
+        updatedPost
+      ) {
+
+        setPost(
+          updatedPost
+        );
+
+      } else {
+
+        /*
+         * Defensive fallback.
+         */
+
+        setPost(
+          (
+            currentPost
+          ) => {
+
+            if (
+              !currentPost
+            ) {
+
+              return currentPost;
+
+            }
+
+
+            return {
+              ...currentPost,
+
+              replyCount:
+                updatedReplies.length,
+            };
+
+          }
+        );
+
+      }
+
+
+      /*
+       * ------------------------------------------------------
+       * RESET FORM
+       * ------------------------------------------------------
+       */
+
+      setReplyBody(
+        ""
+      );
+
+
+      setReplyAnonymously(
+        false
+      );
+
+
+      setReplySuccess(
+        "Your reply has been posted."
+      );
+
+    } catch (
+      submitError
+    ) {
+
+      console.error(
+        "Unable to post Community reply:",
+        submitError
+      );
+
+
+      if (
+        submitError instanceof Error &&
+        submitError.message ===
+          "AUTH_REQUIRED"
+      ) {
+
+        setReplyError(
+          "Your session has expired. Please log in again before posting."
+        );
+
+      } else if (
+        submitError instanceof Error &&
+        submitError.message ===
+          "PREMIUM_REQUIRED"
+      ) {
+
+        setReplyError(
+          "Community participation is available with Premium."
+        );
+
+      } else if (
+        submitError instanceof Error &&
+        submitError.message ===
+          "POST_NOT_FOUND"
+      ) {
+
+        setReplyError(
+          "We couldn't find this Community conversation."
+        );
+
+      } else if (
+        submitError instanceof Error &&
+        submitError.message ===
+          "POST_NOT_AVAILABLE"
+      ) {
+
+        setReplyError(
+          "This conversation is not currently available for replies."
+        );
+
+      } else if (
+        submitError instanceof Error &&
+        submitError.message
+      ) {
+
+        setReplyError(
+          submitError.message
+        );
+
+      } else {
+
+        setReplyError(
+          "We couldn't post your reply. Please try again."
+        );
+
+      }
+
+    } finally {
+
+      setSubmittingReply(
+        false
+      );
+
+    }
+
+  }
 
 
   /*
@@ -760,7 +1001,8 @@ export default function CommunityPostPage({
 
   if (
     !entitlementLoading &&
-    plan === "guest"
+    plan ===
+      "guest"
   ) {
 
     return (
@@ -874,8 +1116,8 @@ export default function CommunityPostPage({
                 1.65,
             }}
           >
-            Create a free account or log in to
-            read Community conversations.
+            Create a free account or log in to read
+            Community conversations.
           </p>
 
 
@@ -983,6 +1225,7 @@ export default function CommunityPostPage({
    */
 
   if (
+    entitlementLoading ||
     loading
   ) {
 
@@ -1151,7 +1394,7 @@ export default function CommunityPostPage({
 
   /*
    * ==========================================================
-   * POST AUTHOR
+   * DISPLAY AUTHOR
    * ==========================================================
    */
 
@@ -1172,8 +1415,14 @@ export default function CommunityPostPage({
 
     <main
       style={{
+        width:
+          "100%",
+
         maxWidth:
           "900px",
+
+        boxSizing:
+          "border-box",
 
         margin:
           "0 auto",
@@ -1297,36 +1546,38 @@ export default function CommunityPostPage({
             </span>
 
 
-            {post.isPremiumOnly && (
+            {
+              post.isFeatured && (
 
-              <span
-                style={{
-                  padding:
-                    "5px 9px",
+                <span
+                  style={{
+                    padding:
+                      "5px 9px",
 
-                  borderRadius:
-                    "999px",
+                    borderRadius:
+                      "999px",
 
-                  background:
-                    "#F0FDFA",
+                    background:
+                      "#FFF7ED",
 
-                  color:
-                    "#0F766E",
+                    color:
+                      "#C2410C",
 
-                  fontSize:
-                    "10px",
+                    fontSize:
+                      "10px",
 
-                  fontWeight:
-                    800,
+                    fontWeight:
+                      800,
 
-                  textTransform:
-                    "uppercase",
-                }}
-              >
-                Premium
-              </span>
+                    textTransform:
+                      "uppercase",
+                  }}
+                >
+                  Featured
+                </span>
 
-            )}
+              )
+            }
 
           </div>
 
@@ -1359,13 +1610,16 @@ export default function CommunityPostPage({
               "#0F172A",
 
             fontSize:
-              "32px",
+              "clamp(26px, 5vw, 32px)",
 
             lineHeight:
               1.25,
 
             fontWeight:
               850,
+
+            overflowWrap:
+              "anywhere",
           }}
         >
           {
@@ -1390,6 +1644,9 @@ export default function CommunityPostPage({
 
             whiteSpace:
               "pre-wrap",
+
+            overflowWrap:
+              "anywhere",
           }}
         >
           {
@@ -1497,6 +1754,9 @@ export default function CommunityPostPage({
             gap:
               "12px",
 
+            flexWrap:
+              "wrap",
+
             marginBottom:
               "15px",
           }}
@@ -1576,7 +1836,11 @@ export default function CommunityPostPage({
                     1.6,
                 }}
               >
-                No replies yet.
+                {
+                  isPremium
+                    ? "No replies yet. Be the first to join the conversation."
+                    : "No replies yet."
+                }
               </div>
 
             )
@@ -1696,6 +1960,9 @@ export default function CommunityPostPage({
 
                               whiteSpace:
                                 "pre-wrap",
+
+                              overflowWrap:
+                                "anywhere",
                             }}
                           >
                             {
@@ -1720,12 +1987,11 @@ export default function CommunityPostPage({
 
 
       {/* ==================================================
-          PREMIUM MEMBER MESSAGE
+          PREMIUM / PREMIUM+ REPLY FORM
       =================================================== */}
 
       {
-        plan ===
-        "premium" && (
+        isPremium && (
 
           <section
             style={{
@@ -1733,63 +1999,433 @@ export default function CommunityPostPage({
                 "28px",
 
               padding:
-                "22px",
+                "24px",
 
               borderRadius:
-                "16px",
+                "18px",
 
               border:
-                "1px solid #BFDBFE",
+                "1px solid #E2E8F0",
 
               background:
-                "#EFF6FF",
+                "#FFFFFF",
 
-              textAlign:
-                "center",
+              boxShadow:
+                "0 4px 14px rgba(15, 23, 42, 0.03)",
             }}
           >
 
-            <h3
+            <div
               style={{
-                margin:
-                  0,
+                marginBottom:
+                  "16px",
+              }}
+            >
+
+              <h3
+                style={{
+                  margin:
+                    0,
+
+                  color:
+                    "#0F172A",
+
+                  fontSize:
+                    "20px",
+
+                  fontWeight:
+                    800,
+                }}
+              >
+                Join the conversation
+              </h3>
+
+
+              <p
+                style={{
+                  margin:
+                    "6px 0 0",
+
+                  color:
+                    "#64748B",
+
+                  fontSize:
+                    "13px",
+
+                  lineHeight:
+                    1.6,
+                }}
+              >
+                Share a helpful thought, experience, or
+                question with the Community.
+              </p>
+
+            </div>
+
+
+            <label
+              htmlFor="community-reply"
+
+              style={{
+                display:
+                  "block",
+
+                marginBottom:
+                  "7px",
 
                 color:
-                  "#0F172A",
+                  "#334155",
 
                 fontSize:
-                  "18px",
+                  "13px",
 
                 fontWeight:
                   800,
               }}
             >
-              Premium community participation
-            </h3>
+              Your reply
+            </label>
 
 
-            <p
+            <textarea
+              id="community-reply"
+
+              value={
+                replyBody
+              }
+
+              onChange={(
+                event
+              ) => {
+
+                setReplyBody(
+                  event.target.value
+                );
+
+
+                if (
+                  replyError
+                ) {
+
+                  setReplyError(
+                    ""
+                  );
+
+                }
+
+
+                if (
+                  replySuccess
+                ) {
+
+                  setReplySuccess(
+                    ""
+                  );
+
+                }
+
+              }}
+
+              disabled={
+                submittingReply
+              }
+
+              maxLength={
+                3000
+              }
+
+              placeholder="Share a helpful thought, experience, or question..."
+
+              rows={
+                6
+              }
+
               style={{
-                maxWidth:
-                  "620px",
+                width:
+                  "100%",
 
-                margin:
-                  "8px auto 0",
+                boxSizing:
+                  "border-box",
+
+                resize:
+                  "vertical",
+
+                minHeight:
+                  "130px",
+
+                padding:
+                  "14px",
+
+                borderRadius:
+                  "12px",
+
+                border:
+                  "1px solid #CBD5E1",
+
+                background:
+                  submittingReply
+                    ? "#F8FAFC"
+                    : "#FFFFFF",
 
                 color:
-                  "#64748B",
+                  "#0F172A",
+
+                fontSize:
+                  "16px",
+
+                lineHeight:
+                  1.65,
+
+                fontFamily:
+                  "inherit",
+
+                outline:
+                  "none",
+              }}
+            />
+
+
+            <div
+              style={{
+                marginTop:
+                  "8px",
+
+                display:
+                  "flex",
+
+                justifyContent:
+                  "flex-end",
+
+                color:
+                  "#94A3B8",
+
+                fontSize:
+                  "11px",
+              }}
+            >
+              {
+                replyBody.length
+              }
+              /3000
+            </div>
+
+
+            <label
+              style={{
+                display:
+                  "flex",
+
+                alignItems:
+                  "flex-start",
+
+                gap:
+                  "9px",
+
+                marginTop:
+                  "14px",
+
+                color:
+                  "#475569",
 
                 fontSize:
                   "13px",
 
                 lineHeight:
-                  1.6,
+                  1.5,
+
+                cursor:
+                  submittingReply
+                    ? "default"
+                    : "pointer",
               }}
             >
-              Posting and replying are temporarily
-              unavailable while we prepare the Community
-              experience for testing.
-            </p>
+
+              <input
+                type="checkbox"
+
+                checked={
+                  replyAnonymously
+                }
+
+                onChange={(
+                  event
+                ) => {
+
+                  setReplyAnonymously(
+                    event.target.checked
+                  );
+
+                }}
+
+                disabled={
+                  submittingReply
+                }
+
+                style={{
+                  marginTop:
+                    "2px",
+                }}
+              />
+
+              <span>
+                Post anonymously
+              </span>
+
+            </label>
+
+
+            {
+              replyError && (
+
+                <div
+                  role="alert"
+
+                  style={{
+                    marginTop:
+                      "14px",
+
+                    padding:
+                      "11px 12px",
+
+                    borderRadius:
+                      "10px",
+
+                    border:
+                      "1px solid #FECACA",
+
+                    background:
+                      "#FEF2F2",
+
+                    color:
+                      "#B91C1C",
+
+                    fontSize:
+                      "13px",
+
+                    lineHeight:
+                      1.5,
+                  }}
+                >
+                  {
+                    replyError
+                  }
+                </div>
+
+              )
+            }
+
+
+            {
+              replySuccess && (
+
+                <div
+                  role="status"
+
+                  style={{
+                    marginTop:
+                      "14px",
+
+                    padding:
+                      "11px 12px",
+
+                    borderRadius:
+                      "10px",
+
+                    border:
+                      "1px solid #BBF7D0",
+
+                    background:
+                      "#F0FDF4",
+
+                    color:
+                      "#166534",
+
+                    fontSize:
+                      "13px",
+
+                    lineHeight:
+                      1.5,
+                  }}
+                >
+                  {
+                    replySuccess
+                  }
+                </div>
+
+              )
+            }
+
+
+            <div
+              style={{
+                marginTop:
+                  "18px",
+
+                display:
+                  "flex",
+
+                justifyContent:
+                  "flex-end",
+              }}
+            >
+
+              <button
+                type="button"
+
+                onClick={() => {
+
+                  void handleSubmitReply();
+
+                }}
+
+                disabled={
+                  submittingReply ||
+                  !replyBody.trim()
+                }
+
+                style={{
+                  minHeight:
+                    "44px",
+
+                  padding:
+                    "11px 19px",
+
+                  borderRadius:
+                    "10px",
+
+                  border:
+                    "none",
+
+                  background:
+                    submittingReply ||
+                    !replyBody.trim()
+                      ? "#94A3B8"
+                      : "#2563EB",
+
+                  color:
+                    "#FFFFFF",
+
+                  fontSize:
+                    "14px",
+
+                  fontWeight:
+                    800,
+
+                  cursor:
+                    submittingReply ||
+                    !replyBody.trim()
+                      ? "not-allowed"
+                      : "pointer",
+                }}
+              >
+                {
+                  submittingReply
+                    ? "Posting..."
+                    : "Post Reply"
+                }
+              </button>
+
+            </div>
 
           </section>
 
@@ -1798,7 +2434,7 @@ export default function CommunityPostPage({
 
 
       {/* ==================================================
-          FREE MEMBER MESSAGE
+          FREE MEMBER UPGRADE
       =================================================== */}
 
       {
@@ -1865,8 +2501,8 @@ export default function CommunityPostPage({
               }}
             >
               Free members can read Community
-              conversations. Community participation
-              is part of Premium.
+              conversations. Posting and replying are
+              available with Premium.
             </p>
 
 
@@ -1877,8 +2513,14 @@ export default function CommunityPostPage({
                 display:
                   "inline-block",
 
+                minHeight:
+                  "44px",
+
+                boxSizing:
+                  "border-box",
+
                 padding:
-                  "10px 18px",
+                  "12px 18px",
 
                 borderRadius:
                   "9px",

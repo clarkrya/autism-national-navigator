@@ -1,4 +1,6 @@
-import { NextResponse } from "next/server";
+import {
+  NextResponse,
+} from "next/server";
 
 import type {
   CommunityCategory,
@@ -18,16 +20,37 @@ import {
  * COMMUNITY POSTS API
  * ============================================================
  *
- * Premium-only Community post creation.
+ * Creates Community posts for Premium and Premium+ members.
  *
- * NOTE:
+ * SECURITY
  *
- * Premium Community participation is currently being held
- * for a later development phase while the Free experience
- * is prepared for user testing.
+ * This route verifies:
  *
- * This route remains available for future Premium work and
- * is kept build-safe for Vercel deployment.
+ * - Firebase authentication
+ * - Premium / Premium+ entitlement
+ * - Post title
+ * - Post body
+ * - Community category
+ *
+ * Community writes happen server-side only.
+ *
+ * The client must never create Community posts directly
+ * in Firestore.
+ *
+ *
+ * FIRESTORE STRUCTURE
+ *
+ * communityPosts/
+ *   {postId}
+ *
+ * communityReplies/
+ *   {replyId}
+ *
+ * users/
+ *   {userId}/
+ *     communityProfile/
+ *       current
+ *
  * ============================================================
  */
 
@@ -70,20 +93,31 @@ type CreatePostRequest = {
   category?: unknown;
 
   isAnonymous?: unknown;
-
-  isPremiumOnly?: unknown;
 };
 
 
 /*
  * ============================================================
- * STRING VALIDATION
+ * LIMITS
+ * ============================================================
+ */
+
+const MAX_TITLE_LENGTH =
+  140;
+
+
+const MAX_BODY_LENGTH =
+  5000;
+
+
+/*
+ * ============================================================
+ * CLEAN STRING
  * ============================================================
  */
 
 function getCleanString(
-  value: unknown,
-  maxLength: number
+  value: unknown
 ): string {
 
   if (
@@ -96,12 +130,7 @@ function getCleanString(
   }
 
 
-  return value
-    .trim()
-    .slice(
-      0,
-      maxLength
-    );
+  return value.trim();
 
 }
 
@@ -143,6 +172,15 @@ export async function POST(
      * ========================================================
      * STEP 1 — REQUIRE PREMIUM
      * ========================================================
+     *
+     * requirePremium() should verify:
+     *
+     * - Authorization Bearer token
+     * - Firebase authentication
+     * - Subscription entitlement
+     *
+     * Both Premium and Premium+ should be accepted.
+     * ========================================================
      */
 
     const account =
@@ -157,13 +195,13 @@ export async function POST(
      * ========================================================
      */
 
-    let body:
+    let requestBody:
       CreatePostRequest;
 
 
     try {
 
-      body =
+      requestBody =
         await request.json() as
           CreatePostRequest;
 
@@ -191,19 +229,38 @@ export async function POST(
 
     const title =
       getCleanString(
-        body.title,
-        140
+        requestBody.title
       );
 
 
     if (
-      title.length < 3
+      title.length <
+      3
     ) {
 
       return NextResponse.json(
         {
           error:
             "Please enter a meaningful post title.",
+        },
+        {
+          status:
+            400,
+        }
+      );
+
+    }
+
+
+    if (
+      title.length >
+      MAX_TITLE_LENGTH
+    ) {
+
+      return NextResponse.json(
+        {
+          error:
+            `Post titles must be ${MAX_TITLE_LENGTH} characters or fewer.`,
         },
         {
           status:
@@ -222,19 +279,38 @@ export async function POST(
 
     const postBody =
       getCleanString(
-        body.body,
-        5000
+        requestBody.body
       );
 
 
     if (
-      postBody.length < 5
+      postBody.length <
+      5
     ) {
 
       return NextResponse.json(
         {
           error:
             "Please enter a meaningful post message.",
+        },
+        {
+          status:
+            400,
+        }
+      );
+
+    }
+
+
+    if (
+      postBody.length >
+      MAX_BODY_LENGTH
+    ) {
+
+      return NextResponse.json(
+        {
+          error:
+            `Posts must be ${MAX_BODY_LENGTH.toLocaleString()} characters or fewer.`,
         },
         {
           status:
@@ -253,14 +329,14 @@ export async function POST(
 
     if (
       !isCommunityCategory(
-        body.category
+        requestBody.category
       )
     ) {
 
       return NextResponse.json(
         {
           error:
-            "Please select a valid community category.",
+            "Please select a valid Community category.",
         },
         {
           status:
@@ -271,6 +347,10 @@ export async function POST(
     }
 
 
+    const category =
+      requestBody.category;
+
+
     /*
      * ========================================================
      * STEP 6 — ANONYMOUS OPTION
@@ -278,17 +358,91 @@ export async function POST(
      */
 
     const isAnonymous =
-      body.isAnonymous === true;
+      requestBody.isAnonymous ===
+      true;
 
 
     /*
      * ========================================================
-     * STEP 7 — PREMIUM-ONLY OPTION
+     * STEP 7 — LOAD COMMUNITY PROFILE
+     * ========================================================
+     *
+     * Use the member's chosen Community display name when
+     * available.
+     *
+     * Anonymous posts never expose that name in Community
+     * content.
+     *
+     * A profile lookup problem should not block a valid
+     * Premium member from creating a post.
      * ========================================================
      */
 
-    const isPremiumOnly =
-      body.isPremiumOnly === true;
+    let authorDisplayName =
+      "Community Member";
+
+
+    try {
+
+      const profileReference =
+        adminDb
+          .collection(
+            "users"
+          )
+          .doc(
+            account.uid
+          )
+          .collection(
+            "communityProfile"
+          )
+          .doc(
+            "current"
+          );
+
+
+      const profileSnapshot =
+        await profileReference.get();
+
+
+      if (
+        profileSnapshot.exists
+      ) {
+
+        const profileData =
+          profileSnapshot.data();
+
+
+        const profileDisplayName =
+          typeof profileData?.displayName ===
+            "string"
+            ? profileData.displayName.trim()
+            : "";
+
+
+        if (
+          profileDisplayName
+        ) {
+
+          authorDisplayName =
+            profileDisplayName.slice(
+              0,
+              80
+            );
+
+        }
+
+      }
+
+    } catch (
+      profileError
+    ) {
+
+      console.error(
+        "Unable to load Community profile for post:",
+        profileError
+      );
+
+    }
 
 
     /*
@@ -303,28 +457,35 @@ export async function POST(
 
     /*
      * ========================================================
-     * STEP 9 — FIRESTORE WRITE
+     * STEP 9 — FIRESTORE COLLECTION
      * ========================================================
-     *
-     * The existing Community repository defines the intended
-     * posts collection as:
-     *
-     *   community / posts
-     *
-     * The Admin SDK does not support chaining .collection()
-     * from a CollectionReference.
-     *
-     * Use the collection path directly instead.
-     *
-     * This preserves the existing logical collection name
-     * used throughout the Community code.
      */
 
     const postsCollection =
       adminDb.collection(
-        "community/posts"
+        "communityPosts"
       );
 
+
+    /*
+     * ========================================================
+     * STEP 10 — FIRESTORE WRITE
+     * ========================================================
+     *
+     * New posts enter pending_review.
+     *
+     * This gives us a safer moderation model while the
+     * reporting/moderation system is completed.
+     *
+     * The client does not control:
+     *
+     * - status
+     * - moderationStatus
+     * - counts
+     * - featured status
+     * - Navigator support status
+     * ========================================================
+     */
 
     const postReference =
       await postsCollection.add({
@@ -335,17 +496,19 @@ export async function POST(
         authorDisplayName:
           isAnonymous
             ? "Anonymous"
-            : "Community Member",
+            : authorDisplayName,
 
-        title,
+        title:
+          title,
 
         body:
           postBody,
 
         category:
-          body.category,
+          category,
 
-        isAnonymous,
+        isAnonymous:
+          isAnonymous,
 
         status:
           "pending_review",
@@ -365,7 +528,14 @@ export async function POST(
         isFeatured:
           false,
 
-        isPremiumOnly,
+        /*
+         * All normal Community conversations are readable by
+         * Free members.
+         *
+         * Premium controls participation, not reading.
+         */
+        isPremiumOnly:
+          false,
 
         isNavigatorSupported:
           false,
@@ -398,13 +568,15 @@ export async function POST(
 
         plan:
           account.plan,
+
+        message:
+          "Your post has been submitted for review.",
       },
       {
         status:
           201,
       }
     );
-
 
   } catch (
     error
@@ -425,7 +597,7 @@ export async function POST(
       return NextResponse.json(
         {
           error:
-            "You must be logged in to participate in the community.",
+            "You must be logged in to participate in the Community.",
         },
         {
           status:
@@ -508,8 +680,8 @@ export async function POST(
       {
         status:
           500,
-      }
-    );
+        }
+      );
 
   }
 

@@ -34,13 +34,24 @@ import type {
  *   Must create an account or log in.
  *
  * Free:
- *   Read-only Community access.
+ *   Read all published Community conversations.
  *
  * Premium:
- *   Read + participate.
+ *   Read + create posts + reply.
  *
  * Premium+:
- *   Read + participate.
+ *   Read + create posts + reply.
+ *
+ * IMPORTANT
+ *
+ * Community visibility is no longer divided into Free and
+ * Premium-only conversations.
+ *
+ * All signed-in members can read published conversations.
+ * Premium controls participation — not reading.
+ *
+ * Reads are handled through communityRepository.ts.
+ * Writes are handled through protected server API routes.
  *
  * ============================================================
  */
@@ -356,8 +367,10 @@ export default function CommunityFeed() {
 
   const {
     plan,
+
     loading:
       entitlementLoading,
+
     isPremium,
   } =
     useAccountEntitlements();
@@ -374,7 +387,9 @@ export default function CommunityFeed() {
     setPosts,
   ] = useState<
     CommunityPost[]
-  >([]);
+  >(
+    []
+  );
 
 
   /*
@@ -386,7 +401,9 @@ export default function CommunityFeed() {
   const [
     loading,
     setLoading,
-  ] = useState(true);
+  ] = useState(
+    true
+  );
 
 
   /*
@@ -398,7 +415,9 @@ export default function CommunityFeed() {
   const [
     error,
     setError,
-  ] = useState("");
+  ] = useState(
+    ""
+  );
 
 
   /*
@@ -450,13 +469,16 @@ export default function CommunityFeed() {
           active
         ) {
 
-          setPosts([]);
+          setPosts(
+            []
+          );
 
           setLoading(
             false
           );
 
         }
+
 
         return;
 
@@ -467,7 +489,9 @@ export default function CommunityFeed() {
         true
       );
 
-      setError("");
+      setError(
+        ""
+      );
 
 
       try {
@@ -476,6 +500,14 @@ export default function CommunityFeed() {
          * ----------------------------------------------------
          * BUILD QUERY
          * ----------------------------------------------------
+         *
+         * IMPORTANT
+         *
+         * There is intentionally no premiumOnly filter.
+         *
+         * All signed-in members can read all published
+         * Community conversations.
+         * ----------------------------------------------------
          */
 
         const feedFilters =
@@ -483,11 +515,6 @@ export default function CommunityFeed() {
           "all"
 
             ? {
-                premiumOnly:
-                  isPremium
-                    ? undefined
-                    : false,
-
                 limit:
                   50,
               }
@@ -496,11 +523,6 @@ export default function CommunityFeed() {
                 category:
                   selectedCategory,
 
-                premiumOnly:
-                  isPremium
-                    ? undefined
-                    : false,
-
                 limit:
                   50,
               };
@@ -508,7 +530,7 @@ export default function CommunityFeed() {
 
         /*
          * ----------------------------------------------------
-         * LOAD
+         * LOAD PUBLISHED POSTS
          * ----------------------------------------------------
          */
 
@@ -527,27 +549,8 @@ export default function CommunityFeed() {
         }
 
 
-        /*
-         * ----------------------------------------------------
-         * ADDITIONAL CLIENT-SIDE SAFETY
-         * ----------------------------------------------------
-         */
-
-        const visiblePosts =
-          isPremium
-
-            ? loadedPosts
-
-            : loadedPosts.filter(
-                (
-                  post
-                ) =>
-                  !post.isPremiumOnly
-              );
-
-
         setPosts(
-          visiblePosts
+          loadedPosts
         );
 
       } catch (
@@ -567,6 +570,11 @@ export default function CommunityFeed() {
           return;
 
         }
+
+
+        setPosts(
+          []
+        );
 
 
         setError(
@@ -612,7 +620,6 @@ export default function CommunityFeed() {
 
   }, [
     selectedCategory,
-    isPremium,
     entitlementLoading,
   ]);
 
@@ -625,7 +632,8 @@ export default function CommunityFeed() {
 
   if (
     !entitlementLoading &&
-    plan === "guest"
+    plan ===
+      "guest"
   ) {
 
     return (
@@ -724,9 +732,8 @@ export default function CommunityFeed() {
                 1.65,
             }}
           >
-            Create a free account to explore
-            Community conversations and learn
-            from other families.
+            Create a free account to explore Community
+            conversations and learn from other families.
           </p>
 
 
@@ -754,6 +761,12 @@ export default function CommunityFeed() {
               }
 
               style={{
+                minHeight:
+                  "44px",
+
+                boxSizing:
+                  "border-box",
+
                 padding:
                   "12px 20px",
 
@@ -774,6 +787,15 @@ export default function CommunityFeed() {
 
                 textDecoration:
                   "none",
+
+                display:
+                  "inline-flex",
+
+                alignItems:
+                  "center",
+
+                justifyContent:
+                  "center",
               }}
             >
               Create Free Account
@@ -788,6 +810,12 @@ export default function CommunityFeed() {
               }
 
               style={{
+                minHeight:
+                  "44px",
+
+                boxSizing:
+                  "border-box",
+
                 padding:
                   "12px 20px",
 
@@ -811,6 +839,15 @@ export default function CommunityFeed() {
 
                 textDecoration:
                   "none",
+
+                display:
+                  "inline-flex",
+
+                alignItems:
+                  "center",
+
+                justifyContent:
+                  "center",
               }}
             >
               Log In
@@ -837,8 +874,14 @@ export default function CommunityFeed() {
 
     <section
       style={{
+        width:
+          "100%",
+
         maxWidth:
           "1050px",
+
+        boxSizing:
+          "border-box",
 
         margin:
           "0 auto",
@@ -855,43 +898,46 @@ export default function CommunityFeed() {
           FREE ACCOUNT NOTICE
       ======================================================= */}
 
-      {!entitlementLoading &&
-        plan === "free" && (
+      {
+        !entitlementLoading &&
+        plan ===
+          "free" && (
 
-        <div
-          style={{
-            marginTop:
-              "20px",
+          <div
+            style={{
+              marginTop:
+                "20px",
 
-            padding:
-              "14px 16px",
+              padding:
+                "14px 16px",
 
-            borderRadius:
-              "12px",
+              borderRadius:
+                "12px",
 
-            background:
-              "#EFF6FF",
+              background:
+                "#EFF6FF",
 
-            border:
-              "1px solid #BFDBFE",
+              border:
+                "1px solid #BFDBFE",
 
-            color:
-              "#1E40AF",
+              color:
+                "#1E40AF",
 
-            fontSize:
-              "13px",
+              fontSize:
+                "13px",
 
-            lineHeight:
-              1.5,
-          }}
-        >
-          You're viewing the Community as a
-          Free member. You can read
-          conversations, while posting and
-          replying are available with Premium.
-        </div>
+              lineHeight:
+                1.5,
+            }}
+          >
+            You&apos;re viewing the Community as a Free
+            member. You can read all published
+            conversations, while posting and replying
+            are available with Premium.
+          </div>
 
-      )}
+        )
+      }
 
 
       {/* ======================================================
@@ -904,7 +950,7 @@ export default function CommunityFeed() {
             "28px",
 
           padding:
-            "22px",
+            "clamp(18px, 4vw, 22px)",
 
           borderRadius:
             "18px",
@@ -943,6 +989,9 @@ export default function CommunityFeed() {
             style={{
               flex:
                 "1 1 420px",
+
+              minWidth:
+                0,
             }}
           >
 
@@ -1018,17 +1067,16 @@ export default function CommunityFeed() {
           </div>
 
 
-          {/* ==================================================
-              TOPIC SELECTOR
-          =================================================== */}
-
           <div
             style={{
               flex:
-                "0 1 270px",
+                "1 1 230px",
+
+              maxWidth:
+                "300px",
 
               minWidth:
-                "230px",
+                "200px",
             }}
           >
 
@@ -1075,9 +1123,16 @@ export default function CommunityFeed() {
 
               }}
 
+              disabled={
+                loading
+              }
+
               style={{
                 width:
                   "100%",
+
+                minHeight:
+                  "44px",
 
                 boxSizing:
                   "border-box",
@@ -1107,31 +1162,35 @@ export default function CommunityFeed() {
                   "none",
 
                 cursor:
-                  "pointer",
+                  loading
+                    ? "default"
+                    : "pointer",
               }}
             >
 
-              {CATEGORY_OPTIONS.map(
-                (
-                  option
-                ) => (
+              {
+                CATEGORY_OPTIONS.map(
+                  (
+                    option
+                  ) => (
 
-                  <option
-                    key={
-                      option.value
-                    }
+                    <option
+                      key={
+                        option.value
+                      }
 
-                    value={
-                      option.value
-                    }
-                  >
-                    {
-                      option.label
-                    }
-                  </option>
+                      value={
+                        option.value
+                      }
+                    >
+                      {
+                        option.label
+                      }
+                    </option>
 
+                  )
                 )
-              )}
+              }
 
             </select>
 
@@ -1139,10 +1198,6 @@ export default function CommunityFeed() {
 
         </div>
 
-
-        {/* ====================================================
-            SELECTED TOPIC CHIP
-        ===================================================== */}
 
         <div
           style={{
@@ -1224,69 +1279,80 @@ export default function CommunityFeed() {
 
 
       {/* ======================================================
-          PREMIUM CREATE POST
+          PARTICIPATION ACTION
       ======================================================= */}
 
-      {isPremium && (
+      {
+        isPremium && (
 
-        <div
-          style={{
-            marginTop:
-              "20px",
-
-            display:
-              "flex",
-
-            justifyContent:
-              "flex-end",
-          }}
-        >
-
-          <Link
-            href="/community/create"
-
+          <div
             style={{
+              marginTop:
+                "20px",
+
               display:
-                "inline-flex",
+                "flex",
 
-              alignItems:
-                "center",
-
-              gap:
-                "7px",
-
-              padding:
-                "11px 18px",
-
-              borderRadius:
-                "10px",
-
-              background:
-                "#2563EB",
-
-              color:
-                "#FFFFFF",
-
-              fontSize:
-                "14px",
-
-              fontWeight:
-                800,
-
-              textDecoration:
-                "none",
+              justifyContent:
+                "flex-end",
             }}
           >
-            <span>
-              +
-            </span>
 
-            Create a Post
-          </Link>
+            <Link
+              href="/community/create"
 
-        </div>
+              style={{
+                display:
+                  "inline-flex",
 
-      )}
+                minHeight:
+                  "44px",
+
+                boxSizing:
+                  "border-box",
+
+                alignItems:
+                  "center",
+
+                justifyContent:
+                  "center",
+
+                gap:
+                  "7px",
+
+                padding:
+                  "11px 18px",
+
+                borderRadius:
+                  "10px",
+
+                background:
+                  "#2563EB",
+
+                color:
+                  "#FFFFFF",
+
+                fontSize:
+                  "14px",
+
+                fontWeight:
+                  800,
+
+                textDecoration:
+                  "none",
+              }}
+            >
+              <span>
+                +
+              </span>
+
+              Create a Post
+            </Link>
+
+          </div>
+
+        )
+      }
 
 
       {/* ======================================================
@@ -1353,7 +1419,7 @@ export default function CommunityFeed() {
               "all"
 
                 ? "The latest published Community conversations."
-                
+
                 : `Recent conversations about ${getCategoryLabel(
                     selectedCategory
                   ).toLowerCase()}.`
@@ -1363,9 +1429,11 @@ export default function CommunityFeed() {
         </div>
 
 
-        {!loading &&
+        {
+          !loading &&
           !error &&
-          posts.length > 0 && (
+          posts.length >
+            0 && (
 
           <span
             style={{
@@ -1379,14 +1447,20 @@ export default function CommunityFeed() {
                 700,
             }}
           >
-            {posts.length}{" "}
-            {posts.length ===
-            1
-              ? "conversation"
-              : "conversations"}
+            {
+              posts.length
+            }
+            {" "}
+            {
+              posts.length ===
+              1
+                ? "conversation"
+                : "conversations"
+            }
           </span>
 
-        )}
+        )
+      }
 
       </div>
 
@@ -1395,335 +1469,413 @@ export default function CommunityFeed() {
           LOADING
       ======================================================= */}
 
-      {loading && (
+      {
+        loading && (
 
-        <div
-          style={{
-            marginTop:
-              "20px",
+          <div
+            style={{
+              marginTop:
+                "20px",
 
-            padding:
-              "30px",
+              padding:
+                "30px",
 
-            borderRadius:
-              "18px",
+              borderRadius:
+                "18px",
 
-            border:
-              "1px solid #E2E8F0",
+              border:
+                "1px solid #E2E8F0",
 
-            background:
-              "#FFFFFF",
+              background:
+                "#FFFFFF",
 
-            textAlign:
-              "center",
+              textAlign:
+                "center",
 
-            color:
-              "#64748B",
+              color:
+                "#64748B",
 
-            fontSize:
-              "14px",
-          }}
-        >
-          Loading Community conversations...
-        </div>
+              fontSize:
+                "14px",
+            }}
+          >
+            Loading Community conversations...
+          </div>
 
-      )}
+        )
+      }
 
 
       {/* ======================================================
           ERROR
       ======================================================= */}
 
-      {!loading &&
+      {
+        !loading &&
         error && (
 
-        <div
-          role="alert"
+          <div
+            role="alert"
 
-          style={{
-            marginTop:
-              "20px",
+            style={{
+              marginTop:
+                "20px",
 
-            padding:
-              "16px",
+              padding:
+                "16px",
 
-            borderRadius:
-              "14px",
+              borderRadius:
+                "14px",
 
-            border:
-              "1px solid #FECACA",
+              border:
+                "1px solid #FECACA",
 
-            background:
-              "#FEF2F2",
+              background:
+                "#FEF2F2",
 
-            color:
-              "#B91C1C",
+              color:
+                "#B91C1C",
 
-            fontSize:
-              "14px",
+              fontSize:
+                "14px",
 
-            lineHeight:
-              1.5,
-          }}
-        >
-          {
-            error
-          }
-        </div>
+              lineHeight:
+                1.5,
+            }}
+          >
+            {
+              error
+            }
+          </div>
 
-      )}
+        )
+      }
 
 
       {/* ======================================================
           EMPTY
       ======================================================= */}
 
-      {!loading &&
+      {
+        !loading &&
         !error &&
-        posts.length === 0 && (
-
-        <div
-          style={{
-            marginTop:
-              "20px",
-
-            padding:
-              "38px 24px",
-
-            borderRadius:
-              "18px",
-
-            border:
-              "1px solid #E2E8F0",
-
-            background:
-              "#FFFFFF",
-
-            textAlign:
-              "center",
-          }}
-        >
+        posts.length ===
+          0 && (
 
           <div
             style={{
-              fontSize:
-                "30px",
-
-              marginBottom:
-                "10px",
-            }}
-          >
-            💙
-          </div>
-
-
-          <h3
-            style={{
-              margin:
-                0,
-
-              color:
-                "#0F172A",
-
-              fontSize:
+              marginTop:
                 "20px",
 
-              fontWeight:
-                800,
+              padding:
+                "38px 24px",
+
+              borderRadius:
+                "18px",
+
+              border:
+                "1px solid #E2E8F0",
+
+              background:
+                "#FFFFFF",
+
+              textAlign:
+                "center",
             }}
           >
-            No conversations yet.
-          </h3>
+
+            <div
+              style={{
+                fontSize:
+                  "30px",
+
+                marginBottom:
+                  "10px",
+              }}
+            >
+              💙
+            </div>
 
 
-          <p
-            style={{
-              maxWidth:
-                "590px",
+            <h3
+              style={{
+                margin:
+                  0,
 
-              margin:
-                "8px auto 0",
+                color:
+                  "#0F172A",
 
-              color:
-                "#64748B",
+                fontSize:
+                  "20px",
 
-              fontSize:
-                "14px",
+                fontWeight:
+                  800,
+              }}
+            >
+              No conversations yet.
+            </h3>
 
-              lineHeight:
-                1.6,
-            }}
-          >
-            There aren't any published conversations
-            in this topic yet. Check another topic
-            or come back as the Community grows.
-          </p>
 
-        </div>
+            <p
+              style={{
+                maxWidth:
+                  "590px",
 
-      )}
+                margin:
+                  "8px auto 0",
+
+                color:
+                  "#64748B",
+
+                fontSize:
+                  "14px",
+
+                lineHeight:
+                  1.6,
+              }}
+            >
+              There aren&apos;t any published
+              conversations in this topic yet. Check
+              another topic or come back as the
+              Community grows.
+            </p>
+
+
+            {
+              isPremium && (
+
+                <Link
+                  href="/community/create"
+
+                  style={{
+                    display:
+                      "inline-flex",
+
+                    minHeight:
+                      "44px",
+
+                    boxSizing:
+                      "border-box",
+
+                    alignItems:
+                      "center",
+
+                    justifyContent:
+                      "center",
+
+                    marginTop:
+                      "18px",
+
+                    padding:
+                      "11px 18px",
+
+                    borderRadius:
+                      "10px",
+
+                    background:
+                      "#2563EB",
+
+                    color:
+                      "#FFFFFF",
+
+                    fontSize:
+                      "14px",
+
+                    fontWeight:
+                      800,
+
+                    textDecoration:
+                      "none",
+                  }}
+                >
+                  Start a Conversation
+                </Link>
+
+              )
+            }
+
+          </div>
+
+        )
+      }
 
 
       {/* ======================================================
           POSTS
       ======================================================= */}
 
-      {!loading &&
+      {
+        !loading &&
         !error &&
-        posts.length > 0 && (
+        posts.length >
+          0 && (
 
-        <div
-          style={{
-            display:
-              "grid",
+          <div
+            style={{
+              display:
+                "grid",
 
-            gap:
-              "14px",
+              gap:
+                "14px",
 
-            marginTop:
-              "20px",
-          }}
-        >
+              marginTop:
+                "20px",
+            }}
+          >
 
-          {posts.map(
-            (
-              post
-            ) => (
-
-              <CommunityPostCard
-                key={
-                  post.id
-                }
-
-                post={
+            {
+              posts.map(
+                (
                   post
-                }
+                ) => (
 
-                isPremium={
-                  isPremium
-                }
+                  <CommunityPostCard
+                    key={
+                      post.id
+                    }
 
-              />
+                    post={
+                      post
+                    }
+                  />
 
-            )
-          )}
+                )
+              )
+            }
 
-        </div>
+          </div>
 
-      )}
+        )
+      }
 
 
       {/* ======================================================
           FREE ACCOUNT CONVERSION
       ======================================================= */}
 
-      {!entitlementLoading &&
-        plan === "free" && (
+      {
+        !entitlementLoading &&
+        plan ===
+          "free" && (
 
-        <div
-          style={{
-            marginTop:
-              "35px",
-
-            padding:
-              "25px",
-
-            borderRadius:
-              "18px",
-
-            background:
-              "#F8FAFC",
-
-            border:
-              "1px solid #E2E8F0",
-
-            textAlign:
-              "center",
-          }}
-        >
-
-          <h3
+          <div
             style={{
-              margin:
-                0,
-
-              color:
-                "#0F172A",
-
-              fontSize:
-                "21px",
-
-              fontWeight:
-                800,
-            }}
-          >
-            Want to be part of the conversation?
-          </h3>
-
-
-          <p
-            style={{
-              maxWidth:
-                "620px",
-
-              margin:
-                "9px auto 17px",
-
-              color:
-                "#64748B",
-
-              fontSize:
-                "14px",
-
-              lineHeight:
-                1.6,
-            }}
-          >
-            Premium members can create posts,
-            reply to other families, and
-            participate in Community discussions.
-          </p>
-
-
-          <Link
-            href="/pricing"
-
-            style={{
-              display:
-                "inline-block",
+              marginTop:
+                "35px",
 
               padding:
-                "11px 19px",
+                "25px",
 
               borderRadius:
-                "10px",
+                "18px",
 
               background:
-                "#2563EB",
+                "#F8FAFC",
 
-              color:
-                "#FFFFFF",
+              border:
+                "1px solid #E2E8F0",
 
-              fontSize:
-                "14px",
-
-              fontWeight:
-                800,
-
-              textDecoration:
-                "none",
+              textAlign:
+                "center",
             }}
           >
-            Explore Premium
-          </Link>
 
-        </div>
+            <h3
+              style={{
+                margin:
+                  0,
 
-      )}
+                color:
+                  "#0F172A",
+
+                fontSize:
+                  "21px",
+
+                fontWeight:
+                  800,
+              }}
+            >
+              Want to be part of the conversation?
+            </h3>
+
+
+            <p
+              style={{
+                maxWidth:
+                  "620px",
+
+                margin:
+                  "9px auto 17px",
+
+                color:
+                  "#64748B",
+
+                fontSize:
+                  "14px",
+
+                lineHeight:
+                  1.6,
+              }}
+            >
+              Premium members can create posts, reply
+              to other families, and participate in
+              Community discussions.
+            </p>
+
+
+            <Link
+              href="/pricing"
+
+              style={{
+                display:
+                  "inline-flex",
+
+                minHeight:
+                  "44px",
+
+                boxSizing:
+                  "border-box",
+
+                alignItems:
+                  "center",
+
+                justifyContent:
+                  "center",
+
+                padding:
+                  "11px 19px",
+
+                borderRadius:
+                  "10px",
+
+                background:
+                  "#2563EB",
+
+                color:
+                  "#FFFFFF",
+
+                fontSize:
+                  "14px",
+
+                fontWeight:
+                  800,
+
+                textDecoration:
+                  "none",
+              }}
+            >
+              Explore Premium
+            </Link>
+
+          </div>
+
+        )
+      }
 
     </section>
 
   );
+
 }
 
 
@@ -1773,7 +1925,7 @@ function CommunityHeader() {
             "#0F172A",
 
           fontSize:
-            "40px",
+            "clamp(32px, 7vw, 40px)",
 
           lineHeight:
             1.15,
@@ -1798,15 +1950,15 @@ function CommunityHeader() {
             "#64748B",
 
           fontSize:
-            "17px",
+            "clamp(15px, 3vw, 17px)",
 
           lineHeight:
             1.65,
         }}
       >
-        Explore conversations, experiences,
-        and encouragement from families
-        navigating the autism journey.
+        Explore conversations, experiences, and
+        encouragement from families navigating the
+        autism journey.
       </p>
 
     </header>
@@ -1824,13 +1976,9 @@ function CommunityHeader() {
 
 function CommunityPostCard({
   post,
-  isPremium,
 }: {
   post:
     CommunityPost;
-
-  isPremium:
-    boolean;
 }) {
 
   const displayAuthor =
@@ -1845,7 +1993,7 @@ function CommunityPostCard({
     <article
       style={{
         padding:
-          "22px",
+          "clamp(18px, 4vw, 22px)",
 
         borderRadius:
           "18px",
@@ -1858,6 +2006,9 @@ function CommunityPostCard({
 
         boxShadow:
           "0 4px 14px rgba(15, 23, 42, 0.03)",
+
+        minWidth:
+          0,
       }}
     >
 
@@ -1887,92 +2038,39 @@ function CommunityPostCard({
         }}
       >
 
-        <div
+        <span
           style={{
-            display:
-              "flex",
+            padding:
+              "4px 8px",
 
-            alignItems:
-              "center",
+            borderRadius:
+              "999px",
 
-            gap:
-              "8px",
+            background:
+              "#EFF6FF",
 
-            flexWrap:
-              "wrap",
+            color:
+              "#2563EB",
+
+            fontSize:
+              "10px",
+
+            fontWeight:
+              800,
+
+            textTransform:
+              "uppercase",
+
+            letterSpacing:
+              "0.04em",
           }}
         >
-
-          <span
-            style={{
-              padding:
-                "4px 8px",
-
-              borderRadius:
-                "999px",
-
-              background:
-                "#EFF6FF",
-
-              color:
-                "#2563EB",
-
-              fontSize:
-                "10px",
-
-              fontWeight:
-                800,
-
-              textTransform:
-                "uppercase",
-
-              letterSpacing:
-                "0.04em",
-            }}
-          >
-            {
-              getCategoryLabel(
-                post.category
-              )
-            }
-          </span>
-
-
-          {post.isPremiumOnly && (
-
-            <span
-              style={{
-                padding:
-                  "4px 8px",
-
-                borderRadius:
-                  "999px",
-
-                background:
-                  "#F0FDFA",
-
-                color:
-                  "#0F766E",
-
-                fontSize:
-                  "10px",
-
-                fontWeight:
-                  800,
-
-                textTransform:
-                  "uppercase",
-
-                letterSpacing:
-                  "0.04em",
-              }}
-            >
-              Premium
-            </span>
-
-          )}
-
-        </div>
+          {
+            getCategoryLabel(
+              post.category
+            )
+          }
+        </span>
 
 
         <span
@@ -2014,6 +2112,9 @@ function CommunityPostCard({
 
           fontWeight:
             800,
+
+          overflowWrap:
+            "anywhere",
         }}
       >
         {
@@ -2042,6 +2143,9 @@ function CommunityPostCard({
 
           whiteSpace:
             "pre-wrap",
+
+          overflowWrap:
+            "anywhere",
         }}
       >
         {
@@ -2115,12 +2219,16 @@ function CommunityPostCard({
         >
 
           <span>
-            💬 {post.replyCount}
+            💬 {
+              post.replyCount
+            }
           </span>
 
 
           <span>
-            ♥ {post.reactionCount}
+            ♥ {
+              post.reactionCount
+            }
           </span>
 
         </div>
@@ -2145,6 +2253,15 @@ function CommunityPostCard({
           }
 
           style={{
+            display:
+              "inline-flex",
+
+            minHeight:
+              "44px",
+
+            alignItems:
+              "center",
+
             color:
               "#2563EB",
 

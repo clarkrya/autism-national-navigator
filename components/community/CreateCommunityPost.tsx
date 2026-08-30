@@ -8,10 +8,6 @@ import {
 import Link from "next/link";
 
 import {
-  useRouter,
-} from "next/navigation";
-
-import {
   useAccountEntitlements,
 } from "../../lib/useAccountEntitlements";
 
@@ -35,12 +31,22 @@ import type {
  *   Read-only Community access.
  *
  * Premium:
- *   Create posts.
+ *   Read + create posts + reply.
  *
  * Premium+:
- *   Create posts.
+ *   Read + create posts + reply.
  *
- * The server API is still the real authorization boundary.
+ * IMPORTANT
+ *
+ * The protected server API is the real authorization boundary.
+ *
+ * The client does not write Community posts directly to
+ * Firestore.
+ *
+ * All normal Community conversations are readable by Free,
+ * Premium, and Premium+ members.
+ *
+ * Premium controls participation — not reading.
  * ============================================================
  */
 
@@ -159,12 +165,16 @@ const CATEGORY_OPTIONS: {
 
 export default function CreateCommunityPost() {
 
-  const router =
-    useRouter();
-
+  /*
+   * ==========================================================
+   * ACCOUNT ACCESS
+   * ==========================================================
+   */
 
   const {
-    loading: entitlementLoading,
+    loading:
+      entitlementLoading,
+
     isPremium,
   } =
     useAccountEntitlements();
@@ -179,13 +189,17 @@ export default function CreateCommunityPost() {
   const [
     title,
     setTitle,
-  ] = useState("");
+  ] = useState(
+    ""
+  );
 
 
   const [
     body,
     setBody,
-  ] = useState("");
+  ] = useState(
+    ""
+  );
 
 
   const [
@@ -200,13 +214,9 @@ export default function CreateCommunityPost() {
   const [
     isAnonymous,
     setIsAnonymous,
-  ] = useState(true);
-
-
-  const [
-    isPremiumOnly,
-    setIsPremiumOnly,
-  ] = useState(false);
+  ] = useState(
+    true
+  );
 
 
   /*
@@ -218,25 +228,25 @@ export default function CreateCommunityPost() {
   const [
     submitting,
     setSubmitting,
-  ] = useState(false);
+  ] = useState(
+    false
+  );
 
 
   const [
     error,
     setError,
-  ] = useState("");
+  ] = useState(
+    ""
+  );
 
 
   const [
     submitted,
     setSubmitted,
-  ] = useState(false);
-
-
-  const [
-    submittedPostId,
-    setSubmittedPostId,
-  ] = useState("");
+  ] = useState(
+    false
+  );
 
 
   /*
@@ -247,8 +257,11 @@ export default function CreateCommunityPost() {
 
   const selectedCategory =
     CATEGORY_OPTIONS.find(
-      (option) =>
-        option.value === category
+      (
+        option
+      ) =>
+        option.value ===
+        category
     );
 
 
@@ -265,8 +278,24 @@ export default function CreateCommunityPost() {
     event.preventDefault();
 
 
-    setError("");
-    setSubmitted(false);
+    /*
+     * --------------------------------------------------------
+     * PREVENT DUPLICATE SUBMISSION
+     * --------------------------------------------------------
+     */
+
+    if (
+      submitting
+    ) {
+
+      return;
+
+    }
+
+
+    setError(
+      ""
+    );
 
 
     /*
@@ -275,7 +304,9 @@ export default function CreateCommunityPost() {
      * --------------------------------------------------------
      */
 
-    if (!isPremium) {
+    if (
+      !isPremium
+    ) {
 
       setError(
         "Community participation is available with Premium."
@@ -301,7 +332,8 @@ export default function CreateCommunityPost() {
 
 
     if (
-      cleanTitle.length < 3
+      cleanTitle.length <
+      3
     ) {
 
       setError(
@@ -314,7 +346,8 @@ export default function CreateCommunityPost() {
 
 
     if (
-      cleanTitle.length > 140
+      cleanTitle.length >
+      140
     ) {
 
       setError(
@@ -327,7 +360,8 @@ export default function CreateCommunityPost() {
 
 
     if (
-      cleanBody.length < 5
+      cleanBody.length <
+      5
     ) {
 
       setError(
@@ -340,7 +374,8 @@ export default function CreateCommunityPost() {
 
 
     if (
-      cleanBody.length > 5000
+      cleanBody.length >
+      5000
     ) {
 
       setError(
@@ -352,7 +387,9 @@ export default function CreateCommunityPost() {
     }
 
 
-    setSubmitting(true);
+    setSubmitting(
+      true
+    );
 
 
     try {
@@ -367,10 +404,12 @@ export default function CreateCommunityPost() {
         auth.currentUser;
 
 
-      if (!currentUser) {
+      if (
+        !currentUser
+      ) {
 
         throw new Error(
-          "Your login session is no longer active. Please log in again."
+          "AUTH_REQUIRED"
         );
 
       }
@@ -388,7 +427,14 @@ export default function CreateCommunityPost() {
 
       /*
        * ------------------------------------------------------
-       * API REQUEST
+       * PROTECTED SERVER REQUEST
+       * ------------------------------------------------------
+       *
+       * IMPORTANT:
+       *
+       * isPremiumOnly is intentionally NOT sent.
+       *
+       * The server controls Community visibility.
        * ------------------------------------------------------
        */
 
@@ -396,7 +442,8 @@ export default function CreateCommunityPost() {
         await fetch(
           "/api/community/posts",
           {
-            method: "POST",
+            method:
+              "POST",
 
             headers: {
               "Content-Type":
@@ -408,6 +455,7 @@ export default function CreateCommunityPost() {
 
             body:
               JSON.stringify({
+
                 title:
                   cleanTitle,
 
@@ -420,8 +468,6 @@ export default function CreateCommunityPost() {
                 isAnonymous:
                   isAnonymous,
 
-                isPremiumOnly:
-                  isPremiumOnly,
               }),
           }
         );
@@ -429,39 +475,86 @@ export default function CreateCommunityPost() {
 
       /*
        * ------------------------------------------------------
-       * RESPONSE
+       * READ SERVER RESPONSE
        * ------------------------------------------------------
        */
 
-      let data: {
-        success?: boolean;
-        postId?: string;
-        status?: string;
-        error?: string;
-      };
+      const data =
+        await response
+          .json()
+          .catch(
+            () =>
+              null
+          );
 
 
-      try {
-
-        data =
-          await response.json();
-
-      } catch {
-
-        throw new Error(
-          "The Community service returned an unexpected response."
-        );
-
-      }
-
+      /*
+       * ------------------------------------------------------
+       * SERVER ERROR
+       * ------------------------------------------------------
+       */
 
       if (
         !response.ok
       ) {
 
+        if (
+          response.status ===
+          401
+        ) {
+
+          throw new Error(
+            "AUTH_REQUIRED"
+          );
+
+        }
+
+
+        if (
+          response.status ===
+          403
+        ) {
+
+          throw new Error(
+            "PREMIUM_REQUIRED"
+          );
+
+        }
+
+
+        const serverMessage =
+          data &&
+          typeof data.error ===
+            "string"
+            ? data.error
+            : "";
+
+
         throw new Error(
-          data.error ||
-          "We couldn't create your post right now."
+          serverMessage ||
+          "POST_FAILED"
+        );
+
+      }
+
+
+      /*
+       * ------------------------------------------------------
+       * VERIFY SUCCESS RESPONSE
+       * ------------------------------------------------------
+       */
+
+      if (
+        !data ||
+        data.success !==
+          true ||
+        typeof data.postId !==
+          "string" ||
+        !data.postId
+      ) {
+
+        throw new Error(
+          "The Community service returned an unexpected response."
         );
 
       }
@@ -471,21 +564,43 @@ export default function CreateCommunityPost() {
        * ------------------------------------------------------
        * SUCCESS
        * ------------------------------------------------------
+       *
+       * New posts currently enter pending_review.
+       *
+       * We intentionally do NOT send the member directly to
+       * /community/{postId}, because published Community reads
+       * should not expose pending content.
+       * ------------------------------------------------------
        */
 
-      setSubmittedPostId(
-        data.postId || ""
+      setSubmitted(
+        true
       );
 
 
-      setSubmitted(true);
+      /*
+       * Clear sensitive/free-text form content once the server
+       * confirms successful submission.
+       */
+
+      setTitle(
+        ""
+      );
 
 
-      setTitle("");
-      setBody("");
-      setCategory("general");
-      setIsAnonymous(true);
-      setIsPremiumOnly(false);
+      setBody(
+        ""
+      );
+
+
+      setCategory(
+        "general"
+      );
+
+
+      setIsAnonymous(
+        true
+      );
 
     } catch (
       submitError
@@ -497,15 +612,58 @@ export default function CreateCommunityPost() {
       );
 
 
-      setError(
-        submitError instanceof Error
-          ? submitError.message
-          : "We couldn't create your post right now. Please try again."
-      );
+      if (
+        submitError instanceof Error &&
+        submitError.message ===
+          "AUTH_REQUIRED"
+      ) {
+
+        setError(
+          "Your login session is no longer active. Please log in again."
+        );
+
+      } else if (
+        submitError instanceof Error &&
+        submitError.message ===
+          "PREMIUM_REQUIRED"
+      ) {
+
+        setError(
+          "Community participation is available with Premium."
+        );
+
+      } else if (
+        submitError instanceof Error &&
+        submitError.message ===
+          "POST_FAILED"
+      ) {
+
+        setError(
+          "We couldn't create your post right now. Please try again."
+        );
+
+      } else if (
+        submitError instanceof Error &&
+        submitError.message
+      ) {
+
+        setError(
+          submitError.message
+        );
+
+      } else {
+
+        setError(
+          "We couldn't create your post right now. Please try again."
+        );
+
+      }
 
     } finally {
 
-      setSubmitting(false);
+      setSubmitting(
+        false
+      );
 
     }
 
@@ -524,7 +682,7 @@ export default function CreateCommunityPost() {
 
     return (
 
-      <main
+      <div
         style={{
           maxWidth:
             "850px",
@@ -564,7 +722,7 @@ export default function CreateCommunityPost() {
           Loading Community access...
         </div>
 
-      </main>
+      </div>
 
     );
 
@@ -573,7 +731,7 @@ export default function CreateCommunityPost() {
 
   /*
    * ==========================================================
-   * FREE USER
+   * FREE / NON-PREMIUM USER
    * ==========================================================
    */
 
@@ -583,7 +741,7 @@ export default function CreateCommunityPost() {
 
     return (
 
-      <main
+      <div
         style={{
           maxWidth:
             "850px",
@@ -670,7 +828,7 @@ export default function CreateCommunityPost() {
                 800,
             }}
           >
-            Premium Community Feature
+            Join the Conversation with Premium
           </h1>
 
 
@@ -693,8 +851,8 @@ export default function CreateCommunityPost() {
             }}
           >
             Free members can read Community
-            conversations. Premium members can
-            create posts and participate in
+            conversations. Premium and Premium+ members
+            can create posts and participate in
             discussions.
           </p>
 
@@ -705,6 +863,12 @@ export default function CreateCommunityPost() {
             style={{
               display:
                 "inline-block",
+
+              minHeight:
+                "44px",
+
+              boxSizing:
+                "border-box",
 
               padding:
                 "12px 20px",
@@ -733,7 +897,7 @@ export default function CreateCommunityPost() {
 
         </section>
 
-      </main>
+      </div>
 
     );
 
@@ -752,7 +916,7 @@ export default function CreateCommunityPost() {
 
     return (
 
-      <main
+      <div
         style={{
           maxWidth:
             "850px",
@@ -834,7 +998,7 @@ export default function CreateCommunityPost() {
 
               fontWeight:
                 800,
-          }}
+            }}
           >
             Your post was submitted
           </h1>
@@ -858,107 +1022,53 @@ export default function CreateCommunityPost() {
                 1.65,
             }}
           >
-            Your post has been submitted for
-            Community review. Once approved, it
-            will appear in the appropriate topic.
+            Your post has been submitted for Community
+            review. Once approved, it will appear in the
+            appropriate topic.
           </p>
 
 
-          <div
+          <Link
+            href="/community"
+
             style={{
               display:
-                "flex",
+                "inline-block",
 
-              justifyContent:
-                "center",
+              minHeight:
+                "44px",
 
-              gap:
+              boxSizing:
+                "border-box",
+
+              padding:
+                "12px 20px",
+
+              borderRadius:
                 "10px",
 
-              flexWrap:
-                "wrap",
+              background:
+                "#2563EB",
+
+              color:
+                "#FFFFFF",
+
+              fontSize:
+                "14px",
+
+              fontWeight:
+                800,
+
+              textDecoration:
+                "none",
             }}
           >
-
-            <Link
-              href="/community"
-
-              style={{
-                padding:
-                  "11px 18px",
-
-                borderRadius:
-                  "10px",
-
-                background:
-                  "#2563EB",
-
-                color:
-                  "#FFFFFF",
-
-                fontSize:
-                  "14px",
-
-                fontWeight:
-                  800,
-
-                textDecoration:
-                  "none",
-              }}
-            >
-              Back to Community
-            </Link>
-
-
-            {submittedPostId && (
-
-              <button
-                type="button"
-
-                onClick={() => {
-
-                  router.push(
-                    `/community/${submittedPostId}`
-                  );
-
-                }}
-
-                style={{
-                  padding:
-                    "11px 18px",
-
-                  borderRadius:
-                    "10px",
-
-                  border:
-                    "1px solid #CBD5E1",
-
-                  background:
-                    "#FFFFFF",
-
-                  color:
-                    "#334155",
-
-                  fontSize:
-                    "14px",
-
-                  fontWeight:
-                    800,
-
-                  cursor:
-                    "pointer",
-                }}
-              >
-                View Submission
-              </button>
-
-            )}
-
-          </div>
+            Back to Community
+          </Link>
 
         </section>
 
-      </main>
+      </div>
 
     );
 
@@ -973,7 +1083,7 @@ export default function CreateCommunityPost() {
 
   return (
 
-    <main
+    <div
       style={{
         maxWidth:
           "850px",
@@ -1051,7 +1161,7 @@ export default function CreateCommunityPost() {
               "#0F172A",
 
             fontSize:
-              "34px",
+              "clamp(28px, 6vw, 34px)",
 
             lineHeight:
               1.2,
@@ -1082,49 +1192,53 @@ export default function CreateCommunityPost() {
               1.65,
           }}
         >
-          Share an experience, ask a question,
-          or start a conversation that may help
-          another family feel less alone.
+          Share an experience, ask a question, or start
+          a conversation that may help another family
+          feel less alone.
         </p>
 
       </header>
 
 
-      {error && (
+      {
+        error && (
 
-        <div
-          role="alert"
+          <div
+            role="alert"
 
-          style={{
-            marginBottom:
-              "20px",
+            style={{
+              marginBottom:
+                "20px",
 
-            padding:
-              "14px 16px",
+              padding:
+                "14px 16px",
 
-            borderRadius:
-              "12px",
+              borderRadius:
+                "12px",
 
-            border:
-              "1px solid #FECACA",
+              border:
+                "1px solid #FECACA",
 
-            background:
-              "#FEF2F2",
+              background:
+                "#FEF2F2",
 
-            color:
-              "#B91C1C",
+              color:
+                "#B91C1C",
 
-            fontSize:
-              "14px",
+              fontSize:
+                "14px",
 
-            lineHeight:
-              1.5,
-          }}
-        >
-          {error}
-        </div>
+              lineHeight:
+                1.5,
+            }}
+          >
+            {
+              error
+            }
+          </div>
 
-      )}
+        )
+      }
 
 
       <form
@@ -1136,7 +1250,7 @@ export default function CreateCommunityPost() {
         <section
           style={{
             padding:
-              "26px",
+              "clamp(18px, 4vw, 26px)",
 
             borderRadius:
               "20px",
@@ -1199,14 +1313,35 @@ export default function CreateCommunityPost() {
               ) => {
 
                 setCategory(
-                  event.target.value as CommunityCategory
+                  event.target.value as
+                    CommunityCategory
                 );
 
+                if (
+                  error
+                ) {
+
+                  setError(
+                    ""
+                  );
+
+                }
+
               }}
+
+              disabled={
+                submitting
+              }
 
               style={{
                 width:
                   "100%",
+
+                minHeight:
+                  "44px",
+
+                boxSizing:
+                  "border-box",
 
                 padding:
                   "12px 13px",
@@ -1218,7 +1353,9 @@ export default function CreateCommunityPost() {
                   "1px solid #CBD5E1",
 
                 background:
-                  "#FFFFFF",
+                  submitting
+                    ? "#F8FAFC"
+                    : "#FFFFFF",
 
                 color:
                   "#0F172A",
@@ -1233,29 +1370,35 @@ export default function CreateCommunityPost() {
                   "none",
 
                 cursor:
-                  "pointer",
+                  submitting
+                    ? "default"
+                    : "pointer",
               }}
             >
 
-              {CATEGORY_OPTIONS.map(
-                (
-                  option
-                ) => (
+              {
+                CATEGORY_OPTIONS.map(
+                  (
+                    option
+                  ) => (
 
-                  <option
-                    key={
-                      option.value
-                    }
+                    <option
+                      key={
+                        option.value
+                      }
 
-                    value={
-                      option.value
-                    }
-                  >
-                    {option.label}
-                  </option>
+                      value={
+                        option.value
+                      }
+                    >
+                      {
+                        option.label
+                      }
+                    </option>
 
+                  )
                 )
-              )}
+              }
 
             </select>
 
@@ -1335,7 +1478,21 @@ export default function CreateCommunityPost() {
                   event.target.value
                 );
 
+                if (
+                  error
+                ) {
+
+                  setError(
+                    ""
+                  );
+
+                }
+
               }}
+
+              disabled={
+                submitting
+              }
 
               maxLength={
                 140
@@ -1343,11 +1500,16 @@ export default function CreateCommunityPost() {
 
               required
 
+              autoComplete="off"
+
               placeholder="What would you like the Community to know?"
 
               style={{
                 width:
                   "100%",
+
+                minHeight:
+                  "44px",
 
                 boxSizing:
                   "border-box",
@@ -1361,11 +1523,16 @@ export default function CreateCommunityPost() {
                 border:
                   "1px solid #CBD5E1",
 
+                background:
+                  submitting
+                    ? "#F8FAFC"
+                    : "#FFFFFF",
+
                 color:
                   "#0F172A",
 
                 fontSize:
-                  "15px",
+                  "16px",
 
                 outline:
                   "none",
@@ -1388,7 +1555,10 @@ export default function CreateCommunityPost() {
                   "11px",
               }}
             >
-              {title.length} / 140
+              {
+                title.length
+              }
+              {" / 140"}
             </div>
 
           </div>
@@ -1444,7 +1614,21 @@ export default function CreateCommunityPost() {
                   event.target.value
                 );
 
+                if (
+                  error
+                ) {
+
+                  setError(
+                    ""
+                  );
+
+                }
+
               }}
+
+              disabled={
+                submitting
+              }
 
               maxLength={
                 5000
@@ -1474,11 +1658,16 @@ export default function CreateCommunityPost() {
                 border:
                   "1px solid #CBD5E1",
 
+                background:
+                  submitting
+                    ? "#F8FAFC"
+                    : "#FFFFFF",
+
                 color:
                   "#0F172A",
 
                 fontSize:
-                  "15px",
+                  "16px",
 
                 lineHeight:
                   1.6,
@@ -1488,6 +1677,9 @@ export default function CreateCommunityPost() {
 
                 outline:
                   "none",
+
+                fontFamily:
+                  "inherit",
               }}
             />
 
@@ -1507,7 +1699,10 @@ export default function CreateCommunityPost() {
                   "11px",
               }}
             >
-              {body.length} / 5,000
+              {
+                body.length
+              }
+              {" / 5,000"}
             </div>
 
           </div>
@@ -1532,7 +1727,7 @@ export default function CreateCommunityPost() {
                 "#F8FAFC",
 
               marginBottom:
-                "16px",
+                "22px",
             }}
           >
 
@@ -1548,7 +1743,9 @@ export default function CreateCommunityPost() {
                   "10px",
 
                 cursor:
-                  "pointer",
+                  submitting
+                    ? "default"
+                    : "pointer",
               }}
             >
 
@@ -1568,6 +1765,10 @@ export default function CreateCommunityPost() {
                   );
 
                 }}
+
+                disabled={
+                  submitting
+                }
 
                 style={{
                   marginTop:
@@ -1621,8 +1822,8 @@ export default function CreateCommunityPost() {
                       1.5,
                   }}
                 >
-                  Your Community display name will
-                  not be shown on this post.
+                  Your Community display name will not
+                  be shown on this post.
                 </span>
 
               </span>
@@ -1633,121 +1834,39 @@ export default function CreateCommunityPost() {
 
 
           {/* ==================================================
-              PREMIUM ONLY
+              COMMUNITY VISIBILITY
           =================================================== */}
 
           <div
             style={{
+              marginBottom:
+                "22px",
+
               padding:
-                "16px",
+                "14px 15px",
 
               borderRadius:
-                "12px",
-
-              border:
-                "1px solid #E2E8F0",
+                "10px",
 
               background:
-                "#F8FAFC",
+                "#EFF6FF",
 
-              marginBottom:
-                "24px",
+              border:
+                "1px solid #BFDBFE",
+
+              color:
+                "#1E40AF",
+
+              fontSize:
+                "12px",
+
+              lineHeight:
+                1.6,
             }}
           >
-
-            <label
-              style={{
-                display:
-                  "flex",
-
-                alignItems:
-                  "flex-start",
-
-                gap:
-                  "10px",
-
-                cursor:
-                  "pointer",
-              }}
-            >
-
-              <input
-                type="checkbox"
-
-                checked={
-                  isPremiumOnly
-                }
-
-                onChange={(
-                  event
-                ) => {
-
-                  setIsPremiumOnly(
-                    event.target.checked
-                  );
-
-                }}
-
-                style={{
-                  marginTop:
-                    "3px",
-
-                  width:
-                    "16px",
-
-                  height:
-                    "16px",
-                }}
-              />
-
-
-              <span>
-
-                <span
-                  style={{
-                    display:
-                      "block",
-
-                    color:
-                      "#334155",
-
-                    fontSize:
-                      "14px",
-
-                    fontWeight:
-                      800,
-                  }}
-                >
-                  Premium-only conversation
-                </span>
-
-
-                <span
-                  style={{
-                    display:
-                      "block",
-
-                    marginTop:
-                      "3px",
-
-                    color:
-                      "#64748B",
-
-                    fontSize:
-                      "12px",
-
-                    lineHeight:
-                      1.5,
-                  }}
-                >
-                  Limit this conversation to Premium
-                  and Premium+ members.
-                </span>
-
-              </span>
-
-            </label>
-
+            Community posts can be read by all signed-in
+            Myriad members. Creating posts and replying
+            are Premium features.
           </div>
 
 
@@ -1785,8 +1904,44 @@ export default function CreateCommunityPost() {
             Community conversations are for shared
             experiences and support. Please avoid
             posting personal identifiers, medical
-            records, or another person's private
+            records, or another person&apos;s private
             information.
+          </div>
+
+
+          {/* ==================================================
+              REVIEW NOTE
+          =================================================== */}
+
+          <div
+            style={{
+              marginBottom:
+                "24px",
+
+              padding:
+                "14px 15px",
+
+              borderRadius:
+                "10px",
+
+              background:
+                "#F8FAFC",
+
+              border:
+                "1px solid #E2E8F0",
+
+              color:
+                "#64748B",
+
+              fontSize:
+                "12px",
+
+              lineHeight:
+                1.6,
+            }}
+          >
+            New conversations are reviewed before they
+            appear in the Community.
           </div>
 
 
@@ -1813,7 +1968,17 @@ export default function CreateCommunityPost() {
             <Link
               href="/community"
 
+              aria-disabled={
+                submitting
+              }
+
               style={{
+                minHeight:
+                  "44px",
+
+                boxSizing:
+                  "border-box",
+
                 padding:
                   "11px 18px",
 
@@ -1837,6 +2002,15 @@ export default function CreateCommunityPost() {
 
                 textDecoration:
                   "none",
+
+                display:
+                  "inline-flex",
+
+                alignItems:
+                  "center",
+
+                justifyContent:
+                  "center",
               }}
             >
               Cancel
@@ -1847,10 +2021,17 @@ export default function CreateCommunityPost() {
               type="submit"
 
               disabled={
-                submitting
+                submitting ||
+                title.trim().length <
+                  3 ||
+                body.trim().length <
+                  5
               }
 
               style={{
+                minHeight:
+                  "44px",
+
                 padding:
                   "11px 20px",
 
@@ -1861,7 +2042,11 @@ export default function CreateCommunityPost() {
                   "none",
 
                 background:
-                  submitting
+                  submitting ||
+                  title.trim().length <
+                    3 ||
+                  body.trim().length <
+                    5
                     ? "#93C5FD"
                     : "#2563EB",
 
@@ -1875,8 +2060,12 @@ export default function CreateCommunityPost() {
                   800,
 
                 cursor:
-                  submitting
-                    ? "default"
+                  submitting ||
+                  title.trim().length <
+                    3 ||
+                  body.trim().length <
+                    5
+                    ? "not-allowed"
                     : "pointer",
               }}
             >
@@ -1893,7 +2082,7 @@ export default function CreateCommunityPost() {
 
       </form>
 
-    </main>
+    </div>
 
   );
 
