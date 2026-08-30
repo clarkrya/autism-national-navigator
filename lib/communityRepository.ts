@@ -30,9 +30,11 @@ import type {
  *
  * Firestore:
  *
- * community/
- *   posts/{postId}
- *   replies/{replyId}
+ * communityPosts/
+ *   {postId}
+ *
+ * communityReplies/
+ *   {replyId}
  *
  * users/
  *   {userId}/
@@ -83,8 +85,7 @@ function getPostsCollection() {
 
   return collection(
     db,
-    "community",
-    "posts"
+    "communityPosts"
   );
 
 }
@@ -94,8 +95,7 @@ function getRepliesCollection() {
 
   return collection(
     db,
-    "community",
-    "replies"
+    "communityReplies"
   );
 
 }
@@ -213,7 +213,7 @@ export async function getCommunityProfile(
  *
  * IMPORTANT
  *
- * Free users must query with:
+ * Free users should normally query with:
  *
  *   premiumOnly === false
  *
@@ -270,13 +270,6 @@ export async function getCommunityPosts(
    * ----------------------------------------------------------
    * PREMIUM FILTER
    * ----------------------------------------------------------
-   *
-   * For Free users the caller should explicitly pass:
-   *
-   * premiumOnly: false
-   *
-   * This is required because Firestore rules must be able to
-   * determine that the query cannot return Premium-only posts.
    */
 
   if (
@@ -397,7 +390,8 @@ export async function getCommunityPosts(
           data.category,
 
         isAnonymous:
-          data.isAnonymous === true,
+          data.isAnonymous ===
+          true,
 
         status:
           data.status,
@@ -424,13 +418,16 @@ export async function getCommunityPosts(
             : 0,
 
         isFeatured:
-          data.isFeatured === true,
+          data.isFeatured ===
+          true,
 
         isPremiumOnly:
-          data.isPremiumOnly === true,
+          data.isPremiumOnly ===
+          true,
 
         isNavigatorSupported:
-          data.isNavigatorSupported === true,
+          data.isNavigatorSupported ===
+          true,
 
         createdAt:
           typeof data.createdAt ===
@@ -447,6 +444,156 @@ export async function getCommunityPosts(
 
     }
   );
+
+}
+
+
+/*
+ * ============================================================
+ * GET COMMUNITY POST BY ID
+ * ============================================================
+ *
+ * Returns a single Community post by Firestore document ID.
+ *
+ * Only published posts are returned.
+ * ============================================================
+ */
+
+export async function getCommunityPost(
+  postId: string
+): Promise<CommunityPost | null> {
+
+  if (
+    !postId
+  ) {
+
+    throw new Error(
+      "A post ID is required."
+    );
+
+  }
+
+
+  const postRef =
+    doc(
+      db,
+      "communityPosts",
+      postId
+    );
+
+
+  const snapshot =
+    await getDoc(
+      postRef
+    );
+
+
+  if (
+    !snapshot.exists()
+  ) {
+
+    return null;
+
+  }
+
+
+  const data =
+    snapshot.data();
+
+
+  if (
+    data.status !==
+    "published"
+  ) {
+
+    return null;
+
+  }
+
+
+  return {
+    id:
+      snapshot.id,
+
+    authorId:
+      typeof data.authorId ===
+      "string"
+        ? data.authorId
+        : "",
+
+    authorDisplayName:
+      typeof data.authorDisplayName ===
+      "string"
+        ? data.authorDisplayName
+        : "Community Member",
+
+    title:
+      typeof data.title ===
+      "string"
+        ? data.title
+        : "",
+
+    body:
+      typeof data.body ===
+      "string"
+        ? data.body
+        : "",
+
+    category:
+      data.category,
+
+    isAnonymous:
+      data.isAnonymous ===
+      true,
+
+    status:
+      data.status,
+
+    moderationStatus:
+      data.moderationStatus,
+
+    replyCount:
+      typeof data.replyCount ===
+      "number"
+        ? data.replyCount
+        : 0,
+
+    reactionCount:
+      typeof data.reactionCount ===
+      "number"
+        ? data.reactionCount
+        : 0,
+
+    reportCount:
+      typeof data.reportCount ===
+      "number"
+        ? data.reportCount
+        : 0,
+
+    isFeatured:
+      data.isFeatured ===
+      true,
+
+    isPremiumOnly:
+      data.isPremiumOnly ===
+      true,
+
+    isNavigatorSupported:
+      data.isNavigatorSupported ===
+      true,
+
+    createdAt:
+      typeof data.createdAt ===
+      "number"
+        ? data.createdAt
+        : 0,
+
+    updatedAt:
+      typeof data.updatedAt ===
+      "number"
+        ? data.updatedAt
+        : 0,
+  };
 
 }
 
@@ -545,7 +692,8 @@ export async function getCommunityReplies(
             : "",
 
         isAnonymous:
-          data.isAnonymous === true,
+          data.isAnonymous ===
+          true,
 
         status:
           data.status,
