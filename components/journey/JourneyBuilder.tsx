@@ -43,6 +43,8 @@ import JourneyHistory from "./JourneyHistory";
 import JourneyQuestionnaire from "../journey-builder/JourneyQuestionnaire";
 import AddingChildBanner from "../journey-builder/AddingChildBanner";
 import ChildJourneyControls from "../journey-builder/ChildJourneyControls";
+import StartNewJourneyModal from "../journey-builder/StartNewJourneyModal";
+import RemoveChildModal from "../journey-builder/RemoveChildModal";
 
 
 /*
@@ -91,7 +93,7 @@ function createBlankProfile(
 
 /*
  * ============================================================
- * ADD CHILD SNAPSHOT
+ * PREVIOUS CHILD SNAPSHOT
  * ============================================================
  */
 
@@ -114,9 +116,9 @@ export default function JourneyBuilder() {
 
 
   /*
-   * ============================================================
-   * BASIC STATE
-   * ============================================================
+   * ==========================================================
+   * QUESTIONNAIRE / GENERATION STATE
+   * ==========================================================
    */
 
   const [
@@ -144,9 +146,9 @@ export default function JourneyBuilder() {
 
 
   /*
-   * ============================================================
-   * JOURNEY ACTION STATE
-   * ============================================================
+   * ==========================================================
+   * START NEW JOURNEY STATE
+   * ==========================================================
    */
 
   const [
@@ -174,9 +176,9 @@ export default function JourneyBuilder() {
 
 
   /*
-   * ============================================================
+   * ==========================================================
    * REMOVE CHILD STATE
-   * ============================================================
+   * ==========================================================
    */
 
   const [
@@ -204,9 +206,9 @@ export default function JourneyBuilder() {
 
 
   /*
-   * ============================================================
-   * ADD ANOTHER CHILD DRAFT STATE
-   * ============================================================
+   * ==========================================================
+   * ADD ANOTHER CHILD STATE
+   * ==========================================================
    */
 
   const [
@@ -227,9 +229,9 @@ export default function JourneyBuilder() {
 
 
   /*
-   * ============================================================
-   * PERSONALIZED JOURNEY
-   * ============================================================
+   * ==========================================================
+   * JOURNEY / PROFILE STATE
+   * ==========================================================
    */
 
   const [
@@ -241,13 +243,6 @@ export default function JourneyBuilder() {
     null
   );
 
-
-  /*
-   * ============================================================
-   * FAMILY PROFILE
-   * ============================================================
-   */
-
   const [
     familyProfile,
     setFamilyProfile,
@@ -257,9 +252,9 @@ export default function JourneyBuilder() {
 
 
   /*
-   * ============================================================
+   * ==========================================================
    * SAVED JOURNEY STATE
-   * ============================================================
+   * ==========================================================
    */
 
   const [
@@ -294,9 +289,9 @@ export default function JourneyBuilder() {
 
 
   /*
-   * ============================================================
+   * ==========================================================
    * LOAD ACCOUNT / SAVED JOURNEY
-   * ============================================================
+   * ==========================================================
    */
 
   useEffect(
@@ -350,9 +345,9 @@ export default function JourneyBuilder() {
 
 
               /*
-               * ==================================================
-               * CHILD-SPECIFIC JOURNEYS
-               * ==================================================
+               * --------------------------------------------------
+               * CHILD-SPECIFIC CURRENT JOURNEYS
+               * --------------------------------------------------
                */
 
               if (
@@ -369,19 +364,23 @@ export default function JourneyBuilder() {
                       child.childId
                     );
 
+
                   if (
                     !savedJourney
                   ) {
                     continue;
                   }
 
+
                   setSavedChildren(
                     children
                   );
 
+
                   setSelectedChildId(
                     child.childId
                   );
+
 
                   setFamilyProfile({
                     ...savedJourney
@@ -394,22 +393,27 @@ export default function JourneyBuilder() {
                       child.childId,
                   });
 
+
                   setPersonalizedJourney(
                     savedJourney
                       .journey
                   );
 
+
                   setSavedJourneyLoaded(
                     true
                   );
+
 
                   setAddingChildDraft(
                     false
                   );
 
+
                   setPreviousChildSnapshot(
                     null
                   );
+
 
                   return;
                 }
@@ -417,9 +421,9 @@ export default function JourneyBuilder() {
 
 
               /*
-               * ==================================================
+               * --------------------------------------------------
                * LEGACY JOURNEY MIGRATION
-               * ==================================================
+               * --------------------------------------------------
                */
 
               const legacyJourney =
@@ -450,9 +454,12 @@ export default function JourneyBuilder() {
                 const migratedJourney =
                   await saveCurrentJourney(
                     user.uid,
+
                     migratedProfile,
+
                     legacyJourney
                       .journey,
+
                     {
                       stageNumber:
                         legacyJourney
@@ -469,6 +476,12 @@ export default function JourneyBuilder() {
                   );
 
 
+                /*
+                 * ------------------------------------------------
+                 * MIGRATE LEGACY HISTORY
+                 * ------------------------------------------------
+                 */
+
                 const legacyHistory =
                   await getLegacyJourneyHistory(
                     user.uid
@@ -481,15 +494,20 @@ export default function JourneyBuilder() {
                 ) {
                   await saveJourneyStage(
                     user.uid,
+
                     stage.stageNumber,
+
                     {
                       ...stage
                         .familyProfile,
 
                       childId,
                     },
+
                     stage.journey,
+
                     stage.completedTaskIds,
+
                     {
                       journeyId:
                         migratedJourney
@@ -518,48 +536,57 @@ export default function JourneyBuilder() {
                   children
                 );
 
+
                 setSelectedChildId(
                   childId
                 );
 
+
                 setFamilyProfile(
                   migratedProfile
                 );
+
 
                 setPersonalizedJourney(
                   legacyJourney
                     .journey
                 );
 
+
                 setSavedJourneyLoaded(
                   true
                 );
+
 
                 setAddingChildDraft(
                   false
                 );
 
+
                 setPreviousChildSnapshot(
                   null
                 );
+
 
                 return;
               }
 
 
               /*
-               * ==================================================
-               * NEW ACCOUNT / NO CURRENT JOURNEY
-               * ==================================================
+               * --------------------------------------------------
+               * NO ACTIVE JOURNEY
+               * --------------------------------------------------
                */
 
               setSavedChildren(
                 children
               );
 
+
               setSelectedChildId(
                 ""
               );
+
 
               setSavedJourneyLoaded(
                 false
@@ -572,6 +599,7 @@ export default function JourneyBuilder() {
                 "Unable to load saved journey:",
                 loadError
               );
+
 
               setSavedJourneyLoaded(
                 false
@@ -595,9 +623,9 @@ export default function JourneyBuilder() {
 
 
   /*
-   * ============================================================
-   * SCROLL TO TOP — QUESTIONNAIRE
-   * ============================================================
+   * ==========================================================
+   * SCROLL — QUESTIONNAIRE
+   * ==========================================================
    */
 
   useEffect(
@@ -622,9 +650,9 @@ export default function JourneyBuilder() {
 
 
   /*
-   * ============================================================
-   * SCROLL TO TOP — JOURNEY
-   * ============================================================
+   * ==========================================================
+   * SCROLL — JOURNEY
+   * ==========================================================
    */
 
   useEffect(
@@ -648,9 +676,9 @@ export default function JourneyBuilder() {
 
 
   /*
-   * ============================================================
+   * ==========================================================
    * UPDATE PROFILE
-   * ============================================================
+   * ==========================================================
    */
 
   function updateProfile<
@@ -673,9 +701,9 @@ export default function JourneyBuilder() {
 
 
   /*
-   * ============================================================
+   * ==========================================================
    * BEGIN QUESTIONNAIRE
-   * ============================================================
+   * ==========================================================
    */
 
   function beginQuestionnaire() {
@@ -685,6 +713,7 @@ export default function JourneyBuilder() {
     ) {
       const childId =
         createChildId();
+
 
       setFamilyProfile(
         (
@@ -696,10 +725,12 @@ export default function JourneyBuilder() {
         })
       );
 
+
       setSelectedChildId(
         childId
       );
     }
+
 
     setStep(
       1
@@ -708,9 +739,9 @@ export default function JourneyBuilder() {
 
 
   /*
-   * ============================================================
+   * ==========================================================
    * LOAD SAVED CHILD
-   * ============================================================
+   * ==========================================================
    */
 
   async function loadSavedChild(
@@ -731,15 +762,23 @@ export default function JourneyBuilder() {
       true
     );
 
+
     setError(
       null
     );
+
 
     setJourneyActionError(
       null
     );
 
+
     setShowStartNewJourneyConfirm(
+      false
+    );
+
+
+    setShowRemoveChildConfirm(
       false
     );
 
@@ -765,6 +804,7 @@ export default function JourneyBuilder() {
         childId
       );
 
+
       setFamilyProfile({
         ...savedJourney
           .familyProfile,
@@ -772,26 +812,32 @@ export default function JourneyBuilder() {
         childId,
       });
 
+
       setPersonalizedJourney(
         savedJourney
           .journey
       );
 
+
       setSavedJourneyLoaded(
         true
       );
+
 
       setAddingChildDraft(
         false
       );
 
+
       setPreviousChildSnapshot(
         null
       );
 
+
       setStep(
         0
       );
+
 
       window.scrollTo({
         top:
@@ -802,16 +848,17 @@ export default function JourneyBuilder() {
       });
 
     } catch (
-      err
+      loadError
     ) {
       console.error(
         "Unable to switch child journeys:",
-        err
+        loadError
       );
 
+
       setJourneyActionError(
-        err instanceof Error
-          ? err.message
+        loadError instanceof Error
+          ? loadError.message
           : "We couldn't load this child's saved journey."
       );
 
@@ -824,20 +871,17 @@ export default function JourneyBuilder() {
 
 
   /*
-   * ============================================================
+   * ==========================================================
    * GENERATE PERSONALIZED JOURNEY
-   * ============================================================
+   * ==========================================================
    */
 
   async function generatePersonalizedJourney() {
     const profileForGeneration:
       FamilyProfile =
-
       familyProfile
         .childId
-
         ? familyProfile
-
         : {
             ...familyProfile,
 
@@ -854,6 +898,7 @@ export default function JourneyBuilder() {
         profileForGeneration
       );
 
+
       setSelectedChildId(
         profileForGeneration
           .childId
@@ -864,6 +909,7 @@ export default function JourneyBuilder() {
     setIsGenerating(
       true
     );
+
 
     setError(
       null
@@ -893,17 +939,9 @@ export default function JourneyBuilder() {
 
 
       /*
-       * ========================================================
+       * --------------------------------------------------------
        * SAFE API RESPONSE PARSING
-       * ========================================================
-       *
-       * Next.js may return an HTML error page when a server route
-       * crashes. Calling response.json() directly on that HTML
-       * produces:
-       *
-       * Unexpected token '<'
-       *
-       * Read text first so we can show a useful error instead.
+       * --------------------------------------------------------
        */
 
       const responseText =
@@ -911,7 +949,8 @@ export default function JourneyBuilder() {
 
 
       let data:
-        any = null;
+        any =
+        null;
 
 
       if (
@@ -922,6 +961,7 @@ export default function JourneyBuilder() {
             JSON.parse(
               responseText
             );
+
         } catch (
           parseError
         ) {
@@ -987,16 +1027,17 @@ export default function JourneyBuilder() {
       );
 
     } catch (
-      err
+      generationError
     ) {
       console.error(
         "AI journey generation failed:",
-        err
+        generationError
       );
 
+
       setError(
-        err instanceof Error
-          ? err.message
+        generationError instanceof Error
+          ? generationError.message
           : "We couldn't create your personalized journey. Please try again."
       );
 
@@ -1009,9 +1050,9 @@ export default function JourneyBuilder() {
 
 
   /*
-   * ============================================================
+   * ==========================================================
    * ADD ANOTHER CHILD
-   * ============================================================
+   * ==========================================================
    */
 
   function addAnotherChild() {
@@ -1025,8 +1066,7 @@ export default function JourneyBuilder() {
           familyProfile
             .childId,
 
-        familyProfile:
-          familyProfile,
+        familyProfile,
 
         journey:
           personalizedJourney,
@@ -1042,17 +1082,31 @@ export default function JourneyBuilder() {
       true
     );
 
+
     setShowStartNewJourneyConfirm(
       false
     );
+
+
+    setShowRemoveChildConfirm(
+      false
+    );
+
 
     setJourneyActionError(
       null
     );
 
+
+    setRemoveChildError(
+      null
+    );
+
+
     setPersonalizedJourney(
       null
     );
+
 
     setFamilyProfile(
       createBlankProfile(
@@ -1060,21 +1114,26 @@ export default function JourneyBuilder() {
       )
     );
 
+
     setSelectedChildId(
       newChildId
     );
+
 
     setStep(
       0
     );
 
+
     setError(
       null
     );
 
+
     setSavedJourneyLoaded(
       false
     );
+
 
     window.scrollTo({
       top:
@@ -1087,9 +1146,9 @@ export default function JourneyBuilder() {
 
 
   /*
-   * ============================================================
+   * ==========================================================
    * CANCEL ADDING CHILD
-   * ============================================================
+   * ==========================================================
    */
 
   function cancelAddingChild() {
@@ -1105,39 +1164,53 @@ export default function JourneyBuilder() {
         .familyProfile
     );
 
+
     setSelectedChildId(
       previousChildSnapshot
         .childId
     );
+
 
     setPersonalizedJourney(
       previousChildSnapshot
         .journey
     );
 
+
     setSavedJourneyLoaded(
       true
     );
+
 
     setAddingChildDraft(
       false
     );
 
+
     setPreviousChildSnapshot(
       null
     );
+
 
     setStep(
       0
     );
 
+
     setError(
       null
     );
 
+
     setJourneyActionError(
       null
     );
+
+
+    setRemoveChildError(
+      null
+    );
+
 
     window.scrollTo({
       top:
@@ -1150,9 +1223,9 @@ export default function JourneyBuilder() {
 
 
   /*
-   * ============================================================
+   * ==========================================================
    * JOURNEY SAVED
-   * ============================================================
+   * ==========================================================
    */
 
   async function handleJourneySaved(
@@ -1180,23 +1253,33 @@ export default function JourneyBuilder() {
         children
       );
 
+
       setSelectedChildId(
         childId
       );
+
 
       setSavedJourneyLoaded(
         true
       );
 
+
       setAddingChildDraft(
         false
       );
+
 
       setPreviousChildSnapshot(
         null
       );
 
+
       setJourneyActionError(
+        null
+      );
+
+
+      setRemoveChildError(
         null
       );
 
@@ -1212,9 +1295,9 @@ export default function JourneyBuilder() {
 
 
   /*
-   * ============================================================
+   * ==========================================================
    * REMOVE CHILD
-   * ============================================================
+   * ==========================================================
    */
 
   async function confirmRemoveChild() {
@@ -1251,6 +1334,7 @@ export default function JourneyBuilder() {
       true
     );
 
+
     setRemoveChildError(
       null
     );
@@ -1285,9 +1369,60 @@ export default function JourneyBuilder() {
         );
 
 
-      const data =
-        await response
-          .json();
+      /*
+       * --------------------------------------------------------
+       * SAFE DELETE API RESPONSE PARSING
+       * --------------------------------------------------------
+       */
+
+      const responseText =
+        await response.text();
+
+
+      let data:
+        any =
+        null;
+
+
+      if (
+        responseText
+      ) {
+        try {
+          data =
+            JSON.parse(
+              responseText
+            );
+
+        } catch (
+          parseError
+        ) {
+          console.error(
+            "Delete child API returned a non-JSON response:",
+            {
+              status:
+                response.status,
+
+              statusText:
+                response.statusText,
+
+              responsePreview:
+                responseText.slice(
+                  0,
+                  300
+                ),
+
+              parseError,
+            }
+          );
+
+
+          throw new Error(
+            response.ok
+              ? "The child removal service returned an invalid response."
+              : `Unable to remove child (${response.status}).`
+          );
+        }
+      }
 
 
       if (
@@ -1310,13 +1445,16 @@ export default function JourneyBuilder() {
         remainingChildren
       );
 
+
       setShowRemoveChildConfirm(
         false
       );
 
 
       /*
-       * Find another child with an active current Journey.
+       * --------------------------------------------------------
+       * LOAD ANOTHER CHILD WITH AN ACTIVE CURRENT JOURNEY
+       * --------------------------------------------------------
        */
 
       if (
@@ -1349,6 +1487,7 @@ export default function JourneyBuilder() {
             child.childId
           );
 
+
           setFamilyProfile({
             ...currentJourney
               .familyProfile,
@@ -1357,21 +1496,36 @@ export default function JourneyBuilder() {
               child.childId,
           });
 
+
           setPersonalizedJourney(
             currentJourney
               .journey
           );
 
+
           setSavedJourneyLoaded(
             true
           );
+
+
+          setAddingChildDraft(
+            false
+          );
+
+
+          setPreviousChildSnapshot(
+            null
+          );
+
 
           setStep(
             0
           );
 
+
           nextChildLoaded =
             true;
+
 
           break;
         }
@@ -1388,42 +1542,52 @@ export default function JourneyBuilder() {
               "smooth",
           });
 
+
           return;
         }
       }
 
 
       /*
-       * No remaining active Journey.
+       * --------------------------------------------------------
+       * NO REMAINING ACTIVE JOURNEY
+       * --------------------------------------------------------
        */
 
       setSelectedChildId(
         ""
       );
 
+
       setFamilyProfile(
         createBlankProfile()
       );
+
 
       setPersonalizedJourney(
         null
       );
 
+
       setSavedJourneyLoaded(
         false
       );
+
 
       setAddingChildDraft(
         false
       );
 
+
       setPreviousChildSnapshot(
         null
       );
 
+
       setStep(
         0
       );
+
 
       window.scrollTo({
         top:
@@ -1434,16 +1598,17 @@ export default function JourneyBuilder() {
       });
 
     } catch (
-      removeError
+      removalError
     ) {
       console.error(
         "Unable to remove child:",
-        removeError
+        removalError
       );
 
+
       setRemoveChildError(
-        removeError instanceof Error
-          ? removeError.message
+        removalError instanceof Error
+          ? removalError.message
           : "We couldn't remove this child right now."
       );
 
@@ -1456,9 +1621,9 @@ export default function JourneyBuilder() {
 
 
   /*
-   * ============================================================
-   * START A NEW JOURNEY — SAME CHILD
-   * ============================================================
+   * ==========================================================
+   * START NEW JOURNEY — SAME CHILD
+   * ==========================================================
    */
 
   async function confirmStartNewJourney() {
@@ -1505,6 +1670,7 @@ export default function JourneyBuilder() {
       true
     );
 
+
     setJourneyActionError(
       null
     );
@@ -1516,6 +1682,12 @@ export default function JourneyBuilder() {
         childId
       );
 
+
+      /*
+       * --------------------------------------------------------
+       * KEEP CHILD IDENTITY, RESET JOURNEY-SPECIFIC ANSWERS
+       * --------------------------------------------------------
+       */
 
       setFamilyProfile({
         childId,
@@ -1554,33 +1726,41 @@ export default function JourneyBuilder() {
         childId
       );
 
+
       setPersonalizedJourney(
         null
       );
+
 
       setSavedJourneyLoaded(
         false
       );
 
+
       setAddingChildDraft(
         false
       );
+
 
       setPreviousChildSnapshot(
         null
       );
 
+
       setStep(
         0
       );
+
 
       setError(
         null
       );
 
+
       setShowStartNewJourneyConfirm(
         false
       );
+
 
       window.scrollTo({
         top:
@@ -1591,16 +1771,17 @@ export default function JourneyBuilder() {
       });
 
     } catch (
-      err
+      startError
     ) {
       console.error(
         "Unable to start a new journey:",
-        err
+        startError
       );
 
+
       setJourneyActionError(
-        err instanceof Error
-          ? err.message
+        startError instanceof Error
+          ? startError.message
           : "We couldn't archive the current journey. Nothing was changed."
       );
 
@@ -1613,9 +1794,9 @@ export default function JourneyBuilder() {
 
 
   /*
-   * ============================================================
+   * ==========================================================
    * NEXT QUESTION
-   * ============================================================
+   * ==========================================================
    */
 
   function nextStep() {
@@ -1631,6 +1812,7 @@ export default function JourneyBuilder() {
           1
       );
 
+
       return;
     }
 
@@ -1640,9 +1822,9 @@ export default function JourneyBuilder() {
 
 
   /*
-   * ============================================================
+   * ==========================================================
    * PREVIOUS QUESTION
-   * ============================================================
+   * ==========================================================
    */
 
   function previousStep() {
@@ -1662,9 +1844,9 @@ export default function JourneyBuilder() {
 
 
   /*
-   * ============================================================
+   * ==========================================================
    * CAN CONTINUE
-   * ============================================================
+   * ==========================================================
    */
 
   function canContinue() {
@@ -1679,12 +1861,14 @@ export default function JourneyBuilder() {
           ""
         );
 
+
       case 2:
         return (
           familyProfile
             .childAge !==
           ""
         );
+
 
       case 3:
         return (
@@ -1693,12 +1877,14 @@ export default function JourneyBuilder() {
           ""
         );
 
+
       case 4:
         return (
           familyProfile
             .journeyStage !==
           ""
         );
+
 
       case 5:
         return (
@@ -1708,12 +1894,14 @@ export default function JourneyBuilder() {
           0
         );
 
+
       case 6:
         return (
           familyProfile
             .priority !==
           ""
         );
+
 
       case 7:
         return (
@@ -1722,6 +1910,7 @@ export default function JourneyBuilder() {
           ""
         );
 
+
       default:
         return true;
     }
@@ -1729,9 +1918,9 @@ export default function JourneyBuilder() {
 
 
   /*
-   * ============================================================
+   * ==========================================================
    * CHILD CONTROLS
-   * ============================================================
+   * ==========================================================
    */
 
   function renderChildJourneyControls() {
@@ -1773,6 +1962,7 @@ export default function JourneyBuilder() {
             null
           );
 
+
           setShowRemoveChildConfirm(
             true
           );
@@ -1783,342 +1973,9 @@ export default function JourneyBuilder() {
 
 
   /*
-   * ============================================================
-   * REMOVE CHILD MODAL
-   * ============================================================
-   */
-
-  function renderRemoveChildModal() {
-    if (
-      !showRemoveChildConfirm
-    ) {
-      return null;
-    }
-
-
-    return (
-      <div
-        role="dialog"
-
-        aria-modal="true"
-
-        aria-labelledby="remove-child-title"
-
-        style={{
-          position:
-            "fixed",
-
-          inset:
-            0,
-
-          zIndex:
-            1100,
-
-          display:
-            "flex",
-
-          alignItems:
-            "center",
-
-          justifyContent:
-            "center",
-
-          padding:
-            "24px",
-
-          background:
-            "rgba(15, 23, 42, 0.55)",
-        }}
-      >
-        <div
-          style={{
-            width:
-              "100%",
-
-            maxWidth:
-              "520px",
-
-            padding:
-              "30px",
-
-            background:
-              "#FFFFFF",
-
-            borderRadius:
-              "20px",
-
-            border:
-              "1px solid #E2E8F0",
-
-            boxShadow:
-              "0 24px 60px rgba(15,23,42,.20)",
-          }}
-        >
-          <div
-            style={{
-              width:
-                "46px",
-
-              height:
-                "46px",
-
-              display:
-                "flex",
-
-              alignItems:
-                "center",
-
-              justifyContent:
-                "center",
-
-              borderRadius:
-                "50%",
-
-              background:
-                "#FEF2F2",
-
-              color:
-                "#B91C1C",
-
-              fontSize:
-                "20px",
-
-              fontWeight:
-                800,
-
-              marginBottom:
-                "18px",
-            }}
-          >
-            !
-          </div>
-
-
-          <h2
-            id="remove-child-title"
-
-            style={{
-              margin:
-                "0 0 12px",
-
-              color:
-                "#0F172A",
-
-              fontSize:
-                "24px",
-
-              fontWeight:
-                800,
-            }}
-          >
-            Remove{" "}
-            {
-              familyProfile
-                .childName ||
-              "this child"
-            }?
-          </h2>
-
-
-          <p
-            style={{
-              margin:
-                "0 0 18px",
-
-              color:
-                "#64748B",
-
-              fontSize:
-                "15px",
-
-              lineHeight:
-                1.7,
-            }}
-          >
-            This will permanently remove this child and all of their
-            saved Journey information from your account.
-          </p>
-
-
-          <div
-            style={{
-              padding:
-                "14px 16px",
-
-              marginBottom:
-                "22px",
-
-              borderRadius:
-                "12px",
-
-              background:
-                "#FEF2F2",
-
-              border:
-                "1px solid #FECACA",
-
-              color:
-                "#991B1B",
-
-              fontSize:
-                "13px",
-
-              lineHeight:
-                1.6,
-
-              fontWeight:
-                700,
-            }}
-          >
-            This includes the current Journey, Journey History, and
-            Past Journeys. This action cannot be undone.
-          </div>
-
-
-          {
-            removeChildError && (
-              <div
-                style={{
-                  marginBottom:
-                    "18px",
-
-                  color:
-                    "#B91C1C",
-
-                  fontSize:
-                    "13px",
-
-                  lineHeight:
-                    1.5,
-                }}
-              >
-                {removeChildError}
-              </div>
-            )
-          }
-
-
-          <div
-            style={{
-              display:
-                "flex",
-
-              justifyContent:
-                "flex-end",
-
-              gap:
-                "10px",
-
-              flexWrap:
-                "wrap",
-            }}
-          >
-            <button
-              type="button"
-
-              disabled={
-                removingChild
-              }
-
-              onClick={() =>
-                setShowRemoveChildConfirm(
-                  false
-                )
-              }
-
-              style={{
-                padding:
-                  "11px 17px",
-
-                borderRadius:
-                  "9px",
-
-                border:
-                  "1px solid #CBD5E1",
-
-                background:
-                  "#FFFFFF",
-
-                color:
-                  "#475569",
-
-                fontSize:
-                  "14px",
-
-                fontWeight:
-                  700,
-
-                cursor:
-                  removingChild
-                    ? "not-allowed"
-                    : "pointer",
-              }}
-            >
-              Cancel
-            </button>
-
-
-            <button
-              type="button"
-
-              disabled={
-                removingChild
-              }
-
-              onClick={
-                confirmRemoveChild
-              }
-
-              style={{
-                padding:
-                  "11px 17px",
-
-                borderRadius:
-                  "9px",
-
-                border:
-                  "none",
-
-                background:
-                  "#DC2626",
-
-                color:
-                  "#FFFFFF",
-
-                fontSize:
-                  "14px",
-
-                fontWeight:
-                  800,
-
-                cursor:
-                  removingChild
-                    ? "not-allowed"
-                    : "pointer",
-
-                opacity:
-                  removingChild
-                    ? 0.7
-                    : 1,
-              }}
-            >
-              {
-                removingChild
-                  ? "Removing..."
-                  : "Remove Child Permanently"
-              }
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-
-  /*
-   * ============================================================
+   * ==========================================================
    * LOADING
-   * ============================================================
+   * ==========================================================
    */
 
   if (
@@ -2226,9 +2083,9 @@ export default function JourneyBuilder() {
 
 
   /*
-   * ============================================================
+   * ==========================================================
    * GENERATING
-   * ============================================================
+   * ==========================================================
    */
 
   if (
@@ -2247,13 +2104,9 @@ export default function JourneyBuilder() {
 
 
   /*
-   * ============================================================
+   * ==========================================================
    * GENERATION ERROR
-   * ============================================================
-   *
-   * IMPORTANT:
-   * Child controls remain visible here.
-   * ============================================================
+   * ==========================================================
    */
 
   if (
@@ -2261,7 +2114,6 @@ export default function JourneyBuilder() {
   ) {
     return (
       <>
-
         {
           renderChildJourneyControls()
         }
@@ -2366,6 +2218,7 @@ export default function JourneyBuilder() {
                   null
                 );
 
+
                 generatePersonalizedJourney();
               }}
 
@@ -2401,40 +2254,51 @@ export default function JourneyBuilder() {
         </div>
 
 
-        {
-          renderRemoveChildModal()
-        }
+        <RemoveChildModal
+          visible={
+            showRemoveChildConfirm
+          }
 
+          childName={
+            familyProfile
+              .childName
+          }
+
+          removing={
+            removingChild
+          }
+
+          error={
+            removeChildError
+          }
+
+          onCancel={() =>
+            setShowRemoveChildConfirm(
+              false
+            )
+          }
+
+          onConfirm={
+            confirmRemoveChild
+          }
+        />
       </>
     );
   }
 
 
   /*
-   * ============================================================
+   * ==========================================================
    * SAVED JOURNEY
-   * ============================================================
+   * ==========================================================
    */
 
   if (
     personalizedJourney &&
     savedJourneyLoaded
   ) {
-    const childName =
-      familyProfile
-        .childName ||
-      "this child";
-
-
     return (
       <>
-
-        {/*
-         * ========================================================
-         * CHILD JOURNEY CONTROLS
-         * ========================================================
-         */}
-
         {
           renderChildJourneyControls()
         }
@@ -2455,11 +2319,9 @@ export default function JourneyBuilder() {
         />
 
 
-        {/*
-         * ========================================================
-         * JOURNEY ACTIONS
-         * ========================================================
-         */}
+        {/* ===================================================
+            JOURNEY ACTIONS
+        ==================================================== */}
 
         <div
           style={{
@@ -2522,6 +2384,7 @@ export default function JourneyBuilder() {
                 null
               );
 
+
               setShowStartNewJourneyConfirm(
                 true
               );
@@ -2558,11 +2421,9 @@ export default function JourneyBuilder() {
         </div>
 
 
-        {/*
-         * ========================================================
-         * CURRENT JOURNEY HISTORY
-         * ========================================================
-         */}
+        {/* ===================================================
+            CURRENT JOURNEY HISTORY
+        ==================================================== */}
 
         <JourneyHistory
           childId={
@@ -2572,322 +2433,77 @@ export default function JourneyBuilder() {
         />
 
 
-        {/*
-         * ========================================================
-         * START NEW JOURNEY MODAL
-         * ========================================================
-         */}
-
-        {
-          showStartNewJourneyConfirm && (
-            <div
-              role="dialog"
-
-              aria-modal="true"
-
-              aria-labelledby="start-new-journey-title"
-
-              style={{
-                position:
-                  "fixed",
-
-                inset:
-                  0,
-
-                zIndex:
-                  1000,
-
-                display:
-                  "flex",
-
-                alignItems:
-                  "center",
-
-                justifyContent:
-                  "center",
-
-                padding:
-                  "24px",
-
-                background:
-                  "rgba(15, 23, 42, 0.48)",
-              }}
-            >
-              <div
-                style={{
-                  width:
-                    "100%",
-
-                  maxWidth:
-                    "520px",
-
-                  padding:
-                    "30px",
-
-                  background:
-                    "#FFFFFF",
-
-                  borderRadius:
-                    "20px",
-
-                  border:
-                    "1px solid #E2E8F0",
-
-                  boxShadow:
-                    "0 24px 60px rgba(15,23,42,.20)",
-
-                  textAlign:
-                    "left",
-                }}
-              >
-                <div
-                  style={{
-                    width:
-                      "46px",
-
-                    height:
-                      "46px",
-
-                    display:
-                      "flex",
-
-                    alignItems:
-                      "center",
-
-                    justifyContent:
-                      "center",
-
-                    borderRadius:
-                      "50%",
-
-                    background:
-                      "#EFF6FF",
-
-                    fontSize:
-                      "22px",
-
-                    marginBottom:
-                      "18px",
-                  }}
-                >
-                  🧭
-                </div>
-
-
-                <h2
-                  id="start-new-journey-title"
-
-                  style={{
-                    margin:
-                      "0 0 12px",
-
-                    color:
-                      "#0F172A",
-
-                    fontSize:
-                      "24px",
-
-                    fontWeight:
-                      800,
-                  }}
-                >
-                  Start a new journey for{" "}
-                  {childName}?
-                </h2>
-
-
-                <p
-                  style={{
-                    margin:
-                      "0 0 22px",
-
-                    color:
-                      "#64748B",
-
-                    fontSize:
-                      "15px",
-
-                    lineHeight:
-                      1.7,
-                  }}
-                >
-                  This will restart{" "}
-                  {childName}'s personalized
-                  journey from the beginning.
-                  The previous journey will be
-                  moved to Past Journeys so you
-                  can still reference it later.
-                </p>
-
-
-                <div
-                  style={{
-                    padding:
-                      "14px 16px",
-
-                    marginBottom:
-                      "24px",
-
-                    borderRadius:
-                      "12px",
-
-                    background:
-                      "#F8FAFC",
-
-                    border:
-                      "1px solid #E2E8F0",
-
-                    color:
-                      "#475569",
-
-                    fontSize:
-                      "13px",
-
-                    lineHeight:
-                      1.6,
-                  }}
-                >
-                  This does not create another
-                  child. {childName} will keep
-                  the same child profile.
-                </div>
-
-
-                <div
-                  style={{
-                    display:
-                      "flex",
-
-                    justifyContent:
-                      "flex-end",
-
-                    gap:
-                      "10px",
-
-                    flexWrap:
-                      "wrap",
-                  }}
-                >
-                  <button
-                    type="button"
-
-                    disabled={
-                      startingNewJourney
-                    }
-
-                    onClick={() =>
-                      setShowStartNewJourneyConfirm(
-                        false
-                      )
-                    }
-
-                    style={{
-                      padding:
-                        "11px 17px",
-
-                      borderRadius:
-                        "9px",
-
-                      border:
-                        "1px solid #CBD5E1",
-
-                      background:
-                        "#FFFFFF",
-
-                      color:
-                        "#475569",
-
-                      fontSize:
-                        "14px",
-
-                      fontWeight:
-                        700,
-
-                      cursor:
-                        startingNewJourney
-                          ? "not-allowed"
-                          : "pointer",
-
-                      opacity:
-                        startingNewJourney
-                          ? 0.6
-                          : 1,
-                    }}
-                  >
-                    Cancel
-                  </button>
-
-
-                  <button
-                    type="button"
-
-                    disabled={
-                      startingNewJourney
-                    }
-
-                    onClick={
-                      confirmStartNewJourney
-                    }
-
-                    style={{
-                      padding:
-                        "11px 17px",
-
-                      borderRadius:
-                        "9px",
-
-                      border:
-                        "none",
-
-                      background:
-                        "#2563EB",
-
-                      color:
-                        "#FFFFFF",
-
-                      fontSize:
-                        "14px",
-
-                      fontWeight:
-                        800,
-
-                      cursor:
-                        startingNewJourney
-                          ? "not-allowed"
-                          : "pointer",
-
-                      opacity:
-                        startingNewJourney
-                          ? 0.7
-                          : 1,
-                    }}
-                  >
-                    {
-                      startingNewJourney
-                        ? "Starting..."
-                        : "Start New Journey"
-                    }
-                  </button>
-                </div>
-              </div>
-            </div>
-          )
-        }
-
-
-        {
-          renderRemoveChildModal()
-        }
-
+        {/* ===================================================
+            START NEW JOURNEY MODAL
+        ==================================================== */}
+
+        <StartNewJourneyModal
+          visible={
+            showStartNewJourneyConfirm
+          }
+
+          childName={
+            familyProfile
+              .childName
+          }
+
+          starting={
+            startingNewJourney
+          }
+
+          onCancel={() =>
+            setShowStartNewJourneyConfirm(
+              false
+            )
+          }
+
+          onConfirm={
+            confirmStartNewJourney
+          }
+        />
+
+
+        {/* ===================================================
+            REMOVE CHILD MODAL
+        ==================================================== */}
+
+        <RemoveChildModal
+          visible={
+            showRemoveChildConfirm
+          }
+
+          childName={
+            familyProfile
+              .childName
+          }
+
+          removing={
+            removingChild
+          }
+
+          error={
+            removeChildError
+          }
+
+          onCancel={() =>
+            setShowRemoveChildConfirm(
+              false
+            )
+          }
+
+          onConfirm={
+            confirmRemoveChild
+          }
+        />
       </>
     );
   }
 
 
   /*
-   * ============================================================
-   * NEWLY GENERATED JOURNEY — NOT YET SAVED
-   * ============================================================
+   * ==========================================================
+   * GENERATED JOURNEY — NOT YET SAVED
+   * ==========================================================
    */
 
   if (
@@ -2895,7 +2511,6 @@ export default function JourneyBuilder() {
   ) {
     return (
       <>
-
         <AddingChildBanner
           visible={
             addingChildDraft
@@ -2932,21 +2547,19 @@ export default function JourneyBuilder() {
             handleJourneySaved
           }
         />
-
       </>
     );
   }
 
 
   /*
-   * ============================================================
+   * ==========================================================
    * QUESTIONNAIRE / WELCOME
-   * ============================================================
+   * ==========================================================
    */
 
   return (
     <>
-
       <AddingChildBanner
         visible={
           addingChildDraft
@@ -2982,7 +2595,6 @@ export default function JourneyBuilder() {
             "40px 20px",
         }}
       >
-
         {
           step ===
           0 && (
@@ -3029,9 +2641,7 @@ export default function JourneyBuilder() {
             />
           )
         }
-
       </div>
-
     </>
   );
 }
