@@ -1,5 +1,4 @@
 import JourneyBuilder from "../../components/journey/JourneyBuilder";
-import JourneyHistory from "../../components/journey/JourneyHistory";
 import RoadmapTimeline from "../../components/journey/RoadmapTimeline";
 
 
@@ -21,9 +20,6 @@ export default function JourneyPage() {
     >
 
       <JourneyBuilder />
-
-
-      <JourneyHistory />
 
 
       <RoadmapTimeline />
