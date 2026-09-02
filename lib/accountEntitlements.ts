@@ -1,7 +1,3 @@
-import {
-  getCurrentUser,
-} from "./auth";
-
 import type {
   SubscriptionFeature,
   SubscriptionPlan,
@@ -17,30 +13,23 @@ import {
  * ACCOUNT ENTITLEMENTS
  * ============================================================
  *
- * Centralizes account-level access decisions.
- *
- * This file answers:
- *
- * "What can the CURRENT user access?"
- *
- * SubscriptionTypes.ts answers:
- *
- * "What does each PLAN include?"
- *
- * Stripe will eventually provide the verified subscription
- * state. Until then:
- *
- *   Guest user       → guest
- *   Authenticated    → free
+ * Compatibility helpers for subscription feature definitions.
  *
  * IMPORTANT:
  *
- * Client-side entitlement checks are for product/UI behavior.
+ * This file does NOT determine the current user's verified
+ * subscription plan.
  *
- * They are NOT the final security boundary for premium data or
- * premium API functionality.
+ * Current-user entitlement state belongs in:
  *
- * Server-side authorization will be added before launch.
+ * - useAccountEntitlements.ts
+ *
+ * Server-side authorization belongs in:
+ *
+ * - serverSubscription.ts
+ *
+ * This file exists only for shared feature-definition helpers
+ * and compatibility type aliases.
  * ============================================================
  */
 
@@ -49,9 +38,6 @@ import {
  * ============================================================
  * COMPATIBILITY TYPES
  * ============================================================
- *
- * These aliases preserve the names already used elsewhere in
- * the application.
  */
 
 export type AccountPlan =
@@ -63,180 +49,23 @@ export type AccountFeature =
 
 /*
  * ============================================================
- * CURRENT ACCOUNT PLAN
+ * FEATURE INCLUDED IN PLAN
  * ============================================================
  *
- * Returns the plan associated with the current authenticated
- * session.
+ * Answers:
  *
- * CURRENT BEHAVIOR:
+ * "Does this plan include this feature?"
  *
- * Guest         → guest
- * Authenticated → free
+ * It does NOT answer:
  *
- * We intentionally do NOT allow a browser-side value to say
- * that a user is Premium.
- *
- * Once Stripe is implemented, this function will retrieve the
- * verified subscription state from the application's account
- * subscription record.
+ * "Does the current user have this plan?"
  * ============================================================
  */
 
-export function getCurrentAccountPlan():
-  AccountPlan {
-
-  const user =
-    getCurrentUser();
-
-
-  if (!user) {
-    return "guest";
-  }
-
-
-  return "free";
-}
-
-
-/*
- * ============================================================
- * AUTHENTICATION
- * ============================================================
- */
-
-export function isAuthenticated():
-  boolean {
-
-  return Boolean(
-    getCurrentUser()
-  );
-}
-
-
-/*
- * ============================================================
- * PLAN CHECKS
- * ============================================================
- */
-
-export function isFreeAccount():
-  boolean {
-
-  return (
-    getCurrentAccountPlan() ===
-    "free"
-  );
-}
-
-
-export function isPremiumAccount():
-  boolean {
-
-  const plan =
-    getCurrentAccountPlan();
-
-  return (
-    plan === "premium" ||
-    plan === "premium_plus"
-  );
-}
-
-
-export function isPremiumPlusAccount():
-  boolean {
-
-  return (
-    getCurrentAccountPlan() ===
-    "premium_plus"
-  );
-}
-
-
-/*
- * ============================================================
- * FEATURE ACCESS
- * ============================================================
- *
- * This function uses the centralized plan definitions from
- * subscriptionTypes.ts.
- *
- * That means we no longer maintain two separate lists of which
- * features belong to Premium.
- * ============================================================
- */
-
-export function canAccessFeature(
+export function planCanUseFeature(
+  plan: AccountPlan,
   feature: AccountFeature
 ): boolean {
-
-  const plan =
-    getCurrentAccountPlan();
-
-
-  /*
-   * ----------------------------------------------------------
-   * GUEST
-   * ----------------------------------------------------------
-   */
-
-  if (
-    plan === "guest"
-  ) {
-
-    /*
-     * Guests can start the initial journey.
-     */
-
-    if (
-      feature ===
-      "initial_journey"
-    ) {
-
-      return true;
-
-    }
-
-
-    /*
-     * Guests can see/use Save My Journey, but the actual save
-     * flow requires an account.
-     *
-     * The dashboard handles the login/signup prompt.
-     */
-
-    if (
-      feature ===
-      "save_journey"
-    ) {
-
-      return true;
-
-    }
-
-
-    /*
-     * Guests cannot continue to the next AI-generated stage.
-     *
-     * This is one of our established product rules.
-     */
-
-    return false;
-
-  }
-
-
-  /*
-   * ----------------------------------------------------------
-   * AUTHENTICATED USER
-   * ----------------------------------------------------------
-   *
-   * Until Stripe is connected, authenticated users are Free.
-   *
-   * We use the centralized plan definitions to determine the
-   * features available to them.
-   */
-
   return planIncludesFeature(
     plan,
     feature
@@ -246,49 +75,22 @@ export function canAccessFeature(
 
 /*
  * ============================================================
- * NEXT JOURNEY ACCESS
- * ============================================================
- *
- * The current product decision is:
- *
- * Guest:
- *   Cannot generate another journey stage.
- *
- * Free:
- *   Can continue the journey.
- *
- * Premium:
- *   Can continue the journey.
- *
- * Premium+:
- *   Can continue the journey.
- */
-
-export function canContinueToNextJourney():
-  boolean {
-
-  return canAccessFeature(
-    "next_journey"
-  );
-}
-
-
-/*
- * ============================================================
  * PREMIUM FEATURE CHECK
  * ============================================================
  *
- * Returns whether a feature is included in either Premium or
- * Premium+.
+ * Returns whether the feature belongs to Premium or above.
  *
- * This does NOT say that the current user has Premium.
+ * This does not verify the current user's subscription.
+ * ============================================================
  */
 
 export function requiresPremium(
   feature: AccountFeature
 ): boolean {
-
   return (
+    feature ===
+      "community_participate" ||
+
     feature ===
       "ask_navigator" ||
 
@@ -305,7 +107,10 @@ export function requiresPremium(
       "ai_progress_insights" ||
 
     feature ===
-      "family_organizer"
+      "family_organizer" ||
+
+    feature ===
+      "human_navigator"
   );
 }
 
@@ -314,40 +119,13 @@ export function requiresPremium(
  * ============================================================
  * PREMIUM+ FEATURE CHECK
  * ============================================================
- *
- * Returns whether the feature requires Premium+.
  */
 
 export function requiresPremiumPlus(
   feature: AccountFeature
 ): boolean {
-
   return (
     feature ===
     "human_navigator"
-  );
-}
-
-
-/*
- * ============================================================
- * CURRENT USER FEATURE ACCESS
- * ============================================================
- *
- * Convenience helper for future UI components.
- *
- * Example:
- *
- * if (canUseFeature("ask_navigator")) {
- *   ...
- * }
- */
-
-export function canUseFeature(
-  feature: AccountFeature
-): boolean {
-
-  return canAccessFeature(
-    feature
   );
 }

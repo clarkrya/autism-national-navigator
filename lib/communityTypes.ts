@@ -11,7 +11,7 @@
  *   - No community access
  *
  * Free:
- *   - Read community content
+ *   - Read published community content
  *   - Cannot create posts
  *   - Cannot reply
  *   - Cannot react
@@ -21,18 +21,26 @@
  *   - Create posts
  *   - Reply
  *   - React
- *   - Participate in premium discussion areas
  *
  * Premium+:
  *   - Everything in Premium
- *   - Future Navigator-supported community spaces
+ *   - Future Navigator-supported community experiences
  *
- * IMPORTANT
+ * IMPORTANT:
+ *
+ * Community is one shared space.
+ *
+ * There are no Premium-only discussion areas.
+ *
+ * Premium controls PARTICIPATION, not visibility of ordinary
+ * published community conversations.
  *
  * These types define the data structure.
  *
- * Firestore security rules will enforce the actual access.
- * The UI should never be treated as the security boundary.
+ * Firestore Security Rules and protected server APIs enforce
+ * actual access.
+ *
+ * The UI must never be treated as the security boundary.
  * ============================================================
  */
 
@@ -54,9 +62,6 @@ export type CommunityAccessLevel =
  * ============================================================
  * COMMUNITY CATEGORIES
  * ============================================================
- *
- * Categories should be broad enough to support families while
- * avoiding collection of unnecessary sensitive information.
  */
 
 export type CommunityCategory =
@@ -77,6 +82,32 @@ export type CommunityCategory =
 
 /*
  * ============================================================
+ * COMMUNITY POST STATUS
+ * ============================================================
+ */
+
+export type CommunityContentStatus =
+  | "published"
+  | "hidden"
+  | "removed"
+  | "pending_review";
+
+
+/*
+ * ============================================================
+ * COMMUNITY MODERATION STATUS
+ * ============================================================
+ */
+
+export type CommunityModerationStatus =
+  | "not_reviewed"
+  | "reviewed"
+  | "flagged"
+  | "removed";
+
+
+/*
+ * ============================================================
  * COMMUNITY POST
  * ============================================================
  */
@@ -87,38 +118,20 @@ export type CommunityPost = {
   /*
    * Firebase UID of the author.
    *
-   * This should never be used as the public display identity.
+   * Never use this as the public display identity.
    */
 
   authorId: string;
 
   /*
-   * Display name shown to other community members.
-   *
-   * We should eventually support:
-   *
-   * "Anonymous"
-   * "Parent of a 7-year-old"
-   * etc.
+   * Community-facing display name.
    */
 
   authorDisplayName: string;
 
-  /*
-   * Main post title.
-   */
-
   title: string;
 
-  /*
-   * Main post body.
-   */
-
   body: string;
-
-  /*
-   * Community category.
-   */
 
   category: CommunityCategory;
 
@@ -129,66 +142,37 @@ export type CommunityPost = {
   isAnonymous: boolean;
 
   /*
-   * Whether the post is visible to the community.
+   * New posts may begin as pending_review before publication.
    */
 
-  status:
-    | "published"
-    | "hidden"
-    | "removed"
-    | "pending_review";
+  status: CommunityContentStatus;
+
+  moderationStatus: CommunityModerationStatus;
 
   /*
-   * Moderation state.
-   */
-
-  moderationStatus:
-    | "not_reviewed"
-    | "reviewed"
-    | "flagged"
-    | "removed";
-
-  /*
-   * Number of replies.
-   *
-   * This is a denormalized count for display.
+   * Denormalized display counts.
    */
 
   replyCount: number;
 
-  /*
-   * Number of reactions.
-   */
-
   reactionCount: number;
-
-  /*
-   * Number of reports.
-   */
 
   reportCount: number;
 
   /*
-   * Whether this is a featured/pinned post.
+   * Featured/pinned community content.
    */
 
   isFeatured: boolean;
 
   /*
-   * Whether this is restricted to Premium/Premium+ members.
-   */
-
-  isPremiumOnly: boolean;
-
-  /*
-   * Whether this is restricted to Navigator-supported areas.
+   * Reserved for future Navigator-supported community
+   * experiences.
+   *
+   * This does not make ordinary community posts Premium-only.
    */
 
   isNavigatorSupported: boolean;
-
-  /*
-   * Creation/update timestamps.
-   */
 
   createdAt: number;
 
@@ -215,17 +199,14 @@ export type CommunityReply = {
 
   isAnonymous: boolean;
 
-  status:
-    | "published"
-    | "hidden"
-    | "removed"
-    | "pending_review";
+  /*
+   * Replies may publish immediately while retaining a separate
+   * moderation state.
+   */
 
-  moderationStatus:
-    | "not_reviewed"
-    | "reviewed"
-    | "flagged"
-    | "removed";
+  status: CommunityContentStatus;
+
+  moderationStatus: CommunityModerationStatus;
 
   reactionCount: number;
 
@@ -269,9 +250,26 @@ export type CommunityReaction = {
  * ============================================================
  * COMMUNITY REPORT
  * ============================================================
- *
- * Allows members to flag content for moderation.
  */
+
+export type CommunityReportReason =
+  | "harassment"
+  | "hate"
+  | "threat"
+  | "spam"
+  | "misinformation"
+  | "privacy"
+  | "self_harm"
+  | "medical_advice"
+  | "other";
+
+
+export type CommunityReportStatus =
+  | "open"
+  | "reviewing"
+  | "resolved"
+  | "dismissed";
+
 
 export type CommunityReport = {
   id: string;
@@ -284,24 +282,11 @@ export type CommunityReport = {
 
   targetId: string;
 
-  reason:
-    | "harassment"
-    | "hate"
-    | "threat"
-    | "spam"
-    | "misinformation"
-    | "privacy"
-    | "self_harm"
-    | "medical_advice"
-    | "other";
+  reason: CommunityReportReason;
 
   details?: string;
 
-  status:
-    | "open"
-    | "reviewing"
-    | "resolved"
-    | "dismissed";
+  status: CommunityReportStatus;
 
   createdAt: number;
 
@@ -320,8 +305,8 @@ export type CommunityReport = {
  *
  * Separate from Firebase Auth profile.
  *
- * This allows users to choose what the community sees without
- * exposing account email addresses or other private information.
+ * This allows the member to control what the community sees
+ * without exposing account email or private account details.
  */
 
 export type CommunityProfile = {
@@ -329,21 +314,12 @@ export type CommunityProfile = {
 
   displayName: string;
 
-  /*
-   * Optional public identity choices.
-   */
-
   isAnonymousByDefault: boolean;
 
   /*
-   * Optional short description.
+   * Optional public community bio.
    *
-   * Example:
-   *
-   * "Parent of a school-age child"
-   *
-   * Avoid encouraging users to include identifying or
-   * sensitive information here.
+   * Avoid encouraging identifying or sensitive information.
    */
 
   bio?: string;
@@ -360,8 +336,6 @@ export type CommunityProfile = {
  * ============================================================
  *
  * Internal moderation information.
- *
- * This should never be shown to ordinary community users.
  */
 
 export type CommunityModerationRecord = {
@@ -394,8 +368,6 @@ export type CommunityModerationRecord = {
 export type CommunityFeedFilters = {
   category?: CommunityCategory;
 
-  premiumOnly?: boolean;
-
   search?: string;
 
   limit?: number;
@@ -407,7 +379,7 @@ export type CommunityFeedFilters = {
  * CREATE POST INPUT
  * ============================================================
  *
- * This is what the UI sends when Premium users create posts.
+ * Premium and Premium+ members may create posts.
  */
 
 export type CreateCommunityPostInput = {
@@ -418,8 +390,6 @@ export type CreateCommunityPostInput = {
   category: CommunityCategory;
 
   isAnonymous: boolean;
-
-  isPremiumOnly?: boolean;
 };
 
 
@@ -451,16 +421,7 @@ export type CreateCommunityReportInput = {
 
   targetId: string;
 
-  reason:
-    | "harassment"
-    | "hate"
-    | "threat"
-    | "spam"
-    | "misinformation"
-    | "privacy"
-    | "self_harm"
-    | "medical_advice"
-    | "other";
+  reason: CommunityReportReason;
 
   details?: string;
 };
@@ -470,8 +431,6 @@ export type CreateCommunityReportInput = {
  * ============================================================
  * COMMUNITY FEATURE FLAGS
  * ============================================================
- *
- * Centralized feature names for future entitlement checks.
  */
 
 export type CommunityFeature =
@@ -479,5 +438,4 @@ export type CommunityFeature =
   | "community_create_post"
   | "community_reply"
   | "community_react"
-  | "community_premium_spaces"
   | "community_navigator_spaces";

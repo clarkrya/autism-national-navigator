@@ -1,12 +1,13 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   limit,
   orderBy,
   query,
   where,
-  getDoc,
+  type QueryConstraint,
 } from "firebase/firestore";
 
 import {
@@ -14,10 +15,13 @@ import {
 } from "./firebase";
 
 import type {
-  CommunityPost,
-  CommunityReply,
-  CommunityProfile,
+  CommunityCategory,
+  CommunityContentStatus,
   CommunityFeedFilters,
+  CommunityModerationStatus,
+  CommunityPost,
+  CommunityProfile,
+  CommunityReply,
 } from "./communityTypes";
 
 
@@ -26,7 +30,7 @@ import type {
  * COMMUNITY REPOSITORY
  * ============================================================
  *
- * Client-side Community data access.
+ * Client-side Community READ access.
  *
  * Firestore:
  *
@@ -38,37 +42,31 @@ import type {
  *   {userId}/
  *     communityProfile/current
  *
- * IMPORTANT
+ * IMPORTANT:
  *
- * This repository is intentionally READ-FOCUSED.
+ * Community writes are intentionally NOT handled here.
  *
- * Community writes are handled through protected server-side
- * API routes.
- *
- * The server verifies:
- *
- * - Firebase authentication
- * - Subscription status
- * - Premium/Premium+ entitlement
- *
- * This prevents users from bypassing the UI and writing
- * directly to Firestore.
- *
+ * Posts, replies, reactions, reports, and moderation actions
+ * should go through protected server-side API routes.
  *
  * PRODUCT ACCESS
  *
  * Guest:
- *   No Community access
+ *   - No Community access
  *
  * Free:
- *   Read published Community content
+ *   - Read published Community content
  *
  * Premium:
- *   Read + participate
+ *   - Read + participate
  *
  * Premium+:
- *   Read + participate
+ *   - Read + participate
  *
+ * Community is one shared space.
+ *
+ * Premium controls participation rather than visibility of
+ * ordinary published Community conversations.
  * ============================================================
  */
 
@@ -80,24 +78,20 @@ import type {
  */
 
 function getPostsCollection() {
-
   return collection(
     db,
     "community",
     "posts"
   );
-
 }
 
 
 function getRepliesCollection() {
-
   return collection(
     db,
     "community",
     "replies"
   );
-
 }
 
 
@@ -110,13 +104,10 @@ function getRepliesCollection() {
 function getCommunityProfileRef(
   userId: string
 ) {
-
   if (!userId) {
-
     throw new Error(
       "A user ID is required."
     );
-
   }
 
 
@@ -127,7 +118,78 @@ function getCommunityProfileRef(
     "communityProfile",
     "current"
   );
+}
 
+
+/*
+ * ============================================================
+ * DATA NORMALIZATION
+ * ============================================================
+ */
+
+function isCommunityCategory(
+  value: unknown
+): value is CommunityCategory {
+  return (
+    value === "general" ||
+    value === "newly_diagnosed" ||
+    value === "school" ||
+    value === "therapy" ||
+    value === "insurance" ||
+    value === "financial_support" ||
+    value === "parent_support" ||
+    value === "teen_transition" ||
+    value === "adult_transition" ||
+    value === "siblings_family" ||
+    value === "success_stories" ||
+    value === "questions" ||
+    value === "other"
+  );
+}
+
+
+function normalizeCommunityCategory(
+  value: unknown
+): CommunityCategory {
+  return isCommunityCategory(
+    value
+  )
+    ? value
+    : "general";
+}
+
+
+function normalizeContentStatus(
+  value: unknown
+): CommunityContentStatus {
+  if (
+    value === "published" ||
+    value === "hidden" ||
+    value === "removed" ||
+    value === "pending_review"
+  ) {
+    return value;
+  }
+
+
+  return "hidden";
+}
+
+
+function normalizeModerationStatus(
+  value: unknown
+): CommunityModerationStatus {
+  if (
+    value === "not_reviewed" ||
+    value === "reviewed" ||
+    value === "flagged" ||
+    value === "removed"
+  ) {
+    return value;
+  }
+
+
+  return "not_reviewed";
 }
 
 
@@ -140,7 +202,6 @@ function getCommunityProfileRef(
 export async function getCommunityProfile(
   userId: string
 ): Promise<CommunityProfile | null> {
-
   const profileRef =
     getCommunityProfileRef(
       userId
@@ -153,12 +214,8 @@ export async function getCommunityProfile(
     );
 
 
-  if (
-    !snapshot.exists()
-  ) {
-
+  if (!snapshot.exists()) {
     return null;
-
   }
 
 
@@ -167,8 +224,7 @@ export async function getCommunityProfile(
 
 
   return {
-    userId:
-      userId,
+    userId,
 
     displayName:
       typeof data.displayName ===
@@ -192,15 +248,14 @@ export async function getCommunityProfile(
       typeof data.createdAt ===
       "number"
         ? data.createdAt
-        : Date.now(),
+        : 0,
 
     updatedAt:
       typeof data.updatedAt ===
       "number"
         ? data.updatedAt
-        : Date.now(),
+        : 0,
   };
-
 }
 
 
@@ -209,25 +264,20 @@ export async function getCommunityProfile(
  * GET COMMUNITY POSTS
  * ============================================================
  *
- * Returns published Community posts.
+ * Returns only published Community posts.
  *
- * IMPORTANT
+ * There is no Premium-only content filter.
  *
- * Free users must query with:
- *
- *   premiumOnly === false
- *
- * Premium users can query without that restriction.
- *
- * Firestore Security Rules remain the actual security boundary.
+ * Free, Premium, and Premium+ readers all read from the same
+ * published Community feed.
  * ============================================================
  */
 
 export async function getCommunityPosts(
   filters?: CommunityFeedFilters
 ): Promise<CommunityPost[]> {
-
-  const constraints = [];
+  const constraints:
+    QueryConstraint[] = [];
 
 
   /*
@@ -251,10 +301,7 @@ export async function getCommunityPosts(
    * ----------------------------------------------------------
    */
 
-  if (
-    filters?.category
-  ) {
-
+  if (filters?.category) {
     constraints.push(
       where(
         "category",
@@ -262,35 +309,6 @@ export async function getCommunityPosts(
         filters.category
       )
     );
-
-  }
-
-
-  /*
-   * ----------------------------------------------------------
-   * PREMIUM FILTER
-   * ----------------------------------------------------------
-   *
-   * For Free users the caller should explicitly pass:
-   *
-   * premiumOnly: false
-   *
-   * This is required because Firestore rules must be able to
-   * determine that the query cannot return Premium-only posts.
-   */
-
-  if (
-    filters?.premiumOnly !== undefined
-  ) {
-
-    constraints.push(
-      where(
-        "isPremiumOnly",
-        "==",
-        filters.premiumOnly
-      )
-    );
-
   }
 
 
@@ -360,7 +378,6 @@ export async function getCommunityPosts(
     (
       postDocument
     ) => {
-
       const data =
         postDocument.data();
 
@@ -394,16 +411,22 @@ export async function getCommunityPosts(
             : "",
 
         category:
-          data.category,
+          normalizeCommunityCategory(
+            data.category
+          ),
 
         isAnonymous:
           data.isAnonymous === true,
 
         status:
-          data.status,
+          normalizeContentStatus(
+            data.status
+          ),
 
         moderationStatus:
-          data.moderationStatus,
+          normalizeModerationStatus(
+            data.moderationStatus
+          ),
 
         replyCount:
           typeof data.replyCount ===
@@ -426,9 +449,6 @@ export async function getCommunityPosts(
         isFeatured:
           data.isFeatured === true,
 
-        isPremiumOnly:
-          data.isPremiumOnly === true,
-
         isNavigatorSupported:
           data.isNavigatorSupported === true,
 
@@ -444,10 +464,8 @@ export async function getCommunityPosts(
             ? data.updatedAt
             : 0,
       };
-
     }
   );
-
 }
 
 
@@ -456,25 +474,17 @@ export async function getCommunityPosts(
  * GET COMMUNITY REPLIES
  * ============================================================
  *
- * Only published replies are returned.
- *
- * The Firestore rules determine whether the authenticated
- * reader is allowed to access the content.
+ * Returns published replies for one Community post.
  * ============================================================
  */
 
 export async function getCommunityReplies(
   postId: string
 ): Promise<CommunityReply[]> {
-
-  if (
-    !postId
-  ) {
-
+  if (!postId) {
     throw new Error(
       "A post ID is required."
     );
-
   }
 
 
@@ -511,7 +521,6 @@ export async function getCommunityReplies(
     (
       replyDocument
     ) => {
-
       const data =
         replyDocument.data();
 
@@ -548,10 +557,14 @@ export async function getCommunityReplies(
           data.isAnonymous === true,
 
         status:
-          data.status,
+          normalizeContentStatus(
+            data.status
+          ),
 
         moderationStatus:
-          data.moderationStatus,
+          normalizeModerationStatus(
+            data.moderationStatus
+          ),
 
         reactionCount:
           typeof data.reactionCount ===
@@ -577,8 +590,6 @@ export async function getCommunityReplies(
             ? data.updatedAt
             : 0,
       };
-
     }
   );
-
 }

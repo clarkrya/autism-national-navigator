@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
 } from "react";
 
 import Link from "next/link";
@@ -13,14 +14,16 @@ import {
   signOut,
 } from "firebase/auth";
 
-import type { FamilyProfile } from "../../types/familyProfile";
+import type {
+  FamilyProfile,
+} from "../../types/familyProfile";
 
 import type {
-  PersonalizedJourney,
+  AIAction,
   AIResource,
+  AITask,
+  PersonalizedJourney,
 } from "../../lib/ai/journeyTypes";
-
-import type { Task } from "../../lib/journeyEngine";
 
 import {
   auth,
@@ -33,11 +36,11 @@ import {
 
 import {
   savePendingJourney,
-} from "../../lib/journeyStorage";
+} from "../../lib/pendingJourney";
 
 import {
-  canContinueToNextJourney,
-} from "../../lib/accountEntitlements";
+  useAccountEntitlements,
+} from "../../lib/useAccountEntitlements";
 
 import {
   getCurrentJourney,
@@ -51,10 +54,131 @@ import {
 } from "../../lib/journeyHistory";
 
 
+/*
+ * ============================================================
+ * PROPS
+ * ============================================================
+ */
+
 interface JourneyDashboardProps {
-  personalizedJourney: PersonalizedJourney;
-  familyProfile: FamilyProfile;
+  personalizedJourney:
+    PersonalizedJourney;
+
+  familyProfile:
+    FamilyProfile;
+
+  onJourneySaved?: (
+    childId: string
+  ) => void | Promise<void>;
 }
+
+
+/*
+ * ============================================================
+ * ACTION TEMPLATE
+ * ============================================================
+ */
+
+type ActionTemplate = {
+  id: string;
+
+  title: string;
+
+  description: string;
+
+  content: string;
+};
+
+
+/*
+ * ============================================================
+ * SHARED STYLES
+ * ============================================================
+ */
+
+const styles: Record<
+  string,
+  CSSProperties
+> = {
+
+  main: {
+    maxWidth:
+      "1050px",
+
+    margin:
+      "0 auto",
+
+    padding:
+      "56px 24px 90px",
+  },
+
+
+  card: {
+    padding:
+      "24px",
+
+    borderRadius:
+      "20px",
+
+    border:
+      "1px solid #E2E8F0",
+
+    background:
+      "#FFFFFF",
+  },
+
+
+  eyebrow: {
+    color:
+      "#2563EB",
+
+    fontSize:
+      "12px",
+
+    fontWeight:
+      800,
+
+    letterSpacing:
+      "0.08em",
+
+    textTransform:
+      "uppercase",
+  },
+
+
+  muted: {
+    color:
+      "#64748B",
+
+    lineHeight:
+      1.6,
+  },
+
+
+  button: {
+    padding:
+      "13px 22px",
+
+    borderRadius:
+      "10px",
+
+    border:
+      "none",
+
+    color:
+      "#FFFFFF",
+
+    fontSize:
+      "15px",
+
+    fontWeight:
+      800,
+
+    cursor:
+      "pointer",
+  },
+
+};
 
 
 /*
@@ -71,19 +195,33 @@ function formatDisplayValue(
     return "";
   }
 
+
   return value
-    .replace(/[-_]/g, " ")
-    .replace(/\b\w/g, (letter) =>
-      letter.toUpperCase()
+
+    .replace(
+      /[-_]/g,
+      " "
+    )
+
+    .replace(
+      /\b\w/g,
+      (
+        letter
+      ) =>
+        letter.toUpperCase()
     );
+
 }
 
 
 function formatResourceType(
-  type: AIResource["type"]
+  type:
+    AIResource["type"]
 ) {
 
-  switch (type) {
+  switch (
+    type
+  ) {
 
     case "grant":
       return "Grant";
@@ -116,59 +254,255 @@ function formatResourceType(
 
 /*
  * ============================================================
+ * SAFE EXTERNAL URL
+ * ============================================================
+ */
+
+function isSafeExternalUrl(
+  value?: string
+) {
+
+  if (
+    !value
+  ) {
+
+    return false;
+
+  }
+
+
+  try {
+
+    const url =
+      new URL(
+        value
+      );
+
+
+    return (
+      url.protocol ===
+        "https:" ||
+
+      url.protocol ===
+        "http:"
+    );
+
+  } catch {
+
+    return false;
+
+  }
+
+}
+
+
+/*
+ * ============================================================
+ * ACTION STARTER TEMPLATES
+ * ============================================================
+ */
+
+function buildActionTemplates(
+  action:
+    AIAction,
+
+  familyProfile:
+    FamilyProfile
+): ActionTemplate[] {
+
+  const childName =
+    familyProfile.childName ||
+    "my child";
+
+
+  return [
+
+    {
+      id:
+        "email",
+
+      title:
+        "Email Starter",
+
+      description:
+        "A simple message you can personalize and send.",
+
+      content:
+`Subject: Support for ${childName}
+
+Hello,
+
+I'm reaching out regarding ${childName}.
+
+Our current priority is to ${action.action.toLowerCase()}.
+
+Could you please let me know:
+
+• What the next steps are
+• What forms or records you need from me
+• Whether there are any deadlines
+• Who I should contact with questions
+
+Thank you for your help.
+
+Best,
+[Your Name]`,
+    },
+
+
+    {
+      id:
+        "checklist",
+
+      title:
+        "Quick Checklist",
+
+      description:
+        "Use this before a call, appointment, or meeting.",
+
+      content:
+`Checklist for: ${action.title}
+
+☐ Write down the main goal
+☐ Gather relevant records or forms
+☐ Gather insurance information if needed
+☐ Write down important names and contacts
+☐ Ask what the next step is
+☐ Ask when you should follow up
+☐ Write down any deadlines
+☐ Save copies of anything submitted`,
+    },
+
+
+    {
+      id:
+        "questions",
+
+      title:
+        "Questions to Ask",
+
+      description:
+        "Starter questions to help you feel prepared.",
+
+      content:
+`Questions for: ${action.title}
+
+1. What should I do first?
+
+2. What documents or information do you need?
+
+3. Are there eligibility requirements?
+
+4. Are there deadlines I should know about?
+
+5. How long does this process usually take?
+
+6. Who should I contact with follow-up questions?
+
+7. Are there other supports or programs I should know about?
+
+8. What should I do if I don't hear back?`,
+    },
+
+  ];
+
+}
+
+
+/*
+ * ============================================================
  * JOURNEY DASHBOARD
  * ============================================================
  */
 
 export default function JourneyDashboard({
-  personalizedJourney: initialJourney,
+  personalizedJourney:
+    initialJourney,
+
   familyProfile,
+
+  onJourneySaved,
 }: JourneyDashboardProps) {
 
   /*
    * ----------------------------------------------------------
-   * ACTIVE JOURNEY
+   * ENTITLEMENTS
+   * ----------------------------------------------------------
+   */
+
+  const {
+    canUse,
+
+    loading:
+      entitlementsLoading,
+  } =
+    useAccountEntitlements();
+
+
+  /*
+   * ----------------------------------------------------------
+   * JOURNEY
    * ----------------------------------------------------------
    */
 
   const [
     personalizedJourney,
     setPersonalizedJourney,
-  ] = useState<PersonalizedJourney>(
-    initialJourney
-  );
+  ] =
+    useState<PersonalizedJourney>(
+      initialJourney
+    );
 
-
-  /*
-   * ----------------------------------------------------------
-   * TASKS
-   * ----------------------------------------------------------
-   */
 
   const [
     tasks,
     setTasks,
-  ] = useState<Task[]>(
-    initialJourney.tasks || []
-  );
+  ] =
+    useState<AITask[]>(
+      initialJourney.tasks ||
+      []
+    );
 
 
   /*
    * ----------------------------------------------------------
-   * STAGE NUMBER
+   * ACTIVE JOURNEY ID
+   * ----------------------------------------------------------
+   */
+
+  const [
+    activeJourneyId,
+    setActiveJourneyId,
+  ] =
+    useState<
+      string | null
+    >(
+      null
+    );
+
+
+  /*
+   * ----------------------------------------------------------
+   * STAGE
    * ----------------------------------------------------------
    */
 
   const [
     journeyStageNumber,
     setJourneyStageNumber,
-  ] = useState(1);
+  ] =
+    useState(
+      1
+    );
 
 
   const [
     loadingStageNumber,
     setLoadingStageNumber,
-  ] = useState(true);
+  ] =
+    useState(
+      true
+    );
 
 
   /*
@@ -180,37 +514,70 @@ export default function JourneyDashboard({
   const [
     savingJourney,
     setSavingJourney,
-  ] = useState(false);
+  ] =
+    useState(
+      false
+    );
 
 
   const [
     saveMessage,
     setSaveMessage,
-  ] = useState("");
+  ] =
+    useState(
+      ""
+    );
 
 
   const [
     saveError,
     setSaveError,
-  ] = useState("");
+  ] =
+    useState(
+      ""
+    );
 
 
   const [
     showSaveAccountPrompt,
     setShowSaveAccountPrompt,
-  ] = useState(false);
+  ] =
+    useState(
+      false
+    );
 
 
   /*
    * ----------------------------------------------------------
-   * NEXT ACCOUNT PROMPT
+   * NEXT JOURNEY
    * ----------------------------------------------------------
    */
 
   const [
     showNextAccountPrompt,
     setShowNextAccountPrompt,
-  ] = useState(false);
+  ] =
+    useState(
+      false
+    );
+
+
+  const [
+    generatingNextJourney,
+    setGeneratingNextJourney,
+  ] =
+    useState(
+      false
+    );
+
+
+  const [
+    nextJourneyError,
+    setNextJourneyError,
+  ] =
+    useState(
+      ""
+    );
 
 
   /*
@@ -222,198 +589,304 @@ export default function JourneyDashboard({
   const [
     currentUserEmail,
     setCurrentUserEmail,
-  ] = useState<string | null>(null);
+  ] =
+    useState<
+      string | null
+    >(
+      null
+    );
 
 
   const [
     loggingOut,
     setLoggingOut,
-  ] = useState(false);
+  ] =
+    useState(
+      false
+    );
 
 
   /*
    * ----------------------------------------------------------
-   * NEXT JOURNEY
+   * TASK SAVE
    * ----------------------------------------------------------
    */
 
   const [
-    generatingNextJourney,
-    setGeneratingNextJourney,
-  ] = useState(false);
-
-
-  const [
-    nextJourneyError,
-    setNextJourneyError,
-  ] = useState("");
-
-  const [
     taskSaveStatus,
     setTaskSaveStatus,
-  ] = useState<
-    "idle" | "saving" | "error"
-  >(
-    "idle"
-  );
-  
-  
+  ] =
+    useState<
+      | "idle"
+      | "saving"
+      | "error"
+    >(
+      "idle"
+    );
+
+
   const taskSaveQueueRef =
-    useRef<Promise<void>>(
+    useRef<
+      Promise<void>
+    >(
       Promise.resolve()
     );
 
 
   /*
    * ==========================================================
-   * LOAD ACCOUNT / STAGE INFORMATION
+   * RECEIVE UPDATED JOURNEY PROPS
    * ==========================================================
    */
 
-  useEffect(() => {
+  useEffect(
+    () => {
 
-    let active = true;
-
-
-    const unsubscribe =
-      watchAuthState(
-        async (user) => {
-
-          if (!active) {
-            return;
-          }
+      setPersonalizedJourney(
+        initialJourney
+      );
 
 
-          setCurrentUserEmail(
-            user?.email ?? null
-          );
+      setTasks(
+        initialJourney.tasks ||
+        []
+      );
+
+    },
+
+    [
+      initialJourney,
+    ]
+  );
 
 
-          if (!user) {
+  /*
+   * ==========================================================
+   * LOAD CHILD'S ACTIVE JOURNEY
+   * ==========================================================
+   */
 
-            setJourneyStageNumber(
-              1
-            );
+  useEffect(
+    () => {
 
-            setLoadingStageNumber(
-              false
-            );
-
-            return;
-          }
-
-
-          setLoadingStageNumber(
-            true
-          );
+      let active =
+        true;
 
 
-          try {
-
-            /*
-             * ------------------------------------------------
-             * First try the current journey record.
-             *
-             * This gives us an exact stage number for newly
-             * migrated/saved accounts.
-             * ------------------------------------------------
-             */
-
-            const savedJourney =
-              await getCurrentJourney(
-                user.uid
-              );
-
+      const unsubscribe =
+        watchAuthState(
+          async (
+            user
+          ) => {
 
             if (
-              savedJourney &&
-              savedJourney.stageNumber >= 1
+              !active
             ) {
 
-              setJourneyStageNumber(
-                savedJourney.stageNumber
-              );
-
-            } else {
-
-              /*
-               * ------------------------------------------------
-               * Fall back to history.
-               *
-               * If Stage 1 is complete and Stage 2 is current,
-               * history contains Stage 1, so current = 2.
-               * ------------------------------------------------
-               */
-
-              const lastCompletedStage =
-                await getCurrentStageNumber(
-                  user.uid
-                );
-
-
-              setJourneyStageNumber(
-                Math.max(
-                  1,
-                  lastCompletedStage + 1
-                )
-              );
+              return;
 
             }
 
-          } catch (error) {
 
-            console.error(
-              "Unable to determine journey stage:",
-              error
+            setCurrentUserEmail(
+              user?.email ??
+              null
             );
 
 
-            setJourneyStageNumber(
-              1
-            );
+            /*
+             * ----------------------------------------------------
+             * GUEST
+             * ----------------------------------------------------
+             */
 
-          } finally {
+            if (
+              !user
+            ) {
 
-            if (active) {
+              setActiveJourneyId(
+                null
+              );
+
+
+              setJourneyStageNumber(
+                1
+              );
+
 
               setLoadingStageNumber(
                 false
               );
 
+
+              return;
+
+            }
+
+
+            setLoadingStageNumber(
+              true
+            );
+
+
+            try {
+
+              /*
+               * --------------------------------------------------
+               * IMPORTANT
+               *
+               * Current Journey is CHILD-SPECIFIC.
+               * --------------------------------------------------
+               */
+
+              const savedJourney =
+                await getCurrentJourney(
+                  user.uid,
+                  familyProfile.childId
+                );
+
+
+              if (
+                !active
+              ) {
+
+                return;
+
+              }
+
+
+              /*
+               * --------------------------------------------------
+               * EXISTING ACTIVE JOURNEY
+               * --------------------------------------------------
+               */
+
+              if (
+                savedJourney
+              ) {
+
+                setActiveJourneyId(
+                  savedJourney.journeyId
+                );
+
+
+                setJourneyStageNumber(
+                  Math.max(
+                    1,
+                    savedJourney.stageNumber
+                  )
+                );
+
+
+                return;
+
+              }
+
+
+              /*
+               * --------------------------------------------------
+               * NO CURRENT JOURNEY
+               *
+               * This is a NEW Journey.
+               *
+               * It must start at Stage 1 regardless of old
+               * Journey History or archived Journeys.
+               * --------------------------------------------------
+               */
+
+              setActiveJourneyId(
+                null
+              );
+
+
+              setJourneyStageNumber(
+                1
+              );
+
+            } catch (
+              error
+            ) {
+
+              console.error(
+                "Unable to determine active journey:",
+                error
+              );
+
+
+              if (
+                active
+              ) {
+
+                setActiveJourneyId(
+                  null
+                );
+
+
+                setJourneyStageNumber(
+                  1
+                );
+
+              }
+
+            } finally {
+
+              if (
+                active
+              ) {
+
+                setLoadingStageNumber(
+                  false
+                );
+
+              }
+
             }
 
           }
-
-        }
-      );
+        );
 
 
-    return () => {
+      return () => {
 
-      active = false;
+        active =
+          false;
 
-      unsubscribe();
 
-    };
+        unsubscribe();
 
-  }, []);
+      };
+
+    },
+
+    [
+      familyProfile.childId,
+    ]
+  );
 
 
   /*
-   * ============================================================
+   * ==========================================================
    * PROGRESS
-   * ============================================================
+   * ==========================================================
    */
 
   const completedTasks =
-    useMemo(() => {
+    useMemo(
+      () => {
 
-      return tasks.filter(
-        (task) =>
-          task.completed
-      ).length;
+        return tasks.filter(
+          (
+            task
+          ) =>
+            task.completed
+        ).length;
 
-    }, [tasks]);
+      },
+
+      [
+        tasks,
+      ]
+    );
 
 
   const totalTasks =
@@ -422,167 +895,356 @@ export default function JourneyDashboard({
 
   const taskPercent =
     totalTasks > 0
+
       ? Math.round(
-          (completedTasks /
-            totalTasks) *
+          (
+            completedTasks /
+            totalTasks
+          ) *
             100
         )
+
       : 0;
 
 
   const allTasksCompleted =
-    tasks.length > 0 &&
+    tasks.length >
+      0 &&
+
     tasks.every(
-      (task) =>
+      (
+        task
+      ) =>
         task.completed
     );
 
 
   /*
-   * ============================================================
+   * ==========================================================
+   * CURRENT ACTION
+   * ==========================================================
+   */
+
+  const actions =
+    personalizedJourney.actions ||
+    [];
+
+
+  const primaryAction =
+    actions.length >
+      0
+
+      ? actions[0]
+
+      : null;
+
+
+  const actionTemplates =
+    useMemo(
+      () => {
+
+        if (
+          !primaryAction
+        ) {
+
+          return [];
+
+        }
+
+
+        return buildActionTemplates(
+          primaryAction,
+          familyProfile
+        );
+
+      },
+
+      [
+        primaryAction,
+        familyProfile,
+      ]
+    );
+
+
+  /*
+   * ==========================================================
    * TOGGLE TASK
-   * ============================================================
+   * ==========================================================
    */
 
   function toggleTask(
-    taskId: string
+    taskId:
+      string
   ) {
-  
+
     const currentUser =
       getCurrentUser();
-  
-  
+
+
     setTasks(
-      (currentTasks) => {
-  
+      (
+        currentTasks
+      ) => {
+
         const nextTasks =
           currentTasks.map(
-            (task) =>
-              task.id === taskId
+            (
+              task
+            ) =>
+
+              task.id ===
+                taskId
+
                 ? {
                     ...task,
+
                     completed:
                       !task.completed,
                   }
+
                 : task
           );
-  
-  
-        setNextJourneyError("");
-  
-  
+
+
+        setNextJourneyError(
+          ""
+        );
+
+
         /*
          * --------------------------------------------------------
-         * GUEST USER
+         * GUEST
          * --------------------------------------------------------
-         *
-         * Guests keep their progress locally until they create
-         * or log into an account.
          */
-  
-        if (!currentUser) {
-  
+
+        if (
+          !currentUser
+        ) {
+
           setTaskSaveStatus(
             "idle"
           );
-  
+
+
           return nextTasks;
+
         }
-  
-  
+
+
         /*
          * --------------------------------------------------------
-         * LOGGED-IN USER
+         * SAVE PROGRESS
          * --------------------------------------------------------
-         *
-         * Save every task change to Firestore.
-         *
-         * The queue prevents rapid checkbox clicks from causing
-         * Firestore writes to arrive out of order.
          */
-  
+
         setTaskSaveStatus(
           "saving"
         );
-  
-  
+
+
         taskSaveQueueRef.current =
+
           taskSaveQueueRef.current
-            .catch(() => undefined)
+
+            .catch(
+              () =>
+                undefined
+            )
+
             .then(
               async () => {
-  
+
                 try {
-  
+
                   await saveTaskProgress(
                     currentUser.uid,
-  
+
                     familyProfile,
-  
+
                     {
                       ...personalizedJourney,
-  
+
                       tasks:
                         nextTasks,
                     },
-  
+
                     {
                       stageNumber:
                         journeyStageNumber,
-  
+
                       journeyReason:
-                        journeyStageNumber === 1
+                        journeyStageNumber ===
+                          1
+
                           ? "initial"
+
                           : "tasks_completed",
                     }
                   );
-  
-  
+
+
                   setTaskSaveStatus(
                     "idle"
                   );
-  
-                } catch (error) {
-  
+
+                } catch (
+                  error
+                ) {
+
                   console.error(
                     "Unable to save task progress:",
                     error
                   );
-  
-  
+
+
                   setTaskSaveStatus(
                     "error"
                   );
-  
-  
+
+
                   setSaveError(
                     "Your task change is visible, but we couldn't save it right now. Please try again."
                   );
-  
+
                 }
-  
+
               }
             );
-  
-  
+
+
         return nextTasks;
-  
+
       }
     );
-  
+
   }
 
 
   /*
-   * ============================================================
-   * SAVE CURRENT JOURNEY
-   * ============================================================
+   * ==========================================================
+   * ENSURE ACTIVE JOURNEY
+   * ==========================================================
+   */
+
+  async function ensureActiveJourney():
+    Promise<
+      string | null
+    > {
+
+    const currentUser =
+      getCurrentUser();
+
+
+    if (
+      !currentUser
+    ) {
+
+      return null;
+
+    }
+
+
+    /*
+     * ----------------------------------------------------------
+     * ALREADY KNOWN
+     * ----------------------------------------------------------
+     */
+
+    if (
+      activeJourneyId
+    ) {
+
+      return activeJourneyId;
+
+    }
+
+
+    /*
+     * ----------------------------------------------------------
+     * CHECK FIRESTORE
+     * ----------------------------------------------------------
+     */
+
+    const existingJourney =
+      await getCurrentJourney(
+        currentUser.uid,
+        familyProfile.childId
+      );
+
+
+    if (
+      existingJourney
+    ) {
+
+      setActiveJourneyId(
+        existingJourney.journeyId
+      );
+
+
+      return existingJourney.journeyId;
+
+    }
+
+
+    /*
+     * ----------------------------------------------------------
+     * CREATE ACTIVE JOURNEY
+     * ----------------------------------------------------------
+     */
+
+    const savedJourney =
+      await saveCurrentJourney(
+        currentUser.uid,
+
+        familyProfile,
+
+        {
+          ...personalizedJourney,
+
+          tasks,
+        },
+
+        {
+          stageNumber:
+            journeyStageNumber,
+
+          journeyReason:
+            journeyStageNumber ===
+              1
+
+              ? "initial"
+
+              : "tasks_completed",
+        }
+      );
+
+
+    setActiveJourneyId(
+      savedJourney.journeyId
+    );
+
+
+    return savedJourney.journeyId;
+
+  }
+
+
+  /*
+   * ==========================================================
+   * SAVE JOURNEY
+   * ==========================================================
    */
 
   async function handleSaveJourney() {
 
-    setSaveMessage("");
-    setSaveError("");
+    setSaveMessage(
+      ""
+    );
+
+
+    setSaveError(
+      ""
+    );
 
 
     const currentUser =
@@ -595,12 +1257,16 @@ export default function JourneyDashboard({
      * ----------------------------------------------------------
      */
 
-    if (!currentUser) {
+    if (
+      !currentUser
+    ) {
 
       savePendingJourney(
         familyProfile,
+
         {
           ...personalizedJourney,
+
           tasks,
         }
       );
@@ -612,36 +1278,65 @@ export default function JourneyDashboard({
 
 
       return;
+
     }
 
 
-    /*
-     * ----------------------------------------------------------
-     * AUTHENTICATED USER
-     * ----------------------------------------------------------
-     */
-
-    setSavingJourney(true);
+    setSavingJourney(
+      true
+    );
 
 
     try {
 
-      await saveCurrentJourney(
-        currentUser.uid,
-        familyProfile,
-        {
-          ...personalizedJourney,
-          tasks,
-        },
-        {
-          stageNumber:
-            journeyStageNumber,
+      const savedJourney =
+        await saveCurrentJourney(
+          currentUser.uid,
 
-          journeyReason:
-            journeyStageNumber === 1
-              ? "initial"
-              : "tasks_completed",
-        }
+          familyProfile,
+
+          {
+            ...personalizedJourney,
+
+            tasks,
+          },
+
+          {
+            stageNumber:
+              journeyStageNumber,
+
+            journeyReason:
+              journeyStageNumber ===
+                1
+
+                ? "initial"
+
+                : "tasks_completed",
+
+            ...(
+              activeJourneyId
+
+                ? {
+                    journeyId:
+                      activeJourneyId,
+                  }
+
+                : {}
+            ),
+          }
+        );
+
+
+      /*
+       * --------------------------------------------------------
+       * CRITICAL
+       *
+       * Keep the permanent Journey identity.
+       * --------------------------------------------------------
+       */
+
+      setActiveJourneyId(
+        savedJourney.journeyId
       );
 
 
@@ -654,7 +1349,26 @@ export default function JourneyDashboard({
         false
       );
 
-    } catch (error) {
+
+      /*
+       * --------------------------------------------------------
+       * INFORM JOURNEY BUILDER
+       * --------------------------------------------------------
+       */
+
+      if (
+        onJourneySaved
+      ) {
+
+        await onJourneySaved(
+          familyProfile.childId
+        );
+
+      }
+
+    } catch (
+      error
+    ) {
 
       console.error(
         "Unable to save journey:",
@@ -668,7 +1382,9 @@ export default function JourneyDashboard({
 
     } finally {
 
-      setSavingJourney(false);
+      setSavingJourney(
+        false
+      );
 
     }
 
@@ -676,21 +1392,9 @@ export default function JourneyDashboard({
 
 
   /*
-   * ============================================================
-   * WHAT'S NEXT
-   * ============================================================
-   *
-   * Logged-in users:
-   *
-   *   1. Archive completed current stage.
-   *   2. Ask AI for next stage.
-   *   3. Save new stage as current.
-   *   4. Increase visible stage number.
-   *
-   * Guests:
-   *
-   *   Save pending journey.
-   *   Require account.
+   * ==========================================================
+   * SHOW WHAT'S NEXT
+   * ==========================================================
    */
 
   async function handleShowNextJourney() {
@@ -699,29 +1403,32 @@ export default function JourneyDashboard({
       !allTasksCompleted ||
       generatingNextJourney
     ) {
+
       return;
+
     }
 
-
-    /*
-     * ----------------------------------------------------------
-     * REQUIRE ACCOUNT
-     * ----------------------------------------------------------
-     */
 
     const currentUser =
       getCurrentUser();
 
 
+    /*
+     * ----------------------------------------------------------
+     * GUEST
+     * ----------------------------------------------------------
+     */
+
     if (
-      !currentUser ||
-      !canContinueToNextJourney()
+      !currentUser
     ) {
 
       savePendingJourney(
         familyProfile,
+
         {
           ...personalizedJourney,
+
           tasks,
         }
       );
@@ -733,20 +1440,55 @@ export default function JourneyDashboard({
 
 
       return;
+
     }
 
 
     /*
      * ----------------------------------------------------------
-     * AUTHENTICATED USER
+     * ENTITLEMENTS
      * ----------------------------------------------------------
      */
+
+    if (
+      entitlementsLoading
+    ) {
+
+      return;
+
+    }
+
+
+    if (
+      !canUse(
+        "next_journey"
+      )
+    ) {
+
+      setNextJourneyError(
+        "Your account does not currently have access to create the next Journey stage."
+      );
+
+
+      return;
+
+    }
+
 
     setShowNextAccountPrompt(
       false
     );
 
-    setNextJourneyError("");
+
+    setNextJourneyError(
+      ""
+    );
+
+
+    setSaveMessage(
+      ""
+    );
+
 
     setGeneratingNextJourney(
       true
@@ -757,12 +1499,33 @@ export default function JourneyDashboard({
 
       /*
        * --------------------------------------------------------
-       * FIREBASE ID TOKEN
+       * AUTH TOKEN
        * --------------------------------------------------------
        */
 
       const idToken =
         await currentUser.getIdToken();
+
+
+      /*
+       * --------------------------------------------------------
+       * MAKE SURE JOURNEY HAS A PERMANENT ID
+       * --------------------------------------------------------
+       */
+
+      const journeyId =
+        await ensureActiveJourney();
+
+
+      if (
+        !journeyId
+      ) {
+
+        throw new Error(
+          "We couldn't identify the active Journey. Please save your Journey and try again."
+        );
+
+      }
 
 
       /*
@@ -773,56 +1536,58 @@ export default function JourneyDashboard({
 
       const completedTaskIds =
         tasks
+
           .filter(
-            (task) =>
+            (
+              task
+            ) =>
               task.completed
           )
+
           .map(
-            (task) =>
+            (
+              task
+            ) =>
               task.id
           );
 
 
       const completedTaskDetails =
         tasks.filter(
-          (task) =>
+          (
+            task
+          ) =>
             task.completed
         );
 
 
       /*
        * --------------------------------------------------------
-       * CURRENT JOURNEY SNAPSHOT
+       * CURRENT STAGE SNAPSHOT
        * --------------------------------------------------------
        */
 
-      const currentJourney = {
+      const currentJourney:
+        PersonalizedJourney = {
+
         ...personalizedJourney,
+
         tasks,
+
       };
 
 
       /*
        * --------------------------------------------------------
-       * ARCHIVE CURRENT STAGE
+       * CURRENT JOURNEY HISTORY ONLY
        * --------------------------------------------------------
-       *
-       * This happens BEFORE generating the next stage.
-       *
-       * If the current stage is Stage 1:
-       *
-       *   Stage 1 → history
-       *
-       * If current is Stage 2:
-       *
-       *   Stage 2 → history
-       *
-       * and so on.
        */
 
       const lastCompletedStageNumber =
         await getCurrentStageNumber(
-          currentUser.uid
+          currentUser.uid,
+          familyProfile.childId,
+          journeyId
         );
 
 
@@ -835,11 +1600,8 @@ export default function JourneyDashboard({
 
       /*
        * --------------------------------------------------------
-       * HANDLE LEGACY / RETRY SCENARIOS
+       * RETRY PROTECTION
        * --------------------------------------------------------
-       *
-       * If history somehow indicates a stage number higher than
-       * our current UI state, use the next available number.
        */
 
       if (
@@ -848,10 +1610,17 @@ export default function JourneyDashboard({
       ) {
 
         completedStageNumber =
-          lastCompletedStageNumber + 1;
+          lastCompletedStageNumber +
+          1;
 
       }
 
+
+      /*
+       * --------------------------------------------------------
+       * SAVE COMPLETED STAGE TO THIS JOURNEY'S HISTORY
+       * --------------------------------------------------------
+       */
 
       await saveJourneyStage(
         currentUser.uid,
@@ -865,9 +1634,14 @@ export default function JourneyDashboard({
         completedTaskIds,
 
         {
+          journeyId,
+
           reason:
-            completedStageNumber === 1
+            completedStageNumber ===
+              1
+
               ? "initial"
+
               : "tasks_completed",
         }
       );
@@ -875,42 +1649,90 @@ export default function JourneyDashboard({
 
       /*
        * --------------------------------------------------------
-       * CALL NEXT JOURNEY API
+       * GENERATE NEXT STAGE
        * --------------------------------------------------------
        */
 
       const response =
         await fetch(
           "/api/journey/next",
+
           {
             method:
               "POST",
 
             headers: {
+
               "Content-Type":
                 "application/json",
 
               Authorization:
                 `Bearer ${idToken}`,
+
             },
 
             body:
-              JSON.stringify({
-                familyProfile,
+              JSON.stringify(
+                {
+                  familyProfile,
 
-                currentJourney,
+                  currentJourney,
 
-                completedTaskIds,
+                  completedTaskIds,
 
-                completedTasks:
-                  completedTaskDetails,
-              }),
+                  completedTasks:
+                    completedTaskDetails,
+
+                  journeyId,
+                }
+              ),
           }
         );
 
 
-      const data =
-        await response.json();
+      /*
+       * --------------------------------------------------------
+       * SAFE RESPONSE PARSING
+       *
+       * Prevent:
+       *
+       * Unexpected token '<'
+       * --------------------------------------------------------
+       */
+
+      const responseText =
+        await response.text();
+
+
+      let data:
+        any =
+        null;
+
+
+      if (
+        responseText
+      ) {
+
+        try {
+
+          data =
+            JSON.parse(
+              responseText
+            );
+
+        } catch {
+
+          throw new Error(
+            response.ok
+
+              ? "The server returned an unexpected response."
+
+              : "We couldn't create the next stage because the server returned an unexpected response."
+          );
+
+        }
+
+      }
 
 
       /*
@@ -926,15 +1748,12 @@ export default function JourneyDashboard({
 
         savePendingJourney(
           familyProfile,
+
           {
             ...personalizedJourney,
+
             tasks,
           }
-        );
-
-
-        setNextJourneyError(
-          "Your login session has expired. Please log in again to continue your journey."
         );
 
 
@@ -943,7 +1762,10 @@ export default function JourneyDashboard({
         );
 
 
-        return;
+        throw new Error(
+          "Your login session has expired. Please log in again to continue your journey."
+        );
+
       }
 
 
@@ -959,7 +1781,7 @@ export default function JourneyDashboard({
 
         throw new Error(
           data?.error ||
-            "Unable to create the next stage of your journey."
+          "Unable to create the next stage of your journey."
         );
 
       }
@@ -978,27 +1800,69 @@ export default function JourneyDashboard({
 
       /*
        * --------------------------------------------------------
-       * RECEIVE NEXT JOURNEY
+       * NEXT JOURNEY
        * --------------------------------------------------------
        */
 
       const nextJourney =
-        data.journey as PersonalizedJourney;
+        data.journey as
+          PersonalizedJourney;
+
+
+      const nextStageNumber =
+        completedStageNumber +
+        1;
 
 
       /*
        * --------------------------------------------------------
-       * NEXT STAGE NUMBER
+       * SAVE NEW ACTIVE STAGE
+       *
+       * IMPORTANT:
+       *
+       * Same journeyId.
+       *
+       * A new Stage is NOT a new Journey.
        * --------------------------------------------------------
        */
 
-      const nextStageNumber =
-        completedStageNumber + 1;
+      const savedJourney =
+        await saveCurrentJourney(
+          currentUser.uid,
+
+          familyProfile,
+
+          {
+            ...nextJourney,
+
+            tasks:
+              nextJourney.tasks ||
+              [],
+          },
+
+          {
+            journeyId,
+
+            stageNumber:
+              nextStageNumber,
+
+            previousCompletedTaskIds:
+              completedTaskIds,
+
+            journeyReason:
+              "tasks_completed",
+          }
+        );
+
+
+      setActiveJourneyId(
+        savedJourney.journeyId
+      );
 
 
       /*
        * --------------------------------------------------------
-       * UPDATE SCREEN
+       * UPDATE UI
        * --------------------------------------------------------
        */
 
@@ -1008,7 +1872,8 @@ export default function JourneyDashboard({
 
 
       setTasks(
-        nextJourney.tasks || []
+        nextJourney.tasks ||
+        []
       );
 
 
@@ -1017,44 +1882,59 @@ export default function JourneyDashboard({
       );
 
 
-      /*
-       * --------------------------------------------------------
-       * SAVE NEW ACTIVE JOURNEY
-       * --------------------------------------------------------
-       */
-
-      await saveCurrentJourney(
-        currentUser.uid,
-
-        familyProfile,
-
-        {
-          ...nextJourney,
-
-          tasks:
-            nextJourney.tasks ||
-            [],
-        },
-
-        {
-          stageNumber:
-            nextStageNumber,
-
-          previousCompletedTaskIds:
-            completedTaskIds,
-
-          journeyReason:
-            "tasks_completed",
-        }
-      );
-
-
       setSaveMessage(
         `Journey Stage ${nextStageNumber} has been created and saved.`
       );
 
 
-    } catch (error) {
+      /*
+       * --------------------------------------------------------
+       * INFORM BUILDER
+       * --------------------------------------------------------
+       */
+
+      if (
+        onJourneySaved
+      ) {
+
+        await onJourneySaved(
+          familyProfile.childId
+        );
+
+      }
+
+
+      /*
+       * --------------------------------------------------------
+       * SCROLL TO TOP AFTER NEW STAGE RENDERS
+       * --------------------------------------------------------
+       */
+
+      window.requestAnimationFrame(
+        () => {
+
+          window.requestAnimationFrame(
+            () => {
+
+              window.scrollTo(
+                {
+                  top:
+                    0,
+
+                  behavior:
+                    "smooth",
+                }
+              );
+
+            }
+          );
+
+        }
+      );
+
+    } catch (
+      error
+    ) {
 
       console.error(
         "Unable to generate next journey:",
@@ -1063,8 +1943,11 @@ export default function JourneyDashboard({
 
 
       setNextJourneyError(
+
         error instanceof Error
+
           ? error.message
+
           : "We couldn't create the next stage of your journey. Please try again."
       );
 
@@ -1080,14 +1963,16 @@ export default function JourneyDashboard({
 
 
   /*
-   * ============================================================
+   * ==========================================================
    * LOG OUT
-   * ============================================================
+   * ==========================================================
    */
 
   async function handleLogout() {
 
-    setLoggingOut(true);
+    setLoggingOut(
+      true
+    );
 
 
     try {
@@ -1100,7 +1985,9 @@ export default function JourneyDashboard({
       window.location.href =
         "/";
 
-    } catch (error) {
+    } catch (
+      error
+    ) {
 
       console.error(
         "Logout error:",
@@ -1108,7 +1995,9 @@ export default function JourneyDashboard({
       );
 
 
-      setLoggingOut(false);
+      setLoggingOut(
+        false
+      );
 
     }
 
@@ -1116,41 +2005,17 @@ export default function JourneyDashboard({
 
 
   /*
-   * ============================================================
-   * CURRENT ACTION
-   * ============================================================
-   */
-
-  const actions =
-    personalizedJourney.actions ||
-    [];
-
-
-  const primaryAction =
-    actions.length > 0
-      ? actions[0]
-      : null;
-
-
-  /*
-   * ============================================================
+   * ==========================================================
    * RENDER
-   * ============================================================
+   * ==========================================================
    */
 
   return (
 
     <main
-      style={{
-        maxWidth:
-          "1050px",
-
-        margin:
-          "0 auto",
-
-        padding:
-          "56px 24px 90px",
-      }}
+      style={
+        styles.main
+      }
     >
 
       {/* =====================================================
@@ -1187,22 +2052,9 @@ export default function JourneyDashboard({
         >
 
           <div
-            style={{
-              color:
-                "#2563EB",
-
-              fontSize:
-                "13px",
-
-              fontWeight:
-                800,
-
-              letterSpacing:
-                "0.08em",
-
-              textTransform:
-                "uppercase",
-            }}
+            style={
+              styles.eyebrow
+            }
           >
             Your Personalized Journey
           </div>
@@ -1238,9 +2090,6 @@ export default function JourneyDashboard({
 
                 fontWeight:
                   800,
-
-                letterSpacing:
-                  "0.04em",
               }}
             >
               Journey Stage{" "}
@@ -1254,6 +2103,12 @@ export default function JourneyDashboard({
 
         <h1
           style={{
+            margin:
+              0,
+
+            maxWidth:
+              "850px",
+
             fontSize:
               "46px",
 
@@ -1265,39 +2120,35 @@ export default function JourneyDashboard({
 
             color:
               "#0F172A",
-
-            margin:
-              0,
-
-            maxWidth:
-              "850px",
           }}
         >
-          {familyProfile.childName
-            ? `${familyProfile.childName}'s Personalized Journey`
-            : "Your Personalized Journey"}
+
+          {
+            familyProfile.childName
+
+              ? `${familyProfile.childName}'s Personalized Journey`
+
+              : "Your Personalized Journey"
+          }
+
         </h1>
 
 
         <p
           style={{
+            ...styles.muted,
+
             marginTop:
               "16px",
+
+            marginBottom:
+              0,
 
             maxWidth:
               "760px",
 
             fontSize:
               "18px",
-
-            lineHeight:
-              1.65,
-
-            color:
-              "#64748B",
-
-            marginBottom:
-              0,
           }}
         >
           Based on what you shared,
@@ -1314,17 +2165,10 @@ export default function JourneyDashboard({
 
       <section
         style={{
+          ...styles.card,
+
           background:
             "#F8FAFC",
-
-          border:
-            "1px solid #E2E8F0",
-
-          borderRadius:
-            "20px",
-
-          padding:
-            "24px",
 
           marginBottom:
             "30px",
@@ -1333,20 +2177,7 @@ export default function JourneyDashboard({
 
         <div
           style={{
-            color:
-              "#2563EB",
-
-            fontSize:
-              "12px",
-
-            fontWeight:
-              800,
-
-            letterSpacing:
-              "0.08em",
-
-            textTransform:
-              "uppercase",
+            ...styles.eyebrow,
 
             marginBottom:
               "18px",
@@ -1371,9 +2202,12 @@ export default function JourneyDashboard({
 
           <SnapshotItem
             label="Age"
+
             value={
               familyProfile.childAge
+
                 ? `${familyProfile.childAge} years`
+
                 : "Not provided"
             }
           />
@@ -1381,11 +2215,14 @@ export default function JourneyDashboard({
 
           <SnapshotItem
             label="Location"
+
             value={
               familyProfile.state
+
                 ? formatDisplayValue(
                     familyProfile.state
                   )
+
                 : "Not provided"
             }
           />
@@ -1393,11 +2230,14 @@ export default function JourneyDashboard({
 
           <SnapshotItem
             label="Journey Stage"
+
             value={
               familyProfile.journeyStage
+
                 ? formatDisplayValue(
                     familyProfile.journeyStage
                   )
+
                 : "Not provided"
             }
           />
@@ -1405,11 +2245,14 @@ export default function JourneyDashboard({
 
           <SnapshotItem
             label="Insurance"
+
             value={
               familyProfile.insurance
+
                 ? formatDisplayValue(
                     familyProfile.insurance
                   )
+
                 : "Not provided"
             }
           />
@@ -1417,154 +2260,170 @@ export default function JourneyDashboard({
         </div>
 
 
-        {familyProfile.supports.length >
-          0 && (
-
-          <div
-            style={{
-              marginTop:
-                "22px",
-
-              paddingTop:
-                "20px",
-
-              borderTop:
-                "1px solid #E2E8F0",
-            }}
-          >
+        {
+          familyProfile.supports?.length >
+            0 && (
 
             <div
               style={{
-                fontSize:
-                  "13px",
+                marginTop:
+                  "22px",
 
-                fontWeight:
-                  700,
+                paddingTop:
+                  "20px",
 
-                color:
-                  "#475569",
-
-                marginBottom:
-                  "9px",
-              }}
-            >
-              Current Supports
-            </div>
-
-
-            <div
-              style={{
-                display:
-                  "flex",
-
-                flexWrap:
-                  "wrap",
-
-                gap:
-                  "7px",
+                borderTop:
+                  "1px solid #E2E8F0",
               }}
             >
 
-              {familyProfile.supports.map(
-                (support) => (
+              <div
+                style={{
+                  fontSize:
+                    "13px",
 
-                  <span
-                    key={
+                  fontWeight:
+                    700,
+
+                  color:
+                    "#475569",
+
+                  marginBottom:
+                    "9px",
+                }}
+              >
+                Current Supports
+              </div>
+
+
+              <div
+                style={{
+                  display:
+                    "flex",
+
+                  flexWrap:
+                    "wrap",
+
+                  gap:
+                    "7px",
+                }}
+              >
+
+                {
+                  familyProfile.supports.map(
+                    (
                       support
-                    }
+                    ) => (
 
-                    style={{
-                      padding:
-                        "7px 12px",
+                      <span
+                        key={
+                          support
+                        }
 
-                      borderRadius:
-                        "999px",
+                        style={{
+                          padding:
+                            "7px 12px",
 
-                      background:
-                        "#FFFFFF",
+                          borderRadius:
+                            "999px",
 
-                      border:
-                        "1px solid #CBD5E1",
+                          background:
+                            "#FFFFFF",
 
-                      color:
-                        "#334155",
+                          border:
+                            "1px solid #CBD5E1",
 
-                      fontSize:
-                        "13px",
+                          color:
+                            "#334155",
 
-                      fontWeight:
-                        600,
-                    }}
-                  >
-                    {formatDisplayValue(
-                      support
-                    )}
-                  </span>
+                          fontSize:
+                            "13px",
 
-                )
-              )}
+                          fontWeight:
+                            600,
+                        }}
+                      >
+
+                        {
+                          formatDisplayValue(
+                            support
+                          )
+                        }
+
+                      </span>
+
+                    )
+                  )
+                }
+
+              </div>
 
             </div>
 
-          </div>
+          )
+        }
 
-        )}
 
-
-        {familyProfile.priority && (
-
-          <div
-            style={{
-              marginTop:
-                "20px",
-            }}
-          >
+        {
+          familyProfile.priority && (
 
             <div
               style={{
-                fontSize:
-                  "13px",
-
-                fontWeight:
-                  700,
-
-                color:
-                  "#475569",
-
-                marginBottom:
-                  "5px",
+                marginTop:
+                  "20px",
               }}
             >
-              Top Priority
+
+              <div
+                style={{
+                  fontSize:
+                    "13px",
+
+                  fontWeight:
+                    700,
+
+                  color:
+                    "#475569",
+
+                  marginBottom:
+                    "5px",
+                }}
+              >
+                Top Priority
+              </div>
+
+
+              <div
+                style={{
+                  fontSize:
+                    "17px",
+
+                  fontWeight:
+                    700,
+
+                  color:
+                    "#0F172A",
+                }}
+              >
+
+                {
+                  formatDisplayValue(
+                    familyProfile.priority
+                  )
+                }
+
+              </div>
+
             </div>
 
-
-            <div
-              style={{
-                fontSize:
-                  "17px",
-
-                fontWeight:
-                  700,
-
-                color:
-                  "#0F172A",
-              }}
-            >
-              {formatDisplayValue(
-                familyProfile.priority
-              )}
-            </div>
-
-          </div>
-
-        )}
+          )
+        }
 
       </section>
 
 
       {/* =====================================================
-          START HERE
+          CURRENT FOCUS
       ====================================================== */}
 
       <section
@@ -1606,7 +2465,7 @@ export default function JourneyDashboard({
 
               marginBottom:
                 "12px",
-          }}
+            }}
           >
 
             <span
@@ -1635,9 +2494,6 @@ export default function JourneyDashboard({
                 color:
                   "#FFFFFF",
 
-                fontSize:
-                  "15px",
-
                 fontWeight:
                   800,
               }}
@@ -1647,22 +2503,9 @@ export default function JourneyDashboard({
 
 
             <span
-              style={{
-                color:
-                  "#2563EB",
-
-                fontSize:
-                  "13px",
-
-                fontWeight:
-                  800,
-
-                letterSpacing:
-                  "0.08em",
-
-                textTransform:
-                  "uppercase",
-              }}
+              style={
+                styles.eyebrow
+              }
             >
               Current Focus
             </span>
@@ -1688,16 +2531,20 @@ export default function JourneyDashboard({
                 800,
             }}
           >
+
             {
               personalizedJourney
                 .currentFocus
                 .title
             }
+
           </h2>
 
 
           <p
             style={{
+              ...styles.muted,
+
               marginTop:
                 "13px",
 
@@ -1707,112 +2554,97 @@ export default function JourneyDashboard({
               maxWidth:
                 "800px",
 
-              color:
-                "#475569",
-
               fontSize:
                 "17px",
-
-              lineHeight:
-                1.65,
             }}
           >
+
             {
               personalizedJourney
                 .currentFocus
                 .explanation
             }
+
           </p>
 
 
-          {personalizedJourney.nextStep && (
-
-            <div
-              style={{
-                marginTop:
-                  "24px",
-
-                paddingTop:
-                  "22px",
-
-                borderTop:
-                  "1px solid #BFDBFE",
-              }}
-            >
+          {
+            personalizedJourney.nextStep && (
 
               <div
                 style={{
-                  fontSize:
-                    "12px",
+                  marginTop:
+                    "24px",
 
-                  fontWeight:
-                    800,
+                  paddingTop:
+                    "22px",
 
-                  color:
-                    "#2563EB",
-
-                  textTransform:
-                    "uppercase",
-
-                  letterSpacing:
-                    "0.06em",
-
-                  marginBottom:
-                    "7px",
+                  borderTop:
+                    "1px solid #BFDBFE",
                 }}
               >
-                Your Next Best Step
+
+                <div
+                  style={{
+                    ...styles.eyebrow,
+
+                    marginBottom:
+                      "7px",
+                  }}
+                >
+                  Your Next Best Step
+                </div>
+
+
+                <div
+                  style={{
+                    fontSize:
+                      "19px",
+
+                    fontWeight:
+                      750,
+
+                    color:
+                      "#0F172A",
+                  }}
+                >
+
+                  {
+                    personalizedJourney
+                      .nextStep
+                      .title
+                  }
+
+                </div>
+
+
+                <p
+                  style={{
+                    ...styles.muted,
+
+                    margin:
+                      "7px 0 0",
+
+                    fontSize:
+                      "15px",
+
+                    maxWidth:
+                      "780px",
+                  }}
+                >
+
+                  {
+                    personalizedJourney
+                      .nextStep
+                      .description
+                  }
+
+                </p>
+
               </div>
 
-
-              <div
-                style={{
-                  fontSize:
-                    "19px",
-
-                  fontWeight:
-                    750,
-
-                  color:
-                    "#0F172A",
-                }}
-              >
-                {
-                  personalizedJourney
-                    .nextStep
-                    .title
-                }
-              </div>
-
-
-              <p
-                style={{
-                  margin:
-                    "7px 0 0",
-
-                  color:
-                    "#64748B",
-
-                  lineHeight:
-                    1.6,
-
-                  fontSize:
-                    "15px",
-
-                  maxWidth:
-                    "780px",
-                }}
-              >
-                {
-                  personalizedJourney
-                    .nextStep
-                    .description
-                }
-              </p>
-
-            </div>
-
-          )}
+            )
+          }
 
         </div>
 
@@ -1823,100 +2655,268 @@ export default function JourneyDashboard({
           HOW TO DO IT
       ====================================================== */}
 
-      {primaryAction && (
+      {
+        primaryAction && (
 
-        <section
-          style={{
-            marginBottom:
-              "36px",
-          }}
-        >
-
-          <SectionHeading
-            eyebrow="How to Do It"
-            title="Your first action"
-            description="Here's a practical way to get started."
-          />
-
-
-          <div
+          <section
             style={{
-              marginTop:
-                "22px",
-
-              padding:
-                "28px",
-
-              borderRadius:
-                "20px",
-
-              border:
-                "1px solid #E2E8F0",
-
-              background:
-                "#FFFFFF",
-
-              boxShadow:
-                "0 6px 18px rgba(15, 23, 42, 0.04)",
+              marginBottom:
+                "40px",
             }}
           >
 
+            <SectionHeading
+              eyebrow="How to Do It"
+
+              title="Your first action"
+
+              description="Here's a practical way to get started."
+            />
+
+
             <div
               style={{
-                display:
-                  "inline-flex",
+                ...styles.card,
 
-                padding:
-                  "5px 10px",
-
-                borderRadius:
-                  "999px",
-
-                background:
-                  "#EFF6FF",
-
-                color:
-                  "#2563EB",
-
-                fontSize:
-                  "11px",
-
-                fontWeight:
-                  800,
-
-                textTransform:
-                  "uppercase",
-
-                letterSpacing:
-                  "0.04em",
-
-                marginBottom:
-                  "13px",
+                marginTop:
+                  "22px",
               }}
             >
-              {primaryAction.priority}
-              {" "}
-              Priority
+
+              <div
+                style={{
+                  display:
+                    "inline-flex",
+
+                  padding:
+                    "5px 10px",
+
+                  borderRadius:
+                    "999px",
+
+                  background:
+                    "#EFF6FF",
+
+                  color:
+                    "#2563EB",
+
+                  fontSize:
+                    "11px",
+
+                  fontWeight:
+                    800,
+
+                  textTransform:
+                    "uppercase",
+
+                  marginBottom:
+                    "13px",
+                }}
+              >
+                {primaryAction.priority}{" "}
+                Priority
+              </div>
+
+
+              <h3
+                style={{
+                  margin:
+                    0,
+
+                  color:
+                    "#0F172A",
+
+                  fontSize:
+                    "23px",
+
+                  lineHeight:
+                    1.3,
+                }}
+              >
+                {primaryAction.title}
+              </h3>
+
+
+              <div
+                style={{
+                  display:
+                    "grid",
+
+                  gap:
+                    "18px",
+
+                  marginTop:
+                    "20px",
+                }}
+              >
+
+                <GuidanceBlock
+                  label="Why it matters"
+
+                  text={
+                    primaryAction.whyItMatters
+                  }
+                />
+
+
+                <GuidanceBlock
+                  label="What to do"
+
+                  text={
+                    primaryAction.action
+                  }
+                />
+
+
+                <GuidanceBlock
+                  label="How to do it"
+
+                  text={
+                    primaryAction.howTo
+                  }
+                />
+
+
+                {
+                  primaryAction.nextStep && (
+
+                    <GuidanceBlock
+                      label="Then"
+
+                      text={
+                        primaryAction.nextStep
+                      }
+                    />
+
+                  )
+                }
+
+              </div>
+
+
+              <div
+                style={{
+                  marginTop:
+                    "20px",
+
+                  paddingTop:
+                    "16px",
+
+                  borderTop:
+                    "1px solid #E2E8F0",
+
+                  color:
+                    "#94A3B8",
+
+                  fontSize:
+                    "13px",
+                }}
+              >
+                Estimated time:{" "}
+                {
+                  primaryAction
+                    .estimatedTime
+                }
+              </div>
+
             </div>
 
 
-            <h3
-              style={{
-                margin:
-                  0,
+            {/* =================================================
+                STARTER TEMPLATES
+            ================================================== */}
 
-                color:
-                  "#0F172A",
+            {
+              actionTemplates.length >
+                0 && (
 
-                fontSize:
-                  "23px",
+                <div
+                  style={{
+                    marginTop:
+                      "28px",
+                  }}
+                >
 
-                lineHeight:
-                  1.3,
-              }}
-            >
-              {primaryAction.title}
-            </h3>
+                  <SectionHeading
+                    eyebrow="Starter Templates"
+
+                    title="Ready-to-use starting points"
+
+                    description="Copy a starter and personalize it for your family."
+                  />
+
+
+                  <div
+                    style={{
+                      display:
+                        "grid",
+
+                      gridTemplateColumns:
+                        "repeat(auto-fit, minmax(260px, 1fr))",
+
+                      gap:
+                        "16px",
+
+                      marginTop:
+                        "18px",
+                    }}
+                  >
+
+                    {
+                      actionTemplates.map(
+                        (
+                          template
+                        ) => (
+
+                          <TemplateCard
+                            key={
+                              template.id
+                            }
+
+                            template={
+                              template
+                            }
+                          />
+
+                        )
+                      )
+                    }
+
+                  </div>
+
+                </div>
+
+              )
+            }
+
+          </section>
+
+        )
+      }
+
+
+      {/* =====================================================
+          RESOURCES
+      ====================================================== */}
+
+      {
+        personalizedJourney.resources?.length >
+          0 && (
+
+          <section
+            style={{
+              marginBottom:
+                "48px",
+            }}
+          >
+
+            <SectionHeading
+              eyebrow="Resources"
+
+              title="Resources selected for you"
+
+              description="These resources were selected based on your family's situation and priorities."
+            />
 
 
             <div
@@ -1924,146 +2924,45 @@ export default function JourneyDashboard({
                 display:
                   "grid",
 
+                gridTemplateColumns:
+                  "repeat(auto-fit, minmax(290px, 1fr))",
+
                 gap:
                   "18px",
 
                 marginTop:
-                  "20px",
+                  "22px",
               }}
             >
 
-              <GuidanceBlock
-                label="Why it matters"
-                text={
-                  primaryAction.whyItMatters
-                }
-              />
-
-
-              <GuidanceBlock
-                label="What to do"
-                text={
-                  primaryAction.action
-                }
-              />
-
-
-              <GuidanceBlock
-                label="How to do it"
-                text={
-                  primaryAction.howTo
-                }
-              />
-
-
-              {primaryAction.nextStep && (
-
-                <GuidanceBlock
-                  label="Then"
-                  text={
-                    primaryAction.nextStep
-                  }
-                />
-
-              )}
-
-            </div>
-
-
-            <div
-              style={{
-                marginTop:
-                  "20px",
-
-                paddingTop:
-                  "16px",
-
-                borderTop:
-                  "1px solid #E2E8F0",
-
-                color:
-                  "#94A3B8",
-
-                fontSize:
-                  "13px",
-              }}
-            >
-              Estimated time:{" "}
               {
-                primaryAction
-                  .estimatedTime
+                personalizedJourney
+                  .resources
+                  .map(
+                    (
+                      resource
+                    ) => (
+
+                      <ResourceCard
+                        key={
+                          resource.id
+                        }
+
+                        resource={
+                          resource
+                        }
+                      />
+
+                    )
+                  )
               }
+
             </div>
 
-          </div>
+          </section>
 
-        </section>
-
-      )}
-
-
-      {/* =====================================================
-          RESOURCES
-      ====================================================== */}
-
-      {personalizedJourney.resources?.length >
-        0 && (
-
-        <section
-          style={{
-            marginBottom:
-              "48px",
-          }}
-        >
-
-          <SectionHeading
-            eyebrow="Resources"
-            title="Resources selected for you"
-            description="These resources were selected based on your family's situation and priorities."
-          />
-
-
-          <div
-            style={{
-              display:
-                "grid",
-
-              gridTemplateColumns:
-                "repeat(auto-fit, minmax(290px, 1fr))",
-
-              gap:
-                "18px",
-
-              marginTop:
-                "22px",
-            }}
-          >
-
-            {
-              personalizedJourney
-                .resources
-                .map(
-                  (resource) => (
-
-                    <ResourceCard
-                      key={
-                        resource.id
-                      }
-
-                      resource={
-                        resource
-                      }
-                    />
-
-                  )
-                )
-            }
-
-          </div>
-
-        </section>
-
-      )}
+        )
+      }
 
 
       {/* =====================================================
@@ -2079,11 +2978,7 @@ export default function JourneyDashboard({
 
         <div
           style={{
-            padding:
-              "26px",
-
-            borderRadius:
-              "20px",
+            ...styles.card,
 
             border:
               "1px solid #BFDBFE",
@@ -2117,20 +3012,16 @@ export default function JourneyDashboard({
 
           <p
             style={{
+              ...styles.muted,
+
               margin:
                 "9px auto 18px",
 
               maxWidth:
                 "620px",
 
-              color:
-                "#475569",
-
               fontSize:
                 "15px",
-
-              lineHeight:
-                1.6,
             }}
           >
             Save your personalized journey so
@@ -2141,214 +3032,104 @@ export default function JourneyDashboard({
 
           <button
             type="button"
+
             onClick={
               handleSaveJourney
             }
+
             disabled={
               savingJourney
             }
+
             style={{
-              padding:
-                "13px 22px",
-
-              borderRadius:
-                "10px",
-
-              border:
-                "none",
+              ...styles.button,
 
               background:
                 savingJourney
+
                   ? "#93C5FD"
+
                   : "#2563EB",
-
-              color:
-                "#FFFFFF",
-
-              fontSize:
-                "15px",
-
-              fontWeight:
-                800,
 
               cursor:
                 savingJourney
+
                   ? "default"
+
                   : "pointer",
             }}
           >
+
             {
               savingJourney
+
                 ? "Saving..."
+
                 : "💾 Save My Journey"
             }
+
           </button>
 
 
-          {saveMessage && (
-
-            <div
-              style={{
-                marginTop:
-                  "15px",
-
-                color:
-                  "#047857",
-
-                fontSize:
-                  "14px",
-
-                fontWeight:
-                  700,
-              }}
-            >
-              ✓ {saveMessage}
-            </div>
-
-          )}
-
-
-          {saveError && (
-
-            <div
-              style={{
-                marginTop:
-                  "15px",
-
-                color:
-                  "#B91C1C",
-
-                fontSize:
-                  "14px",
-
-                lineHeight:
-                  1.5,
-              }}
-            >
-              {saveError}
-            </div>
-
-          )}
-
-
-          {showSaveAccountPrompt && (
-
-            <div
-              style={{
-                marginTop:
-                  "22px",
-
-                paddingTop:
-                  "20px",
-
-                borderTop:
-                  "1px solid #BFDBFE",
-              }}
-            >
+          {
+            saveMessage && (
 
               <div
                 style={{
+                  marginTop:
+                    "15px",
+
                   color:
-                    "#0F172A",
+                    "#047857",
 
                   fontSize:
-                    "15px",
+                    "14px",
 
                   fontWeight:
                     700,
-
-                  marginBottom:
-                    "12px",
                 }}
               >
-                Create a free account or log in
-                to save your journey.
+                ✓ {saveMessage}
               </div>
 
+            )
+          }
+
+
+          {
+            saveError && (
 
               <div
                 style={{
-                  display:
-                    "flex",
+                  marginTop:
+                    "15px",
 
-                  justifyContent:
-                    "center",
+                  color:
+                    "#B91C1C",
 
-                  gap:
-                    "10px",
+                  fontSize:
+                    "14px",
 
-                  flexWrap:
-                    "wrap",
+                  lineHeight:
+                    1.5,
                 }}
               >
-
-                <Link
-                  href="/login"
-
-                  style={{
-                    padding:
-                      "10px 18px",
-
-                    borderRadius:
-                      "9px",
-
-                    background:
-                      "#2563EB",
-
-                    color:
-                      "#FFFFFF",
-
-                    fontSize:
-                      "14px",
-
-                    fontWeight:
-                      700,
-
-                    textDecoration:
-                      "none",
-                  }}
-                >
-                  Log In
-                </Link>
-
-
-                <Link
-                  href="/signup"
-
-                  style={{
-                    padding:
-                      "10px 18px",
-
-                    borderRadius:
-                      "9px",
-
-                    border:
-                      "1px solid #2563EB",
-
-                    background:
-                      "#FFFFFF",
-
-                    color:
-                      "#2563EB",
-
-                    fontSize:
-                      "14px",
-
-                    fontWeight:
-                      700,
-
-                    textDecoration:
-                      "none",
-                  }}
-                >
-                  Create Free Account
-                </Link>
-
+                {saveError}
               </div>
 
-            </div>
+            )
+          }
 
-          )}
+
+          {
+            showSaveAccountPrompt && (
+
+              <AccountLinks
+                message="Create a free account or log in to save your journey."
+              />
+
+            )
+          }
 
         </div>
 
@@ -2359,139 +3140,130 @@ export default function JourneyDashboard({
           ACCOUNT
       ====================================================== */}
 
-      {currentUserEmail && (
+      {
+        currentUserEmail && (
 
-        <section
-          style={{
-            marginBottom:
-              "35px",
-          }}
-        >
-
-          <div
+          <section
             style={{
-              padding:
-                "22px 24px",
-
-              borderRadius:
-                "18px",
-
-              border:
-                "1px solid #E2E8F0",
-
-              background:
-                "#FFFFFF",
-
-              display:
-                "flex",
-
-              justifyContent:
-                "space-between",
-
-              alignItems:
-                "center",
-
-              gap:
-                "20px",
-
-              flexWrap:
-                "wrap",
+              marginBottom:
+                "35px",
             }}
           >
 
-            <div>
+            <div
+              style={{
+                ...styles.card,
 
-              <div
-                style={{
-                  color:
-                    "#64748B",
+                display:
+                  "flex",
 
-                  fontSize:
-                    "12px",
+                justifyContent:
+                  "space-between",
 
-                  fontWeight:
-                    800,
+                alignItems:
+                  "center",
 
-                  textTransform:
-                    "uppercase",
+                gap:
+                  "20px",
 
-                  letterSpacing:
-                    "0.06em",
+                flexWrap:
+                  "wrap",
+              }}
+            >
 
-                  marginBottom:
-                    "5px",
-                }}
-              >
-                Your Account
+              <div>
+
+                <div
+                  style={{
+                    ...styles.eyebrow,
+
+                    color:
+                      "#64748B",
+
+                    marginBottom:
+                      "5px",
+                  }}
+                >
+                  Your Account
+                </div>
+
+
+                <div
+                  style={{
+                    color:
+                      "#0F172A",
+
+                    fontSize:
+                      "15px",
+
+                    fontWeight:
+                      700,
+                  }}
+                >
+                  {currentUserEmail}
+                </div>
+
               </div>
 
 
-              <div
+              <button
+                type="button"
+
+                onClick={
+                  handleLogout
+                }
+
+                disabled={
+                  loggingOut
+                }
+
                 style={{
+                  padding:
+                    "10px 18px",
+
+                  borderRadius:
+                    "9px",
+
+                  border:
+                    "1px solid #CBD5E1",
+
+                  background:
+                    "#FFFFFF",
+
                   color:
-                    "#0F172A",
+                    "#475569",
 
                   fontSize:
-                    "15px",
+                    "14px",
 
                   fontWeight:
                     700,
+
+                  cursor:
+                    loggingOut
+
+                      ? "default"
+
+                      : "pointer",
                 }}
               >
-                {currentUserEmail}
-              </div>
+
+                {
+                  loggingOut
+
+                    ? "Logging Out..."
+
+                    : "Log Out"
+                }
+
+              </button>
 
             </div>
 
+          </section>
 
-            <button
-              type="button"
-              onClick={
-                handleLogout
-              }
-              disabled={
-                loggingOut
-              }
-              style={{
-                padding:
-                  "10px 18px",
-
-                borderRadius:
-                  "9px",
-
-                border:
-                  "1px solid #CBD5E1",
-
-                background:
-                  "#FFFFFF",
-
-                color:
-                  "#475569",
-
-                fontSize:
-                  "14px",
-
-                fontWeight:
-                  700,
-
-                cursor:
-                  loggingOut
-                    ? "default"
-                    : "pointer",
-              }}
-            >
-              {
-                loggingOut
-                  ? "Logging Out..."
-                  : "Log Out"
-              }
-            </button>
-
-          </div>
-
-        </section>
-
-      )}
+        )
+      }
 
 
       {/* =====================================================
@@ -2507,27 +3279,22 @@ export default function JourneyDashboard({
 
         <SectionHeading
           eyebrow={`Journey Stage ${journeyStageNumber}`}
+
           title="Keep moving at your own pace"
+
           description="Complete the suggested tasks to unlock your next stage."
         />
 
 
         <div
           style={{
+            ...styles.card,
+
             marginTop:
               "22px",
 
-            padding:
-              "23px",
-
-            borderRadius:
-              "20px",
-
             background:
               "#F8FAFC",
-
-            border:
-              "1px solid #E2E8F0",
           }}
         >
 
@@ -2541,6 +3308,9 @@ export default function JourneyDashboard({
 
               alignItems:
                 "center",
+
+              gap:
+                "12px",
 
               marginBottom:
                 "10px",
@@ -2606,50 +3376,58 @@ export default function JourneyDashboard({
             />
 
           </div>
-          {taskSaveStatus === "saving" && (
-
-<div
-  style={{
-    marginTop:
-      "8px",
-
-    color:
-      "#64748B",
-
-    fontSize:
-      "12px",
-
-    textAlign:
-      "right",
-  }}
->
-  Saving your progress...
-</div>
-
-)}
 
 
-{taskSaveStatus === "error" && (
+          {
+            taskSaveStatus ===
+              "saving" && (
 
-<div
-  style={{
-    marginTop:
-      "8px",
+              <div
+                style={{
+                  marginTop:
+                    "8px",
 
-    color:
-      "#B91C1C",
+                  color:
+                    "#64748B",
 
-    fontSize:
-      "12px",
+                  fontSize:
+                    "12px",
 
-    textAlign:
-      "right",
-  }}
->
-  We couldn't save your latest task change.
-</div>
+                  textAlign:
+                    "right",
+                }}
+              >
+                Saving your progress...
+              </div>
 
-)}
+            )
+          }
+
+
+          {
+            taskSaveStatus ===
+              "error" && (
+
+              <div
+                style={{
+                  marginTop:
+                    "8px",
+
+                  color:
+                    "#B91C1C",
+
+                  fontSize:
+                    "12px",
+
+                  textAlign:
+                    "right",
+                }}
+              >
+                We couldn't save your latest task change.
+              </div>
+
+            )
+          }
 
         </div>
 
@@ -2667,27 +3445,32 @@ export default function JourneyDashboard({
           }}
         >
 
-          {tasks.map(
-            (task) => (
+          {
+            tasks.map(
+              (
+                task
+              ) => (
 
-              <TaskCard
-                key={
-                  task.id
-                }
-
-                task={
-                  task
-                }
-
-                onToggle={() =>
-                  toggleTask(
+                <TaskCard
+                  key={
                     task.id
-                  )
-                }
-              />
+                  }
 
+                  task={
+                    task
+                  }
+
+                  onToggle={
+                    () =>
+                      toggleTask(
+                        task.id
+                      )
+                  }
+                />
+
+              )
             )
-          )}
+          }
 
         </div>
 
@@ -2696,327 +3479,192 @@ export default function JourneyDashboard({
             NEXT STAGE
         ==================================================== */}
 
-        {allTasksCompleted && (
-
-          <div
-            style={{
-              marginTop:
-                "22px",
-
-              padding:
-                "26px",
-
-              borderRadius:
-                "18px",
-
-              background:
-                "#ECFDF5",
-
-              border:
-                "1px solid #A7F3D0",
-
-              textAlign:
-                "center",
-            }}
-          >
+        {
+          allTasksCompleted && (
 
             <div
               style={{
-                fontSize:
-                  "28px",
-
-                marginBottom:
-                  "8px",
-              }}
-            >
-              🎉
-            </div>
-
-
-            <h3
-              style={{
-                margin:
-                  0,
-
-                color:
-                  "#065F46",
-
-                fontSize:
+                marginTop:
                   "22px",
-              }}
-            >
-              You've completed Journey Stage{" "}
-              {journeyStageNumber}.
-            </h3>
 
-
-            <p
-              style={{
-                color:
-                  "#047857",
-
-                lineHeight:
-                  1.6,
-
-                margin:
-                  "9px auto 18px",
-
-                maxWidth:
-                  "650px",
-              }}
-            >
-              Great work. We'll build on what
-              you've accomplished to determine
-              what should come next.
-            </p>
-
-
-            {nextJourneyError && (
-
-              <div
-                role="alert"
-
-                style={{
-                  margin:
-                    "0 auto 16px",
-
-                  maxWidth:
-                    "650px",
-
-                  padding:
-                    "12px 14px",
-
-                  borderRadius:
-                    "10px",
-
-                  background:
-                    "#FEF2F2",
-
-                  border:
-                    "1px solid #FECACA",
-
-                  color:
-                    "#B91C1C",
-
-                  fontSize:
-                    "14px",
-
-                  lineHeight:
-                    1.5,
-
-                  textAlign:
-                    "left",
-                }}
-              >
-                {nextJourneyError}
-              </div>
-
-            )}
-
-
-            {showNextAccountPrompt && (
-
-              <div
-                style={{
-                  margin:
-                    "0 auto 18px",
-
-                  maxWidth:
-                    "650px",
-
-                  padding:
-                    "20px",
-
-                  borderRadius:
-                    "14px",
-
-                  background:
-                    "#FFFFFF",
-
-                  border:
-                    "1px solid #A7F3D0",
-                }}
-              >
-
-                <h4
-                  style={{
-                    margin:
-                      "0 0 8px",
-
-                    color:
-                      "#065F46",
-
-                    fontSize:
-                      "17px",
-
-                    fontWeight:
-                      800,
-                  }}
-                >
-                  Your next stage is ready to unlock.
-                </h4>
-
-
-                <p
-                  style={{
-                    margin:
-                      "0 0 16px",
-
-                    color:
-                      "#475569",
-
-                    fontSize:
-                      "14px",
-
-                    lineHeight:
-                      1.6,
-                  }}
-                >
-                  Create a free account or log in
-                  to continue your personalized
-                  journey and unlock your next steps.
-                </p>
-
-
-                <div
-                  style={{
-                    display:
-                      "flex",
-
-                    justifyContent:
-                      "center",
-
-                    gap:
-                      "10px",
-
-                    flexWrap:
-                      "wrap",
-                  }}
-                >
-
-                  <Link
-                    href="/login"
-
-                    style={{
-                      padding:
-                        "10px 18px",
-
-                      borderRadius:
-                        "9px",
-
-                      background:
-                        "#2563EB",
-
-                      color:
-                        "#FFFFFF",
-
-                      fontSize:
-                        "14px",
-
-                      fontWeight:
-                        700,
-
-                      textDecoration:
-                        "none",
-                    }}
-                  >
-                    Log In
-                  </Link>
-
-
-                  <Link
-                    href="/signup"
-
-                    style={{
-                      padding:
-                        "10px 18px",
-
-                      borderRadius:
-                        "9px",
-
-                      border:
-                        "1px solid #2563EB",
-
-                      background:
-                        "#FFFFFF",
-
-                      color:
-                        "#2563EB",
-
-                      fontSize:
-                        "14px",
-
-                      fontWeight:
-                        700,
-
-                      textDecoration:
-                        "none",
-                    }}
-                  >
-                    Create Free Account
-                  </Link>
-
-                </div>
-
-              </div>
-
-            )}
-
-
-            <button
-              type="button"
-
-              onClick={
-                handleShowNextJourney
-              }
-
-              disabled={
-                generatingNextJourney
-              }
-
-              style={{
                 padding:
-                  "13px 22px",
+                  "26px",
 
                 borderRadius:
-                  "10px",
-
-                border:
-                  "none",
+                  "18px",
 
                 background:
-                  generatingNextJourney
-                    ? "#6EE7B7"
-                    : "#059669",
+                  "#ECFDF5",
 
-                color:
-                  "#FFFFFF",
+                border:
+                  "1px solid #A7F3D0",
 
-                fontSize:
-                  "15px",
-
-                fontWeight:
-                  800,
-
-                cursor:
-                  generatingNextJourney
-                    ? "default"
-                    : "pointer",
-
-                minWidth:
-                  "210px",
+                textAlign:
+                  "center",
               }}
             >
+
+              <div
+                style={{
+                  fontSize:
+                    "28px",
+
+                  marginBottom:
+                    "8px",
+                }}
+              >
+                🎉
+              </div>
+
+
+              <h3
+                style={{
+                  margin:
+                    0,
+
+                  color:
+                    "#065F46",
+
+                  fontSize:
+                    "22px",
+                }}
+              >
+                You've completed Journey Stage{" "}
+                {journeyStageNumber}.
+              </h3>
+
+
+              <p
+                style={{
+                  color:
+                    "#047857",
+
+                  lineHeight:
+                    1.6,
+
+                  margin:
+                    "9px auto 18px",
+
+                  maxWidth:
+                    "650px",
+                }}
+              >
+                Great work. We'll build on what
+                you've accomplished to determine
+                what should come next.
+              </p>
+
+
               {
-                generatingNextJourney
-                  ? "Building What's Next..."
-                  : "Show Me What's Next →"
+                nextJourneyError && (
+
+                  <div
+                    role="alert"
+
+                    style={{
+                      margin:
+                        "0 auto 16px",
+
+                      maxWidth:
+                        "650px",
+
+                      padding:
+                        "12px 14px",
+
+                      borderRadius:
+                        "10px",
+
+                      background:
+                        "#FEF2F2",
+
+                      border:
+                        "1px solid #FECACA",
+
+                      color:
+                        "#B91C1C",
+
+                      fontSize:
+                        "14px",
+
+                      lineHeight:
+                        1.5,
+
+                      textAlign:
+                        "left",
+                    }}
+                  >
+                    {nextJourneyError}
+                  </div>
+
+                )
               }
-            </button>
 
-          </div>
 
-        )}
+              {
+                showNextAccountPrompt && (
+
+                  <AccountLinks
+                    message="Create a free account or log in to continue your personalized journey and unlock your next steps."
+                  />
+
+                )
+              }
+
+
+              <button
+                type="button"
+
+                onClick={
+                  handleShowNextJourney
+                }
+
+                disabled={
+                  generatingNextJourney ||
+                  entitlementsLoading
+                }
+
+                style={{
+                  ...styles.button,
+
+                  background:
+                    generatingNextJourney ||
+                    entitlementsLoading
+
+                      ? "#6EE7B7"
+
+                      : "#059669",
+
+                  cursor:
+                    generatingNextJourney ||
+                    entitlementsLoading
+
+                      ? "default"
+
+                      : "pointer",
+
+                  minWidth:
+                    "210px",
+                }}
+              >
+
+                {
+                  generatingNextJourney
+
+                    ? "Building What's Next..."
+
+                    : entitlementsLoading
+
+                    ? "Checking Access..."
+
+                    : "Show Me What's Next →"
+                }
+
+              </button>
+
+            </div>
+
+          )
+        }
 
       </section>
 
@@ -3046,7 +3694,9 @@ export default function JourneyDashboard({
       </p>
 
     </main>
+
   );
+
 }
 
 
@@ -3060,8 +3710,11 @@ function SnapshotItem({
   label,
   value,
 }: {
-  label: string;
-  value: string;
+  label:
+    string;
+
+  value:
+    string;
 }) {
 
   return (
@@ -3111,6 +3764,7 @@ function SnapshotItem({
     </div>
 
   );
+
 }
 
 
@@ -3125,9 +3779,14 @@ function SectionHeading({
   title,
   description,
 }: {
-  eyebrow: string;
-  title: string;
-  description: string;
+  eyebrow:
+    string;
+
+  title:
+    string;
+
+  description:
+    string;
 }) {
 
   return (
@@ -3136,20 +3795,7 @@ function SectionHeading({
 
       <div
         style={{
-          color:
-            "#2563EB",
-
-          fontSize:
-            "12px",
-
-          fontWeight:
-            800,
-
-          letterSpacing:
-            "0.08em",
-
-          textTransform:
-            "uppercase",
+          ...styles.eyebrow,
 
           marginBottom:
             "7px",
@@ -3183,17 +3829,13 @@ function SectionHeading({
 
       <p
         style={{
+          ...styles.muted,
+
           maxWidth:
             "720px",
 
-          color:
-            "#64748B",
-
           fontSize:
             "15px",
-
-          lineHeight:
-            1.6,
 
           marginTop:
             "8px",
@@ -3208,6 +3850,7 @@ function SectionHeading({
     </div>
 
   );
+
 }
 
 
@@ -3221,8 +3864,11 @@ function GuidanceBlock({
   label,
   text,
 }: {
-  label: string;
-  text: string;
+  label:
+    string;
+
+  text:
+    string;
 }) {
 
   return (
@@ -3266,6 +3912,7 @@ function GuidanceBlock({
     </div>
 
   );
+
 }
 
 
@@ -3278,28 +3925,22 @@ function GuidanceBlock({
 function ResourceCard({
   resource,
 }: {
-  resource: AIResource;
+  resource:
+    AIResource;
 }) {
+
+  const safeUrl =
+    isSafeExternalUrl(
+      resource.url
+    );
+
 
   return (
 
     <div
-      style={{
-        padding:
-          "23px",
-
-        borderRadius:
-          "18px",
-
-        border:
-          "1px solid #E2E8F0",
-
-        background:
-          "#FFFFFF",
-
-        boxShadow:
-          "0 5px 15px rgba(15, 23, 42, 0.03)",
-      }}
+      style={
+        styles.card
+      }
     >
 
       <div
@@ -3328,18 +3969,17 @@ function ResourceCard({
           textTransform:
             "uppercase",
 
-          letterSpacing:
-            "0.04em",
-
           marginBottom:
             "11px",
         }}
       >
+
         {
           formatResourceType(
             resource.type
           )
         }
+
       </div>
 
 
@@ -3364,11 +4004,7 @@ function ResourceCard({
 
       <p
         style={{
-          color:
-            "#64748B",
-
-          lineHeight:
-            1.55,
+          ...styles.muted,
 
           fontSize:
             "14px",
@@ -3381,103 +4017,117 @@ function ResourceCard({
       </p>
 
 
-      {resource.whyItMayHelp && (
+      {
+        resource.whyItMayHelp && (
 
-        <div
-          style={{
-            marginBottom:
-              "14px",
+          <div
+            style={{
+              marginBottom:
+                "14px",
 
-            padding:
-              "12px 13px",
+              padding:
+                "12px 13px",
 
-            borderRadius:
-              "11px",
+              borderRadius:
+                "11px",
 
-            background:
-              "#F8FAFC",
+              background:
+                "#F8FAFC",
 
-            color:
-              "#475569",
+              color:
+                "#475569",
 
-            fontSize:
-              "13px",
+              fontSize:
+                "13px",
 
-            lineHeight:
-              1.5,
-          }}
-        >
-          <strong>
-            Why it may help:
-          </strong>{" "}
-          {
-            resource
-              .whyItMayHelp
-          }
-        </div>
+              lineHeight:
+                1.5,
+            }}
+          >
 
-      )}
+            <strong>
+              Why it may help:
+            </strong>{" "}
 
+            {
+              resource
+                .whyItMayHelp
+            }
 
-      {resource.sourceName && (
+          </div>
 
-        <div
-          style={{
-            color:
-              "#94A3B8",
-
-            fontSize:
-              "12px",
-
-            marginBottom:
-              "12px",
-          }}
-        >
-          Source:{" "}
-          {
-            resource.sourceName
-          }
-        </div>
-
-      )}
+        )
+      }
 
 
-      {resource.url && (
+      {
+        resource.sourceName && (
 
-        <a
-          href={
-            resource.url
-          }
+          <div
+            style={{
+              color:
+                "#94A3B8",
 
-          target="_blank"
+              fontSize:
+                "12px",
 
-          rel="noreferrer"
+              marginBottom:
+                "12px",
+            }}
+          >
 
-          style={{
-            display:
-              "inline-block",
+            Source:{" "}
 
-            color:
-              "#2563EB",
+            {
+              resource
+                .sourceName
+            }
 
-            fontSize:
-              "14px",
+          </div>
 
-            fontWeight:
-              700,
+        )
+      }
 
-            textDecoration:
-              "none",
-          }}
-        >
-          View Resource →
-        </a>
 
-      )}
+      {
+        safeUrl && (
+
+          <a
+            href={
+              resource.url
+            }
+
+            target="_blank"
+
+            rel="noopener noreferrer"
+
+            style={{
+              display:
+                "inline-block",
+
+              color:
+                "#2563EB",
+
+              fontSize:
+                "14px",
+
+              fontWeight:
+                700,
+
+              textDecoration:
+                "none",
+            }}
+          >
+            View Resource →
+          </a>
+
+        )
+      }
 
     </div>
 
   );
+
 }
 
 
@@ -3491,9 +4141,18 @@ function TaskCard({
   task,
   onToggle,
 }: {
-  task: Task;
-  onToggle: () => void;
+  task:
+    AITask;
+
+  onToggle:
+    () => void;
 }) {
+
+  const safeResourceLink =
+    isSafeExternalUrl(
+      task.resourceLink
+    );
+
 
   return (
 
@@ -3516,12 +4175,16 @@ function TaskCard({
 
         border:
           task.completed
+
             ? "1px solid #A7F3D0"
+
             : "1px solid #E2E8F0",
 
         background:
           task.completed
+
             ? "#F0FDF4"
+
             : "#FFFFFF",
       }}
     >
@@ -3535,7 +4198,9 @@ function TaskCard({
 
         aria-label={
           task.completed
+
             ? `Mark ${task.title} incomplete`
+
             : `Mark ${task.title} complete`
         }
 
@@ -3554,12 +4219,16 @@ function TaskCard({
 
           border:
             task.completed
+
               ? "none"
+
               : "2px solid #CBD5E1",
 
           background:
             task.completed
+
               ? "#059669"
+
               : "#FFFFFF",
 
           color:
@@ -3575,11 +4244,15 @@ function TaskCard({
             "15px",
         }}
       >
+
         {
           task.completed
+
             ? "✓"
+
             : ""
         }
+
       </button>
 
 
@@ -3613,7 +4286,9 @@ function TaskCard({
 
               color:
                 task.completed
+
                   ? "#64748B"
+
                   : "#0F172A",
 
               fontSize:
@@ -3624,7 +4299,9 @@ function TaskCard({
 
               textDecoration:
                 task.completed
+
                   ? "line-through"
+
                   : "none",
             }}
           >
@@ -3642,20 +4319,28 @@ function TaskCard({
 
               background:
                 task.priority ===
-                "High"
+                  "High"
+
                   ? "#FEF2F2"
+
                   : task.priority ===
                     "Medium"
+
                   ? "#FFFBEB"
+
                   : "#F8FAFC",
 
               color:
                 task.priority ===
-                "High"
+                  "High"
+
                   ? "#DC2626"
+
                   : task.priority ===
                     "Medium"
+
                   ? "#D97706"
+
                   : "#64748B",
 
               fontSize:
@@ -3676,17 +4361,13 @@ function TaskCard({
 
         <p
           style={{
+            ...styles.muted,
+
             marginTop:
               "6px",
 
             marginBottom:
               "6px",
-
-            color:
-              "#64748B",
-
-            lineHeight:
-              1.5,
 
             fontSize:
               "14px",
@@ -3705,55 +4386,397 @@ function TaskCard({
               "12px",
           }}
         >
+
           Estimated time:{" "}
+
           {
             task.estimatedTime
           }
+
         </span>
 
 
-        {task.resourceLink && (
+        {
+          safeResourceLink && (
 
-          <div
-            style={{
-              marginTop:
-                "8px",
-            }}
-          >
-
-            <a
-              href={
-                task.resourceLink
-              }
-
-              target="_blank"
-
-              rel="noreferrer"
-
+            <div
               style={{
-                color:
-                  "#2563EB",
-
-                fontSize:
-                  "13px",
-
-                fontWeight:
-                  700,
-
-                textDecoration:
-                  "none",
+                marginTop:
+                  "8px",
               }}
             >
-              Open Resource →
-            </a>
 
-          </div>
+              <a
+                href={
+                  task.resourceLink
+                }
 
-        )}
+                target="_blank"
+
+                rel="noopener noreferrer"
+
+                style={{
+                  color:
+                    "#2563EB",
+
+                  fontSize:
+                    "13px",
+
+                  fontWeight:
+                    700,
+
+                  textDecoration:
+                    "none",
+                }}
+              >
+                Open Resource →
+              </a>
+
+            </div>
+
+          )
+        }
 
       </div>
 
     </div>
 
   );
+
+}
+
+
+/*
+ * ============================================================
+ * TEMPLATE CARD
+ * ============================================================
+ */
+
+function TemplateCard({
+  template,
+}: {
+  template:
+    ActionTemplate;
+}) {
+
+  const [
+    copied,
+    setCopied,
+  ] =
+    useState(
+      false
+    );
+
+
+  async function copyTemplate() {
+
+    try {
+
+      await navigator.clipboard.writeText(
+        template.content
+      );
+
+
+      setCopied(
+        true
+      );
+
+
+      window.setTimeout(
+        () => {
+
+          setCopied(
+            false
+          );
+
+        },
+
+        1800
+      );
+
+    } catch {
+
+      setCopied(
+        false
+      );
+
+    }
+
+  }
+
+
+  return (
+
+    <div
+      style={{
+        ...styles.card,
+
+        display:
+          "flex",
+
+        flexDirection:
+          "column",
+
+        minHeight:
+          "220px",
+      }}
+    >
+
+      <h3
+        style={{
+          margin:
+            0,
+
+          color:
+            "#0F172A",
+
+          fontSize:
+            "18px",
+        }}
+      >
+        {template.title}
+      </h3>
+
+
+      <p
+        style={{
+          ...styles.muted,
+
+          margin:
+            "8px 0 14px",
+
+          fontSize:
+            "14px",
+        }}
+      >
+        {template.description}
+      </p>
+
+
+      <pre
+        style={{
+          whiteSpace:
+            "pre-wrap",
+
+          wordBreak:
+            "break-word",
+
+          background:
+            "#F8FAFC",
+
+          border:
+            "1px solid #E2E8F0",
+
+          borderRadius:
+            "12px",
+
+          padding:
+            "14px",
+
+          color:
+            "#475569",
+
+          fontFamily:
+            "inherit",
+
+          fontSize:
+            "13px",
+
+          lineHeight:
+            1.5,
+
+          flex:
+            1,
+        }}
+      >
+        {template.content}
+      </pre>
+
+
+      <button
+        type="button"
+
+        onClick={
+          copyTemplate
+        }
+
+        style={{
+          marginTop:
+            "12px",
+
+          padding:
+            "10px 14px",
+
+          borderRadius:
+            "9px",
+
+          border:
+            "1px solid #2563EB",
+
+          background:
+            copied
+
+              ? "#EFF6FF"
+
+              : "#FFFFFF",
+
+          color:
+            "#2563EB",
+
+          fontWeight:
+            700,
+
+          cursor:
+            "pointer",
+        }}
+      >
+
+        {
+          copied
+
+            ? "Copied ✓"
+
+            : "Copy Template"
+        }
+
+      </button>
+
+    </div>
+
+  );
+
+}
+
+
+/*
+ * ============================================================
+ * ACCOUNT LINKS
+ * ============================================================
+ */
+
+function AccountLinks({
+  message,
+}: {
+  message:
+    string;
+}) {
+
+  return (
+
+    <div
+      style={{
+        marginTop:
+          "22px",
+
+        paddingTop:
+          "20px",
+
+        borderTop:
+          "1px solid #BFDBFE",
+      }}
+    >
+
+      <div
+        style={{
+          color:
+            "#0F172A",
+
+          fontSize:
+            "15px",
+
+          fontWeight:
+            700,
+
+          marginBottom:
+            "12px",
+        }}
+      >
+        {message}
+      </div>
+
+
+      <div
+        style={{
+          display:
+            "flex",
+
+          justifyContent:
+            "center",
+
+          gap:
+            "10px",
+
+          flexWrap:
+            "wrap",
+        }}
+      >
+
+        <Link
+          href="/login"
+
+          style={{
+            padding:
+              "10px 18px",
+
+            borderRadius:
+              "9px",
+
+            background:
+              "#2563EB",
+
+            color:
+              "#FFFFFF",
+
+            fontSize:
+              "14px",
+
+            fontWeight:
+              700,
+
+            textDecoration:
+              "none",
+          }}
+        >
+          Log In
+        </Link>
+
+
+        <Link
+          href="/signup"
+
+          style={{
+            padding:
+              "10px 18px",
+
+            borderRadius:
+              "9px",
+
+            border:
+              "1px solid #2563EB",
+
+            background:
+              "#FFFFFF",
+
+            color:
+              "#2563EB",
+
+            fontSize:
+              "14px",
+
+            fontWeight:
+              700,
+
+            textDecoration:
+              "none",
+          }}
+        >
+          Create Free Account
+        </Link>
+
+      </div>
+
+    </div>
+
+  );
+
 }
