@@ -36,8 +36,8 @@ export default function Priority({
           marginRight: "auto",
         }}
       >
-        Choose the area where you'd like the most help. We'll personalize your
-        roadmap based on your answer.
+        Choose the area where you&apos;d like the most help. We&apos;ll
+        personalize your journey based on your answer.
       </p>
 
       <div
@@ -49,12 +49,17 @@ export default function Priority({
         }}
       >
         {priorityOptions.map((priority) => {
-          const selected = value === priority.id;
+          const selected =
+            value === priority.id;
 
           return (
             <button
               key={priority.id}
-              onClick={() => onChange(priority.id)}
+              type="button"
+              onClick={() =>
+                onChange(priority.id)
+              }
+              aria-pressed={selected}
               style={{
                 textAlign: "left",
                 padding: "22px",
@@ -76,7 +81,8 @@ export default function Priority({
                   marginBottom: "8px",
                 }}
               >
-                {priority.icon} {priority.title}
+                {priority.icon}{" "}
+                {priority.title}
               </div>
 
               <div

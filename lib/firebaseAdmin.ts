@@ -15,6 +15,10 @@ import {
   getFirestore,
 } from "firebase-admin/firestore";
 
+import {
+  createPrivateKey,
+} from "crypto";
+
 
 /*
  * ============================================================
@@ -23,23 +27,9 @@ import {
  *
  * Server-only Firebase Admin initialization.
  *
- * IMPORTANT:
+ * Firebase Admin bypasses normal Firestore security rules.
  *
- * This file must NEVER be imported into client components.
- *
- * Firebase Admin has privileged access and bypasses normal
- * Firestore Security Rules.
- *
- * Used for:
- *
- * - Verifying Firebase ID tokens
- * - Reading verified subscription records
- * - Protected server API routes
- * - Premium community actions
- * - Child deletion
- * - Future Stripe webhook processing
- * - Future moderation/admin operations
- *
+ * Never import this file into a client component.
  * ============================================================
  */
 
@@ -67,7 +57,7 @@ const rawPrivateKey =
 
 /*
  * ============================================================
- * VALIDATE REQUIRED CONFIGURATION
+ * REQUIRED CONFIGURATION
  * ============================================================
  */
 
@@ -84,68 +74,313 @@ if (
 
 /*
  * ============================================================
- * NORMALIZE PRIVATE KEY
- * ============================================================
- *
- * Environment-variable systems may store the private key with:
- *
- * - escaped newline characters: \n
- * - surrounding double quotes
- * - surrounding single quotes
- * - extra whitespace
- *
- * Normalize those before passing the key to Firebase Admin.
+ * PRIVATE KEY NORMALIZATION
  * ============================================================
  */
 
-const privateKey =
-  rawPrivateKey
-    .trim()
-    .replace(
-      /^["']|["']$/g,
-      ""
+function normalizePrivateKey(
+  value: string
+): string {
+  let key =
+    value.trim();
+
+
+  /*
+   * ----------------------------------------------------------
+   * HANDLE JSON-QUOTED VALUES
+   *
+   * Example:
+   *
+   * "-----BEGIN PRIVATE KEY-----\\nABC...\\n-----END..."
+   * ----------------------------------------------------------
+   */
+
+  if (
+    (
+      key.startsWith(
+        "\""
+      ) &&
+      key.endsWith(
+        "\""
+      )
+    ) ||
+    (
+      key.startsWith(
+        "'"
+      ) &&
+      key.endsWith(
+        "'"
+      )
     )
-    .replace(
+  ) {
+    if (
+      key.startsWith(
+        "\""
+      )
+    ) {
+      try {
+        const parsed =
+          JSON.parse(
+            key
+          );
+
+        if (
+          typeof parsed ===
+          "string"
+        ) {
+          key =
+            parsed;
+        }
+
+      } catch {
+        key =
+          key.slice(
+            1,
+            -1
+          );
+      }
+
+    } else {
+      key =
+        key.slice(
+          1,
+          -1
+        );
+    }
+  }
+
+
+  /*
+   * ----------------------------------------------------------
+   * HANDLE ESCAPED WINDOWS NEWLINES
+   * ----------------------------------------------------------
+   */
+
+  key =
+    key.replace(
+      /\\r\\n/g,
+      "\n"
+    );
+
+
+  /*
+   * ----------------------------------------------------------
+   * HANDLE ESCAPED NEWLINES
+   * ----------------------------------------------------------
+   */
+
+  key =
+    key.replace(
       /\\n/g,
       "\n"
+    );
+
+
+  /*
+   * ----------------------------------------------------------
+   * HANDLE ESCAPED CARRIAGE RETURNS
+   * ----------------------------------------------------------
+   */
+
+  key =
+    key.replace(
+      /\\r/g,
+      ""
+    );
+
+
+  /*
+   * ----------------------------------------------------------
+   * NORMALIZE ACTUAL WINDOWS LINE ENDINGS
+   * ----------------------------------------------------------
+   */
+
+  key =
+    key.replace(
+      /\r\n/g,
+      "\n"
+    );
+
+
+  key =
+    key.replace(
+      /\r/g,
+      "\n"
+    );
+
+
+  key =
+    key.trim();
+
+
+  /*
+   * ----------------------------------------------------------
+   * OPTIONAL BASE64-ENCODED PEM SUPPORT
+   *
+   * Some hosting systems store the entire PEM as base64.
+   *
+   * Only attempt this when the value does not already contain
+   * a PEM header.
+   * ----------------------------------------------------------
+   */
+
+  if (
+    !key.includes(
+      "-----BEGIN"
     )
-    .trim();
+  ) {
+    try {
+      const decoded =
+        Buffer
+          .from(
+            key,
+            "base64"
+          )
+          .toString(
+            "utf8"
+          )
+          .trim();
+
+
+      if (
+        decoded.includes(
+          "-----BEGIN"
+        ) &&
+        decoded.includes(
+          "PRIVATE KEY-----"
+        )
+      ) {
+        key =
+          decoded
+            .replace(
+              /\r\n/g,
+              "\n"
+            )
+            .replace(
+              /\r/g,
+              "\n"
+            )
+            .trim();
+      }
+
+    } catch {
+      /*
+       * Leave original value in place.
+       *
+       * Validation below will produce the useful error.
+       */
+    }
+  }
+
+
+  return key;
+}
 
 
 /*
  * ============================================================
- * VALIDATE PRIVATE KEY
+ * NORMALIZED PRIVATE KEY
  * ============================================================
  */
 
-if (
-  !privateKey.includes(
+const privateKey =
+  normalizePrivateKey(
+    rawPrivateKey
+  );
+
+
+/*
+ * ============================================================
+ * PEM STRUCTURE VALIDATION
+ * ============================================================
+ */
+
+const hasPkcs8Header =
+  privateKey.includes(
     "-----BEGIN PRIVATE KEY-----"
-  ) ||
-  !privateKey.includes(
+  ) &&
+  privateKey.includes(
     "-----END PRIVATE KEY-----"
-  )
+  );
+
+const hasRsaHeader =
+  privateKey.includes(
+    "-----BEGIN RSA PRIVATE KEY-----"
+  ) &&
+  privateKey.includes(
+    "-----END RSA PRIVATE KEY-----"
+  );
+
+
+if (
+  !hasPkcs8Header &&
+  !hasRsaHeader
 ) {
   throw new Error(
-    "FIREBASE_ADMIN_PRIVATE_KEY is not a valid PEM private key."
+    "FIREBASE_ADMIN_PRIVATE_KEY does not contain a valid PEM private-key header and footer."
   );
 }
 
 
 /*
  * ============================================================
- * INITIALIZE ADMIN APP
+ * CRYPTO VALIDATION
  * ============================================================
  *
- * Next.js may evaluate server modules more than once during
- * development.
+ * Validate the key before Firebase Admin receives it.
  *
- * Reuse the existing Admin app when one already exists.
+ * IMPORTANT:
+ *
+ * Never log the actual private key.
+ * ============================================================
+ */
+
+try {
+  createPrivateKey({
+    key:
+      privateKey,
+
+    format:
+      "pem",
+  });
+
+} catch (
+  error
+) {
+  console.error(
+    "Firebase Admin private key failed cryptographic validation."
+  );
+
+
+  if (
+    error instanceof Error
+  ) {
+    console.error(
+      "Private key parser:",
+      error.message
+    );
+  }
+
+
+  throw new Error(
+    "FIREBASE_ADMIN_PRIVATE_KEY is present but cannot be parsed as a valid private key. Check the environment variable formatting."
+  );
+}
+
+
+/*
+ * ============================================================
+ * INITIALIZE FIREBASE ADMIN
+ * ============================================================
+ *
+ * Next.js can evaluate server modules multiple times during
+ * development, so reuse the existing Admin app.
  * ============================================================
  */
 
 const adminApp =
-  getApps().length > 0
+  getApps().length >
+  0
     ? getApp()
     : initializeApp({
         credential:
