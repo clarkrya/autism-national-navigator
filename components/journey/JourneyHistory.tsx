@@ -14,176 +14,311 @@ import {
 } from "../../lib/journeyHistory";
 
 import {
+  getCurrentJourney,
+} from "../../lib/journeyRepository";
+
+import {
   watchAuthState,
 } from "../../lib/auth";
 
 
-export default function JourneyHistory() {
+/*
+ * ============================================================
+ * PROPS
+ * ============================================================
+ */
+
+type JourneyHistoryProps = {
+  childId:
+    string;
+
+  refreshKey?:
+    number;
+};
+
+
+/*
+ * ============================================================
+ * COMPONENT
+ * ============================================================
+ */
+
+export default function JourneyHistory({
+  childId,
+  refreshKey = 0,
+}: JourneyHistoryProps) {
 
   /*
-   * ============================================================
+   * ==========================================================
    * STATE
-   * ============================================================
+   * ==========================================================
    */
 
   const [
     history,
     setHistory,
-  ] = useState<JourneyStageRecord[]>(
-    []
-  );
+  ] =
+    useState<
+      JourneyStageRecord[]
+    >(
+      []
+    );
+
 
   const [
     loading,
     setLoading,
-  ] = useState(true);
+  ] =
+    useState(
+      true
+    );
+
 
   const [
     error,
     setError,
-  ] = useState("");
+  ] =
+    useState(
+      ""
+    );
 
 
   /*
-   * ============================================================
-   * AUTH + LOAD HISTORY
-   * ============================================================
-   *
-   * Guests do not have private journey history.
-   *
-   * Authenticated users load their own history.
+   * ==========================================================
+   * AUTH + LOAD CURRENT JOURNEY HISTORY
+   * ==========================================================
    */
 
-  useEffect(() => {
+  useEffect(
+    () => {
 
-    let active = true;
-
-
-    const unsubscribe =
-      watchAuthState(
-        async (user) => {
-
-          if (!active) {
-            return;
-          }
+      let active =
+        true;
 
 
-          /*
-           * ----------------------------------------------------
-           * GUEST
-           * ----------------------------------------------------
-           */
-
-          if (!user) {
-
-            setHistory([]);
-
-            setLoading(false);
-
-            return;
-          }
-
-
-          /*
-           * ----------------------------------------------------
-           * LOAD USER HISTORY
-           * ----------------------------------------------------
-           */
-
-          setLoading(true);
-
-          setError("");
-
-
-          try {
-
-            const journeyHistory =
-              await getJourneyHistory(
-                user.uid
-              );
-
-
-            if (!active) {
-              return;
-            }
-
-
-            setHistory(
-              journeyHistory
-            );
-
-          } catch (loadError) {
-
-            console.error(
-              "Unable to load journey history:",
-              loadError
-            );
-
-
-            if (!active) {
-              return;
-            }
-
-
-            setError(
-              "We couldn't load your journey history right now."
-            );
-
-          } finally {
-
-            if (active) {
-
-              setLoading(false);
-
-            }
-
-          }
-
-        }
+      setLoading(
+        true
       );
 
 
-    return () => {
+      setError(
+        ""
+      );
 
-      active = false;
 
-      unsubscribe();
+      setHistory(
+        []
+      );
 
-    };
 
-  }, []);
+      const unsubscribe =
+        watchAuthState(
+          async (
+            user
+          ) => {
+
+            if (
+              !active
+            ) {
+              return;
+            }
+
+
+            /*
+             * --------------------------------------------------
+             * GUEST
+             * --------------------------------------------------
+             */
+
+            if (
+              !user
+            ) {
+
+              setHistory(
+                []
+              );
+
+
+              setLoading(
+                false
+              );
+
+
+              return;
+            }
+
+
+            /*
+             * --------------------------------------------------
+             * NO CHILD
+             * --------------------------------------------------
+             */
+
+            if (
+              !childId
+            ) {
+
+              setHistory(
+                []
+              );
+
+
+              setLoading(
+                false
+              );
+
+
+              return;
+            }
+
+
+            try {
+
+              /*
+               * ------------------------------------------------
+               * CURRENT JOURNEY
+               *
+               * Journey History belongs to the selected child's
+               * CURRENT Journey only.
+               * ------------------------------------------------
+               */
+
+              const currentJourney =
+                await getCurrentJourney(
+                  user.uid,
+                  childId
+                );
+
+
+              if (
+                !active
+              ) {
+                return;
+              }
+
+
+              /*
+               * ------------------------------------------------
+               * NO CURRENT JOURNEY
+               * ------------------------------------------------
+               */
+
+              if (
+                !currentJourney
+              ) {
+
+                setHistory(
+                  []
+                );
+
+
+                return;
+              }
+
+
+              /*
+               * ------------------------------------------------
+               * LOAD THIS JOURNEY'S HISTORY ONLY
+               * ------------------------------------------------
+               */
+
+              const journeyHistory =
+                await getJourneyHistory(
+                  user.uid,
+                  childId,
+                  currentJourney
+                    .journeyId
+                );
+
+
+              if (
+                !active
+              ) {
+                return;
+              }
+
+
+              setHistory(
+                journeyHistory
+              );
+
+            } catch (
+              loadError
+            ) {
+
+              console.error(
+                "Unable to load current journey history:",
+                loadError
+              );
+
+
+              if (
+                !active
+              ) {
+                return;
+              }
+
+
+              setHistory(
+                []
+              );
+
+
+              setError(
+                "We couldn't load your journey history right now."
+              );
+
+            } finally {
+
+              if (
+                active
+              ) {
+
+                setLoading(
+                  false
+                );
+
+              }
+
+            }
+
+          }
+        );
+
+
+      return () => {
+
+        active =
+          false;
+
+
+        unsubscribe();
+
+      };
+
+    },
+
+    [
+      childId,
+      refreshKey,
+    ]
+  );
 
 
   /*
-   * ============================================================
-   * DON'T SHOW ANYTHING TO GUESTS
-   * ============================================================
-   *
-   * Journey history is private account information.
-   */
-
-  if (
-    !loading &&
-    history.length === 0 &&
-    !error
-  ) {
-
-    return null;
-
-  }
-
-
-  /*
-   * ============================================================
+   * ==========================================================
    * FORMAT DATE
-   * ============================================================
+   * ==========================================================
    */
 
   function formatDate(
-    timestamp: number
+    timestamp:
+      number
   ) {
 
-    if (!timestamp) {
+    if (
+      !timestamp
+    ) {
       return "Date unavailable";
     }
 
@@ -218,9 +353,9 @@ export default function JourneyHistory() {
 
 
   /*
-   * ============================================================
+   * ==========================================================
    * RENDER
-   * ============================================================
+   * ==========================================================
    */
 
   return (
@@ -238,9 +373,9 @@ export default function JourneyHistory() {
       }}
     >
 
-      {/* ======================================================
+      {/* =====================================================
           HEADER
-      ======================================================= */}
+      ====================================================== */}
 
       <div
         style={{
@@ -314,432 +449,524 @@ export default function JourneyHistory() {
               1.6,
           }}
         >
-          See the steps you've completed as
-          you move forward through your
-          personalized journey.
+          See the stages you&apos;ve
+          completed within this Journey.
         </p>
 
       </div>
 
 
-      {/* ======================================================
+      {/* =====================================================
           LOADING
-      ======================================================= */}
+      ====================================================== */}
 
-      {loading && (
+      {
+        loading && (
 
-        <div
-          style={{
-            padding:
-              "24px",
+          <div
+            style={{
+              padding:
+                "24px",
 
-            borderRadius:
-              "16px",
+              borderRadius:
+                "16px",
 
-            border:
-              "1px solid #E2E8F0",
+              border:
+                "1px solid #E2E8F0",
 
-            background:
-              "#F8FAFC",
+              background:
+                "#F8FAFC",
 
-            color:
-              "#64748B",
+              color:
+                "#64748B",
 
-            fontSize:
-              "14px",
+              fontSize:
+                "14px",
 
-            textAlign:
-              "center",
-          }}
-        >
-          Loading your journey history...
-        </div>
+              textAlign:
+                "center",
+            }}
+          >
+            Loading your journey history...
+          </div>
 
-      )}
+        )
+      }
 
 
-      {/* ======================================================
+      {/* =====================================================
           ERROR
-      ======================================================= */}
+      ====================================================== */}
 
-      {!loading && error && (
+      {
+        !loading &&
+        error && (
 
-        <div
-          role="alert"
+          <div
+            role="alert"
 
-          style={{
-            padding:
-              "18px",
+            style={{
+              padding:
+                "18px",
 
-            borderRadius:
-              "16px",
+              borderRadius:
+                "16px",
 
-            border:
-              "1px solid #FECACA",
+              border:
+                "1px solid #FECACA",
 
-            background:
-              "#FEF2F2",
+              background:
+                "#FEF2F2",
 
-            color:
-              "#B91C1C",
+              color:
+                "#B91C1C",
 
-            fontSize:
-              "14px",
+              fontSize:
+                "14px",
 
-            lineHeight:
-              1.5,
-          }}
-        >
-          {error}
-        </div>
+              lineHeight:
+                1.5,
+            }}
+          >
+            {error}
+          </div>
 
-      )}
+        )
+      }
 
 
-      {/* ======================================================
-          HISTORY
-      ======================================================= */}
+      {/* =====================================================
+          EMPTY CURRENT JOURNEY HISTORY
+      ====================================================== */}
 
-      {!loading &&
+      {
+        !loading &&
         !error &&
-        history.length > 0 && (
+        history.length ===
+          0 && (
 
-        <div
-          style={{
-            display:
-              "grid",
+          <div
+            style={{
+              padding:
+                "24px",
 
-            gap:
-              "14px",
-          }}
-        >
+              borderRadius:
+                "16px",
 
-          {history
-            .slice()
-            .sort(
-              (
-                a,
-                b
-              ) =>
-                b.stageNumber -
-                a.stageNumber
-            )
-            .map(
-              (
-                stage
-              ) => {
+              border:
+                "1px solid #E2E8F0",
 
-                const completedCount =
-                  stage
-                    .completedTaskIds
-                    ?.length ??
-                  stage
-                    .journey
-                    ?.tasks
-                    ?.filter(
-                      (task) =>
-                        task.completed
-                    )
-                    .length ??
-                  0;
+              background:
+                "#F8FAFC",
 
+              textAlign:
+                "center",
+            }}
+          >
 
-                return (
+            <div
+              style={{
+                color:
+                  "#334155",
 
-                  <div
-                    key={
-                      stage.stageId
-                    }
+                fontSize:
+                  "15px",
 
-                    style={{
-                      display:
-                        "flex",
+                fontWeight:
+                  700,
 
-                      alignItems:
-                        "flex-start",
-
-                      gap:
-                        "16px",
-
-                      padding:
-                        "20px",
-
-                      borderRadius:
-                        "16px",
-
-                      border:
-                        "1px solid #E2E8F0",
-
-                      background:
-                        "#FFFFFF",
-                    }}
-                  >
-
-                    {/* =====================================
-                        STAGE INDICATOR
-                    ====================================== */}
-
-                    <div
-                      style={{
-                        flexShrink:
-                          0,
-
-                        width:
-                          "42px",
-
-                        height:
-                          "42px",
-
-                        borderRadius:
-                          "50%",
-
-                        display:
-                          "flex",
-
-                        alignItems:
-                          "center",
-
-                        justifyContent:
-                          "center",
-
-                        background:
-                          "#ECFDF5",
-
-                        color:
-                          "#059669",
-
-                        fontSize:
-                          "15px",
-
-                        fontWeight:
-                          800,
-                      }}
-                    >
-                      ✓
-                    </div>
+                marginBottom:
+                  "5px",
+              }}
+            >
+              No completed stages yet.
+            </div>
 
 
-                    {/* =====================================
-                        STAGE CONTENT
-                    ====================================== */}
+            <div
+              style={{
+                color:
+                  "#64748B",
 
-                    <div
-                      style={{
-                        flex:
-                          1,
-                      }}
-                    >
+                fontSize:
+                  "14px",
+
+                lineHeight:
+                  1.5,
+              }}
+            >
+              Your history will appear
+              here as you progress through
+              this Journey.
+            </div>
+
+          </div>
+
+        )
+      }
+
+
+      {/* =====================================================
+          CURRENT JOURNEY HISTORY
+      ====================================================== */}
+
+      {
+        !loading &&
+        !error &&
+        history.length >
+          0 && (
+
+          <div
+            style={{
+              display:
+                "grid",
+
+              gap:
+                "14px",
+            }}
+          >
+
+            {
+              history
+
+                .slice()
+
+                .sort(
+                  (
+                    a,
+                    b
+                  ) =>
+                    b.stageNumber -
+                    a.stageNumber
+                )
+
+                .map(
+                  (
+                    stage
+                  ) => {
+
+                    const completedCount =
+                      stage
+                        .completedTaskIds
+                        ?.length ??
+                      stage
+                        .journey
+                        ?.tasks
+                        ?.filter(
+                          (
+                            task
+                          ) =>
+                            task.completed
+                        )
+                        .length ??
+                      0;
+
+
+                    return (
 
                       <div
+                        key={
+                          stage.stageId
+                        }
+
                         style={{
                           display:
                             "flex",
 
                           alignItems:
-                            "center",
-
-                          justifyContent:
-                            "space-between",
+                            "flex-start",
 
                           gap:
-                            "12px",
+                            "16px",
 
-                          flexWrap:
-                            "wrap",
+                          padding:
+                            "20px",
+
+                          borderRadius:
+                            "16px",
+
+                          border:
+                            "1px solid #E2E8F0",
+
+                          background:
+                            "#FFFFFF",
                         }}
                       >
 
-                        <h3
-                          style={{
-                            margin:
-                              0,
-
-                            color:
-                              "#0F172A",
-
-                            fontSize:
-                              "18px",
-
-                            fontWeight:
-                              800,
-                          }}
-                        >
-                          Journey Stage{" "}
-                          {
-                            stage.stageNumber
-                          }
-                        </h3>
-
-
-                        <span
-                          style={{
-                            padding:
-                              "5px 9px",
-
-                            borderRadius:
-                              "999px",
-
-                            background:
-                              "#ECFDF5",
-
-                            color:
-                              "#047857",
-
-                            fontSize:
-                              "10px",
-
-                            fontWeight:
-                              800,
-
-                            textTransform:
-                              "uppercase",
-
-                            letterSpacing:
-                              "0.04em",
-                          }}
-                        >
-                          Completed
-                        </span>
-
-                      </div>
-
-
-                      {/* ==================================
-                          FOCUS
-                      =================================== */}
-
-                      {stage.journey
-                        ?.currentFocus
-                        ?.title && (
+                        {/* ================================
+                            STAGE INDICATOR
+                        ================================= */}
 
                         <div
                           style={{
-                            marginTop:
-                              "10px",
+                            flexShrink:
+                              0,
+
+                            width:
+                              "42px",
+
+                            height:
+                              "42px",
+
+                            borderRadius:
+                              "50%",
+
+                            display:
+                              "flex",
+
+                            alignItems:
+                              "center",
+
+                            justifyContent:
+                              "center",
+
+                            background:
+                              "#EFF6FF",
+
+                            color:
+                              "#2563EB",
+
+                            fontSize:
+                              "14px",
+
+                            fontWeight:
+                              800,
+                          }}
+                        >
+                          {
+                            stage
+                              .stageNumber
+                          }
+                        </div>
+
+
+                        {/* ================================
+                            STAGE CONTENT
+                        ================================= */}
+
+                        <div
+                          style={{
+                            flex:
+                              1,
                           }}
                         >
 
                           <div
                             style={{
+                              display:
+                                "flex",
+
+                              alignItems:
+                                "center",
+
+                              justifyContent:
+                                "space-between",
+
+                              gap:
+                                "12px",
+
+                              flexWrap:
+                                "wrap",
+                            }}
+                          >
+
+                            <h3
+                              style={{
+                                margin:
+                                  0,
+
+                                color:
+                                  "#0F172A",
+
+                                fontSize:
+                                  "18px",
+
+                                fontWeight:
+                                  800,
+                              }}
+                            >
+                              Journey Stage{" "}
+                              {
+                                stage
+                                  .stageNumber
+                              }
+                            </h3>
+
+
+                            <span
+                              style={{
+                                padding:
+                                  "5px 9px",
+
+                                borderRadius:
+                                  "999px",
+
+                                background:
+                                  "#ECFDF5",
+
+                                color:
+                                  "#047857",
+
+                                fontSize:
+                                  "10px",
+
+                                fontWeight:
+                                  800,
+
+                                textTransform:
+                                  "uppercase",
+
+                                letterSpacing:
+                                  "0.04em",
+                              }}
+                            >
+                              Completed
+                            </span>
+
+                          </div>
+
+
+                          {/* ==============================
+                              FOCUS
+                          =============================== */}
+
+                          {
+                            stage
+                              .journey
+                              ?.currentFocus
+                              ?.title && (
+
+                              <div
+                                style={{
+                                  marginTop:
+                                    "10px",
+                                }}
+                              >
+
+                                <div
+                                  style={{
+                                    color:
+                                      "#64748B",
+
+                                    fontSize:
+                                      "12px",
+
+                                    fontWeight:
+                                      700,
+
+                                    textTransform:
+                                      "uppercase",
+
+                                    letterSpacing:
+                                      "0.04em",
+
+                                    marginBottom:
+                                      "4px",
+                                  }}
+                                >
+                                  Focus
+                                </div>
+
+
+                                <div
+                                  style={{
+                                    color:
+                                      "#334155",
+
+                                    fontSize:
+                                      "15px",
+
+                                    fontWeight:
+                                      700,
+
+                                    lineHeight:
+                                      1.4,
+                                  }}
+                                >
+                                  {
+                                    stage
+                                      .journey
+                                      .currentFocus
+                                      .title
+                                  }
+                                </div>
+
+                              </div>
+
+                            )
+                          }
+
+
+                          {/* ==============================
+                              COMPLETED TASKS
+                          =============================== */}
+
+                          <div
+                            style={{
+                              display:
+                                "flex",
+
+                              alignItems:
+                                "center",
+
+                              gap:
+                                "14px",
+
+                              flexWrap:
+                                "wrap",
+
+                              marginTop:
+                                "12px",
+
                               color:
                                 "#64748B",
 
                               fontSize:
-                                "12px",
-
-                              fontWeight:
-                                700,
-
-                              textTransform:
-                                "uppercase",
-
-                              letterSpacing:
-                                "0.04em",
-
-                              marginBottom:
-                                "4px",
+                                "13px",
                             }}
                           >
-                            Focus
-                          </div>
+
+                            <span>
+                              {
+                                completedCount
+                              }{" "}
+                              task
+                              {
+                                completedCount ===
+                                1
+                                  ? ""
+                                  : "s"
+                              }{" "}
+                              completed
+                            </span>
 
 
-                          <div
-                            style={{
-                              color:
-                                "#334155",
+                            <span>
+                              Completed{" "}
+                              {
+                                formatDate(
+                                  stage
+                                    .completedAt
+                                )
+                              }
+                            </span>
 
-                              fontSize:
-                                "15px",
-
-                              fontWeight:
-                                700,
-
-                              lineHeight:
-                                1.4,
-                            }}
-                          >
-                            {
-                              stage
-                                .journey
-                                .currentFocus
-                                .title
-                            }
                           </div>
 
                         </div>
 
-                      )}
-
-
-                      {/* ==================================
-                          COMPLETED TASKS
-                      =================================== */}
-
-                      <div
-                        style={{
-                          display:
-                            "flex",
-
-                          alignItems:
-                            "center",
-
-                          gap:
-                            "14px",
-
-                          flexWrap:
-                            "wrap",
-
-                          marginTop:
-                            "12px",
-
-                          color:
-                            "#64748B",
-
-                          fontSize:
-                            "13px",
-                        }}
-                      >
-
-                        <span>
-                          ✓{" "}
-                          {
-                            completedCount
-                          }{" "}
-                          task
-                          {
-                            completedCount ===
-                            1
-                              ? ""
-                              : "s"
-                          }{" "}
-                          completed
-                        </span>
-
-
-                        <span>
-                          Completed{" "}
-                          {
-                            formatDate(
-                              stage.completedAt
-                            )
-                          }
-                        </span>
-
                       </div>
 
-                    </div>
+                    );
 
-                  </div>
+                  }
+                )
+            }
 
-                );
+          </div>
 
-              }
-            )}
-
-        </div>
-
-      )}
+        )
+      }
 
     </section>
 

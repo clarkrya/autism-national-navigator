@@ -39,6 +39,7 @@ import Welcome from "./Welcome";
 import GeneratingJourney from "./GeneratingJourney";
 import JourneyDashboard from "./JourneyDashboard";
 import JourneyHistory from "./JourneyHistory";
+import PastJourneys from "./PastJourneys";
 
 import JourneyQuestionnaire from "../journey-builder/JourneyQuestionnaire";
 import AddingChildBanner from "../journey-builder/AddingChildBanner";
@@ -285,6 +286,20 @@ export default function JourneyBuilder() {
     setSelectedChildId,
   ] = useState(
     ""
+  );
+
+
+  /*
+   * ==========================================================
+   * JOURNEY HISTORY REFRESH
+   * ==========================================================
+   */
+
+  const [
+    journeyHistoryRefreshKey,
+    setJourneyHistoryRefreshKey,
+  ] = useState(
+    0
   );
 
 
@@ -1281,6 +1296,20 @@ export default function JourneyBuilder() {
 
       setRemoveChildError(
         null
+      );
+
+
+      /*
+       * --------------------------------------------------------
+       * REFRESH CURRENT JOURNEY HISTORY
+       * --------------------------------------------------------
+       */
+
+      setJourneyHistoryRefreshKey(
+        (
+          current
+        ) =>
+          current + 1
       );
 
     } catch (
@@ -2426,6 +2455,22 @@ export default function JourneyBuilder() {
         ==================================================== */}
 
         <JourneyHistory
+          childId={
+            familyProfile
+              .childId
+          }
+
+          refreshKey={
+            journeyHistoryRefreshKey
+          }
+        />
+
+
+        {/* ===================================================
+            PAST JOURNEYS
+        ==================================================== */}
+
+        <PastJourneys
           childId={
             familyProfile
               .childId
