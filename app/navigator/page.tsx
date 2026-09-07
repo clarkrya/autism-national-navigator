@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -19,64 +20,25 @@ import {
   useNavigatorJourneyContext,
 } from "../../lib/useNavigatorJourneyContext";
 
+import {
+  clearNavigatorConversation,
+  getNavigatorMessages,
+  saveNavigatorMessage,
+} from "../../lib/navigatorConversationRepository";
 
-/*
- * ============================================================
- * ASK YOUR NAVIGATOR
- * ============================================================
- *
- * Premium / Premium+ AI Navigator experience.
- *
- * CURRENT PHASE:
- *
- * - Authentication gate
- * - Premium entitlement gate
- * - Navigator interface
- * - Suggested questions
- * - Conversation shell
- * - Saved child context
- * - Current Journey context
- * - Current Journey stage
- * - Protected Navigator API
- * - Real AI responses
- * - Safety guidance
- * - Premium+ Human Navigator position
- *
- * NEXT PHASE:
- *
- * - Persist conversation history
- * - Add conversation reset / new conversation controls
- * - Expand safety testing
- * - Mobile / responsive QA
- *
- * ============================================================
- */
-
-
-/*
- * ============================================================
- * TYPES
- * ============================================================
- */
 
 type NavigatorMessage = {
   id:
     string;
 
   role:
-    | "user"
-    | "navigator";
+    "user" |
+    "navigator";
 
   text:
     string;
 };
 
-
-/*
- * ============================================================
- * SUGGESTED QUESTIONS
- * ============================================================
- */
 
 const SUGGESTED_QUESTIONS = [
   "What should I focus on next in our autism journey?",
@@ -85,12 +47,6 @@ const SUGGESTED_QUESTIONS = [
   "Can you help me understand the resources that may fit our needs?",
 ];
 
-
-/*
- * ============================================================
- * HELPERS
- * ============================================================
- */
 
 function formatDisplayValue(
   value:
@@ -119,19 +75,7 @@ function formatDisplayValue(
 }
 
 
-/*
- * ============================================================
- * COMPONENT
- * ============================================================
- */
-
 export default function NavigatorPage() {
-
-  /*
-   * ==========================================================
-   * ENTITLEMENTS
-   * ==========================================================
-   */
 
   const {
     loading:
@@ -150,12 +94,6 @@ export default function NavigatorPage() {
   } =
     useAccountEntitlements();
 
-
-  /*
-   * ==========================================================
-   * JOURNEY CONTEXT
-   * ==========================================================
-   */
 
   const {
     children,
@@ -176,12 +114,6 @@ export default function NavigatorPage() {
   } =
     useNavigatorJourneyContext();
 
-
-  /*
-   * ==========================================================
-   * NAVIGATOR STATE
-   * ==========================================================
-   */
 
   const [
     messages,
@@ -221,11 +153,23 @@ export default function NavigatorPage() {
     );
 
 
-  /*
-   * ==========================================================
-   * ACCESS
-   * ==========================================================
-   */
+  const [
+    conversationLoading,
+    setConversationLoading,
+  ] =
+    useState(
+      false
+    );
+
+
+  const [
+    clearingConversation,
+    setClearingConversation,
+  ] =
+    useState(
+      false
+    );
+
 
   const hasNavigatorAccess =
     useMemo(
@@ -238,12 +182,6 @@ export default function NavigatorPage() {
       ]
     );
 
-
-  /*
-   * ==========================================================
-   * DERIVED JOURNEY CONTEXT
-   * ==========================================================
-   */
 
   const childName =
     selectedChild
@@ -311,6 +249,286 @@ export default function NavigatorPage() {
 
   /*
    * ==========================================================
+   * LOAD SAVED CONVERSATION
+   * ==========================================================
+   */
+
+  useEffect(
+    () => {
+
+      let cancelled =
+        false;
+
+
+      async function loadSavedConversation() {
+
+        if (
+          !isAuthenticated ||
+          !hasNavigatorAccess ||
+          !selectedChildId
+        ) {
+
+          setMessages(
+            []
+          );
+
+
+          setConversationLoading(
+            false
+          );
+
+          return;
+        }
+
+
+        const currentUser =
+          auth.currentUser;
+
+
+        if (
+          !currentUser
+        ) {
+
+          setMessages(
+            []
+          );
+
+
+          setConversationLoading(
+            false
+          );
+
+          return;
+        }
+
+
+        setConversationLoading(
+          true
+        );
+
+
+        setMessages(
+          []
+        );
+
+
+        setNotice(
+          ""
+        );
+
+
+        try {
+
+          const savedMessages =
+            await getNavigatorMessages(
+              currentUser.uid,
+              selectedChildId
+            );
+
+
+          if (
+            cancelled
+          ) {
+            return;
+          }
+
+
+          setMessages(
+            savedMessages.map(
+              (
+                message
+              ) => ({
+                id:
+                  message.id,
+
+                role:
+                  message.role,
+
+                text:
+                  message.text,
+              })
+            )
+          );
+
+        } catch (
+          error
+        ) {
+
+          if (
+            cancelled
+          ) {
+            return;
+          }
+
+
+          console.error(
+            "Unable to load saved Navigator conversation:",
+            error
+          );
+
+
+          setMessages(
+            []
+          );
+
+
+          setNotice(
+            "We couldn't load the saved Navigator conversation right now. Please try again."
+          );
+
+        } finally {
+
+          if (
+            !cancelled
+          ) {
+
+            setConversationLoading(
+              false
+            );
+
+          }
+
+        }
+      }
+
+
+      void loadSavedConversation();
+
+
+      return () => {
+
+        cancelled =
+          true;
+
+      };
+
+    },
+    [
+      hasNavigatorAccess,
+      isAuthenticated,
+      selectedChildId,
+    ]
+  );
+
+
+  /*
+   * ==========================================================
+   * NEW CONVERSATION
+   * ==========================================================
+   */
+
+  async function startNewConversation() {
+
+    if (
+      submitting ||
+      conversationLoading ||
+      clearingConversation
+    ) {
+      return;
+    }
+
+
+    if (
+      !selectedChildId
+    ) {
+
+      setNotice(
+        "Select a child before starting a new conversation."
+      );
+
+      return;
+    }
+
+
+    const currentUser =
+      auth.currentUser;
+
+
+    if (
+      !currentUser
+    ) {
+
+      setNotice(
+        "Your login session has expired. Please log in again."
+      );
+
+      return;
+    }
+
+
+    const confirmed =
+      window.confirm(
+        `Start a new Navigator conversation for ${childName}?\n\nThis will permanently delete the current Navigator conversation for this child. This will not affect their Journey, Journey History, Past Journeys, or other children.`
+      );
+
+
+    if (
+      !confirmed
+    ) {
+      return;
+    }
+
+
+    setClearingConversation(
+      true
+    );
+
+
+    setNotice(
+      ""
+    );
+
+
+    try {
+
+      await clearNavigatorConversation(
+        currentUser.uid,
+        selectedChildId
+      );
+
+
+      setMessages(
+        []
+      );
+
+
+      setQuestion(
+        ""
+      );
+
+
+      setNotice(
+        "A new Navigator conversation is ready."
+      );
+
+    } catch (
+      error
+    ) {
+
+      console.error(
+        "Unable to start a new Navigator conversation:",
+        error
+      );
+
+
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "We couldn't start a new conversation right now. Please try again."
+      );
+
+    } finally {
+
+      setClearingConversation(
+        false
+      );
+
+    }
+  }
+
+
+  /*
+   * ==========================================================
    * SUBMIT QUESTION
    * ==========================================================
    */
@@ -321,7 +539,9 @@ export default function NavigatorPage() {
   ) {
 
     if (
-      submitting
+      submitting ||
+      conversationLoading ||
+      clearingConversation
     ) {
       return;
     }
@@ -424,22 +644,23 @@ export default function NavigatorPage() {
 
     try {
 
-      /*
-       * --------------------------------------------------------
-       * FIREBASE TOKEN
-       * --------------------------------------------------------
-       */
+      if (
+        selectedChildId
+      ) {
+
+        await saveNavigatorMessage(
+          currentUser.uid,
+          selectedChildId,
+          userMessage
+        );
+
+      }
+
 
       const idToken =
         await currentUser
           .getIdToken();
 
-
-      /*
-       * --------------------------------------------------------
-       * PROTECTED NAVIGATOR REQUEST
-       * --------------------------------------------------------
-       */
 
       const response =
         await fetch(
@@ -481,12 +702,6 @@ export default function NavigatorPage() {
           }
         );
 
-
-      /*
-       * --------------------------------------------------------
-       * SAFE RESPONSE PARSING
-       * --------------------------------------------------------
-       */
 
       const responseText =
         await response.text();
@@ -538,12 +753,6 @@ export default function NavigatorPage() {
       }
 
 
-      /*
-       * --------------------------------------------------------
-       * AUTH EXPIRED
-       * --------------------------------------------------------
-       */
-
       if (
         response.status ===
         401
@@ -557,12 +766,6 @@ export default function NavigatorPage() {
         return;
       }
 
-
-      /*
-       * --------------------------------------------------------
-       * PREMIUM REQUIRED
-       * --------------------------------------------------------
-       */
 
       if (
         response.status ===
@@ -578,12 +781,6 @@ export default function NavigatorPage() {
       }
 
 
-      /*
-       * --------------------------------------------------------
-       * OTHER API ERROR
-       * --------------------------------------------------------
-       */
-
       if (
         !response.ok
       ) {
@@ -595,12 +792,6 @@ export default function NavigatorPage() {
 
       }
 
-
-      /*
-       * --------------------------------------------------------
-       * ANSWER VALIDATION
-       * --------------------------------------------------------
-       */
 
       const answer =
         typeof data?.answer ===
@@ -622,12 +813,6 @@ export default function NavigatorPage() {
       }
 
 
-      /*
-       * --------------------------------------------------------
-       * ADD NAVIGATOR RESPONSE
-       * --------------------------------------------------------
-       */
-
       const navigatorMessage:
         NavigatorMessage = {
 
@@ -640,6 +825,19 @@ export default function NavigatorPage() {
         text:
           answer,
       };
+
+
+      if (
+        selectedChildId
+      ) {
+
+        await saveNavigatorMessage(
+          currentUser.uid,
+          selectedChildId,
+          navigatorMessage
+        );
+
+      }
 
 
       setMessages(
@@ -1594,7 +1792,9 @@ export default function NavigatorPage() {
 
                       disabled={
                         journeyContextLoading ||
-                        submitting
+                        submitting ||
+                        conversationLoading ||
+                        clearingConversation
                       }
 
                       style={{
@@ -1743,7 +1943,7 @@ export default function NavigatorPage() {
             !journeyContextLoading &&
             !journeyContextError &&
             children.length ===
-              0
+            0
               ? (
 
                 <div
@@ -2196,6 +2396,128 @@ export default function NavigatorPage() {
           >
 
             {
+              !conversationLoading &&
+              messages.length >
+              0
+                ? (
+
+                  <div
+                    style={{
+                      minHeight:
+                        "56px",
+
+                      display:
+                        "flex",
+
+                      alignItems:
+                        "center",
+
+                      justifyContent:
+                        "space-between",
+
+                      gap:
+                        "12px",
+
+                      flexWrap:
+                        "wrap",
+
+                      padding:
+                        "10px 16px",
+
+                      borderBottom:
+                        "1px solid #E2E8F0",
+
+                      background:
+                        "#FFFFFF",
+                    }}
+                  >
+
+                    <div
+                      style={{
+                        color:
+                          "#64748B",
+
+                        fontSize:
+                          "12px",
+
+                        fontWeight:
+                          750,
+                      }}
+                    >
+                      Conversation with Navigator
+                    </div>
+
+
+                    <button
+                      type="button"
+
+                      onClick={
+                        () =>
+                          void startNewConversation()
+                      }
+
+                      disabled={
+                        submitting ||
+                        conversationLoading ||
+                        clearingConversation
+                      }
+
+                      style={{
+                        minHeight:
+                          "36px",
+
+                        padding:
+                          "0 13px",
+
+                        border:
+                          "1px solid #CBD5E1",
+
+                        borderRadius:
+                          "9px",
+
+                        background:
+                          "#FFFFFF",
+
+                        color:
+                          "#475569",
+
+                        fontSize:
+                          "12px",
+
+                        fontWeight:
+                          800,
+
+                        cursor:
+                          submitting ||
+                          conversationLoading ||
+                          clearingConversation
+                            ? "not-allowed"
+                            : "pointer",
+
+                        opacity:
+                          submitting ||
+                          conversationLoading ||
+                          clearingConversation
+                            ? 0.6
+                            : 1,
+                      }}
+                    >
+                      {
+                        clearingConversation
+                          ? "Starting..."
+                          : "New Conversation"
+                      }
+                    </button>
+
+                  </div>
+
+                )
+                : null
+            }
+
+
+            {
+              !conversationLoading &&
               messages.length ===
               0
                 ? (
@@ -2280,7 +2602,9 @@ export default function NavigatorPage() {
                               }
 
                               disabled={
-                                submitting
+                                submitting ||
+                                conversationLoading ||
+                                clearingConversation
                               }
 
                               style={{
@@ -2315,12 +2639,16 @@ export default function NavigatorPage() {
                                   1.45,
 
                                 cursor:
-                                  submitting
+                                  submitting ||
+                                  conversationLoading ||
+                                  clearingConversation
                                     ? "not-allowed"
                                     : "pointer",
 
                                 opacity:
-                                  submitting
+                                  submitting ||
+                                  conversationLoading ||
+                                  clearingConversation
                                     ? 0.65
                                     : 1,
                               }}
@@ -2334,6 +2662,45 @@ export default function NavigatorPage() {
 
                     </div>
 
+                  </div>
+
+                )
+                : null
+            }
+
+
+            {
+              conversationLoading
+                ? (
+
+                  <div
+                    style={{
+                      padding:
+                        "24px",
+
+                      minHeight:
+                        "180px",
+
+                      display:
+                        "flex",
+
+                      alignItems:
+                        "center",
+
+                      justifyContent:
+                        "center",
+
+                      color:
+                        "#64748B",
+
+                      fontSize:
+                        "14px",
+
+                      fontStyle:
+                        "italic",
+                    }}
+                  >
+                    Loading saved conversation...
                   </div>
 
                 )
@@ -2593,7 +2960,9 @@ export default function NavigatorPage() {
                 }
 
                 disabled={
-                  submitting
+                  submitting ||
+                  conversationLoading ||
+                  clearingConversation
                 }
 
                 placeholder={
@@ -2628,7 +2997,9 @@ export default function NavigatorPage() {
                     "#0F172A",
 
                   background:
-                    submitting
+                    submitting ||
+                    conversationLoading ||
+                    clearingConversation
                       ? "#F8FAFC"
                       : "#FFFFFF",
 
@@ -2688,7 +3059,9 @@ export default function NavigatorPage() {
                   }
 
                   disabled={
-                    submitting
+                    submitting ||
+                    conversationLoading ||
+                    clearingConversation
                   }
 
                   style={{
@@ -2717,20 +3090,28 @@ export default function NavigatorPage() {
                       850,
 
                     cursor:
-                      submitting
+                      submitting ||
+                      conversationLoading ||
+                      clearingConversation
                         ? "not-allowed"
                         : "pointer",
 
                     opacity:
-                      submitting
+                      submitting ||
+                      conversationLoading ||
+                      clearingConversation
                         ? 0.7
                         : 1,
                   }}
                 >
                   {
-                    submitting
-                      ? "Sending..."
-                      : "Ask Navigator"
+                    clearingConversation
+                      ? "Starting..."
+                      : conversationLoading
+                        ? "Loading..."
+                        : submitting
+                          ? "Sending..."
+                          : "Ask Navigator"
                   }
                 </button>
 
@@ -2753,10 +3134,16 @@ export default function NavigatorPage() {
                           "10px",
 
                         background:
-                          "#FFF7ED",
+                          notice ===
+                          "A new Navigator conversation is ready."
+                            ? "#F0FDF4"
+                            : "#FFF7ED",
 
                         color:
-                          "#9A3412",
+                          notice ===
+                          "A new Navigator conversation is ready."
+                            ? "#166534"
+                            : "#9A3412",
 
                         fontSize:
                           "13px",
