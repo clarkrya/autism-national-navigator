@@ -34,9 +34,11 @@ import type {
  *
  * Firestore:
  *
- * community/
- *   posts/{postId}
- *   replies/{replyId}
+ * communityPosts/{postId}
+ *
+ * communityReplies/{replyId}
+ *
+ * communityReactions/{reactionId}
  *
  * users/
  *   {userId}/
@@ -56,6 +58,7 @@ import type {
  *
  * Free:
  *   - Read published Community content
+ *   - Read reaction counts
  *
  * Premium:
  *   - Read + participate
@@ -67,8 +70,83 @@ import type {
  *
  * Premium controls participation rather than visibility of
  * ordinary published Community conversations.
+ *
+ * FIREBASE ARCHITECTURE
+ *
+ * Reads:
+ *   Firebase client Firestore SDK + Firestore Security Rules.
+ *
+ * Writes:
+ *   Protected Next.js API routes using Firebase ID token
+ *   authentication and Firestore REST.
+ *
+ * Firebase Admin is NOT used by Community request-time APIs.
  * ============================================================
  */
+
+
+/*
+ * ============================================================
+ * REACTION TYPES
+ * ============================================================
+ */
+
+export type CommunityReactionTargetType =
+  | "post"
+  | "reply";
+
+
+export type CommunityReactionType =
+  "helpful";
+
+
+export interface CommunityReaction {
+
+  id: string;
+
+  userId: string;
+
+  targetType:
+    CommunityReactionTargetType;
+
+  targetId: string;
+
+  type:
+    CommunityReactionType;
+
+  createdAt: number;
+
+  updatedAt: number;
+
+}
+
+
+export interface CommunityReactionSummary {
+
+  count: number;
+
+  currentUserReacted:
+    boolean;
+
+}
+
+
+/*
+ * ============================================================
+ * COLLECTION NAMES
+ * ============================================================
+ */
+
+const COMMUNITY_POSTS_COLLECTION =
+  "communityPosts";
+
+
+const COMMUNITY_REPLIES_COLLECTION =
+  "communityReplies";
+
+
+const COMMUNITY_REACTIONS_COLLECTION =
+  "communityReactions";
 
 
 /*
@@ -78,20 +156,62 @@ import type {
  */
 
 function getPostsCollection() {
+
   return collection(
     db,
-    "community",
-    "posts"
+    COMMUNITY_POSTS_COLLECTION
   );
+
 }
 
 
 function getRepliesCollection() {
+
   return collection(
     db,
-    "community",
-    "replies"
+    COMMUNITY_REPLIES_COLLECTION
   );
+
+}
+
+
+function getReactionsCollection() {
+
+  return collection(
+    db,
+    COMMUNITY_REACTIONS_COLLECTION
+  );
+
+}
+
+
+/*
+ * ============================================================
+ * POST REFERENCE
+ * ============================================================
+ */
+
+function getPostRef(
+  postId: string
+) {
+
+  if (
+    !postId
+  ) {
+
+    throw new Error(
+      "A post ID is required."
+    );
+
+  }
+
+
+  return doc(
+    db,
+    COMMUNITY_POSTS_COLLECTION,
+    postId
+  );
+
 }
 
 
@@ -104,10 +224,15 @@ function getRepliesCollection() {
 function getCommunityProfileRef(
   userId: string
 ) {
-  if (!userId) {
+
+  if (
+    !userId
+  ) {
+
     throw new Error(
       "A user ID is required."
     );
+
   }
 
 
@@ -118,6 +243,7 @@ function getCommunityProfileRef(
     "communityProfile",
     "current"
   );
+
 }
 
 
@@ -130,6 +256,7 @@ function getCommunityProfileRef(
 function isCommunityCategory(
   value: unknown
 ): value is CommunityCategory {
+
   return (
     value === "general" ||
     value === "newly_diagnosed" ||
@@ -145,51 +272,358 @@ function isCommunityCategory(
     value === "questions" ||
     value === "other"
   );
+
 }
 
 
 function normalizeCommunityCategory(
   value: unknown
 ): CommunityCategory {
+
   return isCommunityCategory(
     value
   )
     ? value
     : "general";
+
 }
 
 
 function normalizeContentStatus(
   value: unknown
 ): CommunityContentStatus {
+
   if (
     value === "published" ||
     value === "hidden" ||
     value === "removed" ||
     value === "pending_review"
   ) {
+
     return value;
+
   }
 
 
   return "hidden";
+
 }
 
 
 function normalizeModerationStatus(
   value: unknown
 ): CommunityModerationStatus {
+
   if (
     value === "not_reviewed" ||
     value === "reviewed" ||
     value === "flagged" ||
     value === "removed"
   ) {
+
     return value;
+
   }
 
 
   return "not_reviewed";
+
+}
+
+
+function normalizeReactionTargetType(
+  value: unknown
+): CommunityReactionTargetType | null {
+
+  if (
+    value === "post" ||
+    value === "reply"
+  ) {
+
+    return value;
+
+  }
+
+
+  return null;
+
+}
+
+
+/*
+ * ============================================================
+ * NORMALIZE POST
+ * ============================================================
+ */
+
+function normalizeCommunityPost(
+  postId: string,
+  data: Record<string, any>
+): CommunityPost {
+
+  return {
+
+    id:
+      postId,
+
+    authorId:
+      typeof data.authorId ===
+      "string"
+        ? data.authorId
+        : "",
+
+    authorDisplayName:
+      typeof data.authorDisplayName ===
+      "string"
+        ? data.authorDisplayName
+        : "Community Member",
+
+    title:
+      typeof data.title ===
+      "string"
+        ? data.title
+        : "",
+
+    body:
+      typeof data.body ===
+      "string"
+        ? data.body
+        : "",
+
+    category:
+      normalizeCommunityCategory(
+        data.category
+      ),
+
+    isAnonymous:
+      data.isAnonymous ===
+      true,
+
+    status:
+      normalizeContentStatus(
+        data.status
+      ),
+
+    moderationStatus:
+      normalizeModerationStatus(
+        data.moderationStatus
+      ),
+
+    replyCount:
+      typeof data.replyCount ===
+      "number"
+        ? data.replyCount
+        : 0,
+
+    reactionCount:
+      typeof data.reactionCount ===
+      "number"
+        ? data.reactionCount
+        : 0,
+
+    reportCount:
+      typeof data.reportCount ===
+      "number"
+        ? data.reportCount
+        : 0,
+
+    isFeatured:
+      data.isFeatured ===
+      true,
+
+    isNavigatorSupported:
+      data.isNavigatorSupported ===
+      true,
+
+    createdAt:
+      typeof data.createdAt ===
+      "number"
+        ? data.createdAt
+        : 0,
+
+    updatedAt:
+      typeof data.updatedAt ===
+      "number"
+        ? data.updatedAt
+        : 0,
+
+  };
+
+}
+
+
+/*
+ * ============================================================
+ * NORMALIZE REPLY
+ * ============================================================
+ */
+
+function normalizeCommunityReply(
+  replyId: string,
+  postId: string,
+  data: Record<string, any>
+): CommunityReply {
+
+  return {
+
+    id:
+      replyId,
+
+    postId:
+      typeof data.postId ===
+      "string"
+        ? data.postId
+        : postId,
+
+    authorId:
+      typeof data.authorId ===
+      "string"
+        ? data.authorId
+        : "",
+
+    authorDisplayName:
+      typeof data.authorDisplayName ===
+      "string"
+        ? data.authorDisplayName
+        : "Community Member",
+
+    body:
+      typeof data.body ===
+      "string"
+        ? data.body
+        : "",
+
+    isAnonymous:
+      data.isAnonymous ===
+      true,
+
+    status:
+      normalizeContentStatus(
+        data.status
+      ),
+
+    moderationStatus:
+      normalizeModerationStatus(
+        data.moderationStatus
+      ),
+
+    reactionCount:
+      typeof data.reactionCount ===
+      "number"
+        ? data.reactionCount
+        : 0,
+
+    reportCount:
+      typeof data.reportCount ===
+      "number"
+        ? data.reportCount
+        : 0,
+
+    createdAt:
+      typeof data.createdAt ===
+      "number"
+        ? data.createdAt
+        : 0,
+
+    updatedAt:
+      typeof data.updatedAt ===
+      "number"
+        ? data.updatedAt
+        : 0,
+
+  };
+
+}
+
+
+/*
+ * ============================================================
+ * NORMALIZE REACTION
+ * ============================================================
+ */
+
+function normalizeCommunityReaction(
+  reactionId: string,
+  data: Record<string, any>
+): CommunityReaction | null {
+
+  const targetType =
+    normalizeReactionTargetType(
+      data.targetType
+    );
+
+
+  if (
+    !targetType
+  ) {
+
+    return null;
+
+  }
+
+
+  if (
+    typeof data.userId !==
+      "string" ||
+    !data.userId
+  ) {
+
+    return null;
+
+  }
+
+
+  if (
+    typeof data.targetId !==
+      "string" ||
+    !data.targetId
+  ) {
+
+    return null;
+
+  }
+
+
+  if (
+    data.type !==
+    "helpful"
+  ) {
+
+    return null;
+
+  }
+
+
+  return {
+
+    id:
+      reactionId,
+
+    userId:
+      data.userId,
+
+    targetType,
+
+    targetId:
+      data.targetId,
+
+    type:
+      "helpful",
+
+    createdAt:
+      typeof data.createdAt ===
+      "number"
+        ? data.createdAt
+        : 0,
+
+    updatedAt:
+      typeof data.updatedAt ===
+      "number"
+        ? data.updatedAt
+        : 0,
+
+  };
+
 }
 
 
@@ -202,6 +636,7 @@ function normalizeModerationStatus(
 export async function getCommunityProfile(
   userId: string
 ): Promise<CommunityProfile | null> {
+
   const profileRef =
     getCommunityProfileRef(
       userId
@@ -214,8 +649,12 @@ export async function getCommunityProfile(
     );
 
 
-  if (!snapshot.exists()) {
+  if (
+    !snapshot.exists()
+  ) {
+
     return null;
+
   }
 
 
@@ -224,6 +663,7 @@ export async function getCommunityProfile(
 
 
   return {
+
     userId,
 
     displayName:
@@ -255,7 +695,75 @@ export async function getCommunityProfile(
       "number"
         ? data.updatedAt
         : 0,
+
   };
+
+}
+
+
+/*
+ * ============================================================
+ * GET COMMUNITY POST
+ * ============================================================
+ *
+ * Loads one Community conversation.
+ *
+ * Only published posts are returned to ordinary Community
+ * readers.
+ * ============================================================
+ */
+
+export async function getCommunityPost(
+  postId: string
+): Promise<CommunityPost | null> {
+
+  if (
+    !postId
+  ) {
+
+    throw new Error(
+      "A post ID is required."
+    );
+
+  }
+
+
+  const snapshot =
+    await getDoc(
+      getPostRef(
+        postId
+      )
+    );
+
+
+  if (
+    !snapshot.exists()
+  ) {
+
+    return null;
+
+  }
+
+
+  const post =
+    normalizeCommunityPost(
+      snapshot.id,
+      snapshot.data()
+    );
+
+
+  if (
+    post.status !==
+    "published"
+  ) {
+
+    return null;
+
+  }
+
+
+  return post;
+
 }
 
 
@@ -276,15 +784,10 @@ export async function getCommunityProfile(
 export async function getCommunityPosts(
   filters?: CommunityFeedFilters
 ): Promise<CommunityPost[]> {
+
   const constraints:
     QueryConstraint[] = [];
 
-
-  /*
-   * ----------------------------------------------------------
-   * ONLY PUBLISHED CONTENT
-   * ----------------------------------------------------------
-   */
 
   constraints.push(
     where(
@@ -295,13 +798,10 @@ export async function getCommunityPosts(
   );
 
 
-  /*
-   * ----------------------------------------------------------
-   * CATEGORY
-   * ----------------------------------------------------------
-   */
+  if (
+    filters?.category
+  ) {
 
-  if (filters?.category) {
     constraints.push(
       where(
         "category",
@@ -309,14 +809,9 @@ export async function getCommunityPosts(
         filters.category
       )
     );
+
   }
 
-
-  /*
-   * ----------------------------------------------------------
-   * ORDER
-   * ----------------------------------------------------------
-   */
 
   constraints.push(
     orderBy(
@@ -325,12 +820,6 @@ export async function getCommunityPosts(
     )
   );
 
-
-  /*
-   * ----------------------------------------------------------
-   * RESULT LIMIT
-   * ----------------------------------------------------------
-   */
 
   const maximumResults =
     filters?.limit &&
@@ -349,12 +838,6 @@ export async function getCommunityPosts(
   );
 
 
-  /*
-   * ----------------------------------------------------------
-   * QUERY
-   * ----------------------------------------------------------
-   */
-
   const postsQuery =
     query(
       getPostsCollection(),
@@ -368,104 +851,16 @@ export async function getCommunityPosts(
     );
 
 
-  /*
-   * ----------------------------------------------------------
-   * MAP RESULTS
-   * ----------------------------------------------------------
-   */
-
   return snapshot.docs.map(
     (
       postDocument
-    ) => {
-      const data =
-        postDocument.data();
-
-
-      return {
-        id:
-          postDocument.id,
-
-        authorId:
-          typeof data.authorId ===
-          "string"
-            ? data.authorId
-            : "",
-
-        authorDisplayName:
-          typeof data.authorDisplayName ===
-          "string"
-            ? data.authorDisplayName
-            : "Community Member",
-
-        title:
-          typeof data.title ===
-          "string"
-            ? data.title
-            : "",
-
-        body:
-          typeof data.body ===
-          "string"
-            ? data.body
-            : "",
-
-        category:
-          normalizeCommunityCategory(
-            data.category
-          ),
-
-        isAnonymous:
-          data.isAnonymous === true,
-
-        status:
-          normalizeContentStatus(
-            data.status
-          ),
-
-        moderationStatus:
-          normalizeModerationStatus(
-            data.moderationStatus
-          ),
-
-        replyCount:
-          typeof data.replyCount ===
-          "number"
-            ? data.replyCount
-            : 0,
-
-        reactionCount:
-          typeof data.reactionCount ===
-          "number"
-            ? data.reactionCount
-            : 0,
-
-        reportCount:
-          typeof data.reportCount ===
-          "number"
-            ? data.reportCount
-            : 0,
-
-        isFeatured:
-          data.isFeatured === true,
-
-        isNavigatorSupported:
-          data.isNavigatorSupported === true,
-
-        createdAt:
-          typeof data.createdAt ===
-          "number"
-            ? data.createdAt
-            : 0,
-
-        updatedAt:
-          typeof data.updatedAt ===
-          "number"
-            ? data.updatedAt
-            : 0,
-      };
-    }
+    ) =>
+      normalizeCommunityPost(
+        postDocument.id,
+        postDocument.data()
+      )
   );
+
 }
 
 
@@ -475,16 +870,27 @@ export async function getCommunityPosts(
  * ============================================================
  *
  * Returns published replies for one Community post.
+ *
+ * All authenticated Community members may read published
+ * replies.
+ *
+ * Premium controls the ability to create replies, not the
+ * ability to read published replies.
  * ============================================================
  */
 
 export async function getCommunityReplies(
   postId: string
 ): Promise<CommunityReply[]> {
-  if (!postId) {
+
+  if (
+    !postId
+  ) {
+
     throw new Error(
       "A post ID is required."
     );
+
   }
 
 
@@ -520,76 +926,180 @@ export async function getCommunityReplies(
   return snapshot.docs.map(
     (
       replyDocument
+    ) =>
+      normalizeCommunityReply(
+        replyDocument.id,
+        postId,
+        replyDocument.data()
+      )
+  );
+
+}
+
+
+/*
+ * ============================================================
+ * GET COMMUNITY REACTIONS
+ * ============================================================
+ *
+ * Reads Helpful reactions for one published Community target.
+ *
+ * Free, Premium, and Premium+ authenticated users may read
+ * reactions under the current Firestore rules.
+ *
+ * Reaction writes remain protected by:
+ *
+ * /api/community/reactions
+ * ============================================================
+ */
+
+export async function getCommunityReactions(
+  targetType:
+    CommunityReactionTargetType,
+
+  targetId: string
+): Promise<CommunityReaction[]> {
+
+  if (
+    targetType !==
+      "post" &&
+    targetType !==
+      "reply"
+  ) {
+
+    throw new Error(
+      "A valid Community reaction target type is required."
+    );
+
+  }
+
+
+  if (
+    !targetId
+  ) {
+
+    throw new Error(
+      "A Community reaction target ID is required."
+    );
+
+  }
+
+
+  const reactionsQuery =
+    query(
+      getReactionsCollection(),
+
+      where(
+        "targetType",
+        "==",
+        targetType
+      ),
+
+      where(
+        "targetId",
+        "==",
+        targetId
+      ),
+
+      where(
+        "type",
+        "==",
+        "helpful"
+      )
+    );
+
+
+  const snapshot =
+    await getDocs(
+      reactionsQuery
+    );
+
+
+  const reactions:
+    CommunityReaction[] = [];
+
+
+  snapshot.docs.forEach(
+    (
+      reactionDocument
     ) => {
-      const data =
-        replyDocument.data();
+
+      const reaction =
+        normalizeCommunityReaction(
+          reactionDocument.id,
+          reactionDocument.data()
+        );
 
 
-      return {
-        id:
-          replyDocument.id,
+      if (
+        reaction
+      ) {
 
-        postId:
-          typeof data.postId ===
-          "string"
-            ? data.postId
-            : postId,
+        reactions.push(
+          reaction
+        );
 
-        authorId:
-          typeof data.authorId ===
-          "string"
-            ? data.authorId
-            : "",
+      }
 
-        authorDisplayName:
-          typeof data.authorDisplayName ===
-          "string"
-            ? data.authorDisplayName
-            : "Community Member",
-
-        body:
-          typeof data.body ===
-          "string"
-            ? data.body
-            : "",
-
-        isAnonymous:
-          data.isAnonymous === true,
-
-        status:
-          normalizeContentStatus(
-            data.status
-          ),
-
-        moderationStatus:
-          normalizeModerationStatus(
-            data.moderationStatus
-          ),
-
-        reactionCount:
-          typeof data.reactionCount ===
-          "number"
-            ? data.reactionCount
-            : 0,
-
-        reportCount:
-          typeof data.reportCount ===
-          "number"
-            ? data.reportCount
-            : 0,
-
-        createdAt:
-          typeof data.createdAt ===
-          "number"
-            ? data.createdAt
-            : 0,
-
-        updatedAt:
-          typeof data.updatedAt ===
-          "number"
-            ? data.updatedAt
-            : 0,
-      };
     }
   );
+
+
+  return reactions;
+
+}
+
+
+/*
+ * ============================================================
+ * GET COMMUNITY REACTION SUMMARY
+ * ============================================================
+ *
+ * Gives the UI exactly what it needs:
+ *
+ * - total Helpful count
+ * - whether the current signed-in user already reacted
+ *
+ * currentUserId may be omitted when only a count is needed.
+ * ============================================================
+ */
+
+export async function getCommunityReactionSummary(
+  targetType:
+    CommunityReactionTargetType,
+
+  targetId: string,
+
+  currentUserId?: string | null
+): Promise<CommunityReactionSummary> {
+
+  const reactions =
+    await getCommunityReactions(
+      targetType,
+      targetId
+    );
+
+
+  const currentUserReacted =
+    Boolean(
+      currentUserId &&
+      reactions.some(
+        (
+          reaction
+        ) =>
+          reaction.userId ===
+          currentUserId
+      )
+    );
+
+
+  return {
+
+    count:
+      reactions.length,
+
+    currentUserReacted,
+
+  };
+
 }

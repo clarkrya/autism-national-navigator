@@ -2,6 +2,7 @@
 
 import {
   FormEvent,
+  useEffect,
   useState,
 } from "react";
 
@@ -19,6 +20,10 @@ import {
   auth,
 } from "../../lib/firebase";
 
+import {
+  getCommunityProfile,
+} from "../../lib/communityRepository";
+
 import type {
   CommunityCategory,
 } from "../../lib/communityTypes";
@@ -29,18 +34,43 @@ import type {
  * CREATE COMMUNITY POST
  * ============================================================
  *
- * Premium and Premium+ Community participation.
+ * Community access:
+ *
+ * Guest:
+ *   No Community access.
  *
  * Free:
  *   Read-only Community access.
  *
  * Premium:
- *   Create posts.
+ *   Read + create posts + participate.
  *
  * Premium+:
- *   Create posts.
+ *   Read + create posts + participate.
  *
- * The server API is still the real authorization boundary.
+ * Community is one shared space.
+ *
+ * Published conversations are visible to authenticated
+ * Community members regardless of paid plan.
+ *
+ * Premium controls participation rather than visibility.
+ *
+ * The protected server API is the authorization boundary for
+ * post creation.
+ *
+ * COMMUNITY PROFILE
+ *
+ * The user's saved Community profile controls the initial
+ * anonymous-posting preference.
+ *
+ * users/{uid}/communityProfile/current
+ *
+ * isAnonymousByDefault:
+ *   true  -> Post anonymously starts checked
+ *   false -> Post anonymously starts unchecked
+ *
+ * The user may still override the checkbox for an individual
+ * conversation.
  * ============================================================
  */
 
@@ -164,7 +194,9 @@ export default function CreateCommunityPost() {
 
 
   const {
-    loading: entitlementLoading,
+    loading:
+      entitlementLoading,
+
     isPremium,
   } =
     useAccountEntitlements();
@@ -179,13 +211,15 @@ export default function CreateCommunityPost() {
   const [
     title,
     setTitle,
-  ] = useState("");
+  ] =
+    useState("");
 
 
   const [
     body,
     setBody,
-  ] = useState("");
+  ] =
+    useState("");
 
 
   const [
@@ -197,16 +231,44 @@ export default function CreateCommunityPost() {
     );
 
 
+  /*
+   * Start with the privacy-safe fallback while the saved
+   * Community profile preference is loading.
+   */
+
   const [
     isAnonymous,
     setIsAnonymous,
-  ] = useState(true);
+  ] =
+    useState(true);
 
+
+  /*
+   * Saved profile default.
+   *
+   * This is kept separately so that after a successful post
+   * the form resets to the user's preference rather than
+   * always resetting to anonymous.
+   */
 
   const [
-    isPremiumOnly,
-    setIsPremiumOnly,
-  ] = useState(false);
+    anonymousDefault,
+    setAnonymousDefault,
+  ] =
+    useState(true);
+
+
+  /*
+   * ==========================================================
+   * PROFILE PREFERENCE STATE
+   * ==========================================================
+   */
+
+  const [
+    profilePreferenceLoading,
+    setProfilePreferenceLoading,
+  ] =
+    useState(true);
 
 
   /*
@@ -218,25 +280,214 @@ export default function CreateCommunityPost() {
   const [
     submitting,
     setSubmitting,
-  ] = useState(false);
+  ] =
+    useState(false);
 
 
   const [
     error,
     setError,
-  ] = useState("");
+  ] =
+    useState("");
 
 
   const [
     submitted,
     setSubmitted,
-  ] = useState(false);
+  ] =
+    useState(false);
 
 
   const [
     submittedPostId,
     setSubmittedPostId,
-  ] = useState("");
+  ] =
+    useState("");
+
+
+  /*
+   * ==========================================================
+   * LOAD COMMUNITY PROFILE PREFERENCE
+   * ==========================================================
+   */
+
+  useEffect(() => {
+
+    /*
+     * Wait until account entitlements finish resolving.
+     */
+
+    if (
+      entitlementLoading
+    ) {
+
+      return;
+
+    }
+
+
+    /*
+     * The create-post form is Premium-only.
+     *
+     * There is no need to load the posting preference for a
+     * user who cannot access this form.
+     */
+
+    if (
+      !isPremium
+    ) {
+
+      setProfilePreferenceLoading(
+        false
+      );
+
+      return;
+
+    }
+
+
+    let active =
+      true;
+
+
+    async function loadProfilePreference() {
+
+      setProfilePreferenceLoading(
+        true
+      );
+
+
+      try {
+
+        const currentUser =
+          auth.currentUser;
+
+
+        if (
+          !currentUser
+        ) {
+
+          /*
+           * Keep the privacy-safe anonymous fallback.
+           */
+
+          if (
+            active
+          ) {
+
+            setAnonymousDefault(
+              true
+            );
+
+            setIsAnonymous(
+              true
+            );
+
+          }
+
+
+          return;
+
+        }
+
+
+        const profile =
+          await getCommunityProfile(
+            currentUser.uid
+          );
+
+
+        if (
+          !active
+        ) {
+
+          return;
+
+        }
+
+
+        /*
+         * A missing Community profile keeps the safe fallback.
+         */
+
+        const savedDefault =
+          profile?.isAnonymousByDefault ??
+          true;
+
+
+        setAnonymousDefault(
+          savedDefault
+        );
+
+
+        setIsAnonymous(
+          savedDefault
+        );
+
+
+      } catch (
+        profileError
+      ) {
+
+        console.error(
+          "Unable to load Community profile preference:",
+          profileError
+        );
+
+
+        /*
+         * A profile-read problem should not prevent a Premium
+         * user from creating a conversation.
+         *
+         * Keep anonymous posting selected as the safe fallback.
+         */
+
+        if (
+          active
+        ) {
+
+          setAnonymousDefault(
+            true
+          );
+
+          setIsAnonymous(
+            true
+          );
+
+        }
+
+
+      } finally {
+
+        if (
+          active
+        ) {
+
+          setProfilePreferenceLoading(
+            false
+          );
+
+        }
+
+      }
+
+    }
+
+
+    void loadProfilePreference();
+
+
+    return () => {
+
+      active =
+        false;
+
+    };
+
+  }, [
+    entitlementLoading,
+    isPremium,
+  ]);
 
 
   /*
@@ -247,8 +498,11 @@ export default function CreateCommunityPost() {
 
   const selectedCategory =
     CATEGORY_OPTIONS.find(
-      (option) =>
-        option.value === category
+      (
+        option
+      ) =>
+        option.value ===
+        category
     );
 
 
@@ -259,14 +513,18 @@ export default function CreateCommunityPost() {
    */
 
   async function handleSubmit(
-    event: FormEvent<HTMLFormElement>
+    event:
+      FormEvent<HTMLFormElement>
   ) {
 
     event.preventDefault();
 
 
     setError("");
-    setSubmitted(false);
+
+    setSubmitted(
+      false
+    );
 
 
     /*
@@ -275,7 +533,9 @@ export default function CreateCommunityPost() {
      * --------------------------------------------------------
      */
 
-    if (!isPremium) {
+    if (
+      !isPremium
+    ) {
 
       setError(
         "Community participation is available with Premium."
@@ -301,7 +561,8 @@ export default function CreateCommunityPost() {
 
 
     if (
-      cleanTitle.length < 3
+      cleanTitle.length <
+      3
     ) {
 
       setError(
@@ -314,7 +575,8 @@ export default function CreateCommunityPost() {
 
 
     if (
-      cleanTitle.length > 140
+      cleanTitle.length >
+      140
     ) {
 
       setError(
@@ -327,7 +589,8 @@ export default function CreateCommunityPost() {
 
 
     if (
-      cleanBody.length < 5
+      cleanBody.length <
+      5
     ) {
 
       setError(
@@ -340,7 +603,8 @@ export default function CreateCommunityPost() {
 
 
     if (
-      cleanBody.length > 5000
+      cleanBody.length >
+      5000
     ) {
 
       setError(
@@ -352,7 +616,9 @@ export default function CreateCommunityPost() {
     }
 
 
-    setSubmitting(true);
+    setSubmitting(
+      true
+    );
 
 
     try {
@@ -367,7 +633,9 @@ export default function CreateCommunityPost() {
         auth.currentUser;
 
 
-      if (!currentUser) {
+      if (
+        !currentUser
+      ) {
 
         throw new Error(
           "Your login session is no longer active. Please log in again."
@@ -378,7 +646,7 @@ export default function CreateCommunityPost() {
 
       /*
        * ------------------------------------------------------
-       * FIREBASE TOKEN
+       * FIREBASE ID TOKEN
        * ------------------------------------------------------
        */
 
@@ -388,15 +656,20 @@ export default function CreateCommunityPost() {
 
       /*
        * ------------------------------------------------------
-       * API REQUEST
+       * PROTECTED API REQUEST
        * ------------------------------------------------------
+       *
+       * The API performs the real Premium authorization check
+       * and writes the post through authenticated Firestore
+       * REST access.
        */
 
       const response =
         await fetch(
           "/api/community/posts",
           {
-            method: "POST",
+            method:
+              "POST",
 
             headers: {
               "Content-Type":
@@ -414,14 +687,9 @@ export default function CreateCommunityPost() {
                 body:
                   cleanBody,
 
-                category:
-                  category,
+                category,
 
-                isAnonymous:
-                  isAnonymous,
-
-                isPremiumOnly:
-                  isPremiumOnly,
+                isAnonymous,
               }),
           }
         );
@@ -469,23 +737,62 @@ export default function CreateCommunityPost() {
 
       /*
        * ------------------------------------------------------
+       * VERIFY CREATED POST
+       * ------------------------------------------------------
+       */
+
+      if (
+        !data.success ||
+        !data.postId
+      ) {
+
+        throw new Error(
+          "Your post was created, but the Community service did not return the conversation ID."
+        );
+
+      }
+
+
+      /*
+       * ------------------------------------------------------
        * SUCCESS
        * ------------------------------------------------------
        */
 
       setSubmittedPostId(
-        data.postId || ""
+        data.postId
       );
 
 
-      setSubmitted(true);
+      setSubmitted(
+        true
+      );
 
 
-      setTitle("");
-      setBody("");
-      setCategory("general");
-      setIsAnonymous(true);
-      setIsPremiumOnly(false);
+      setTitle(
+        ""
+      );
+
+
+      setBody(
+        ""
+      );
+
+
+      setCategory(
+        "general"
+      );
+
+
+      /*
+       * Reset to the user's saved Community profile preference
+       * instead of hardcoding anonymous posting.
+       */
+
+      setIsAnonymous(
+        anonymousDefault
+      );
+
 
     } catch (
       submitError
@@ -503,9 +810,12 @@ export default function CreateCommunityPost() {
           : "We couldn't create your post right now. Please try again."
       );
 
+
     } finally {
 
-      setSubmitting(false);
+      setSubmitting(
+        false
+      );
 
     }
 
@@ -519,7 +829,11 @@ export default function CreateCommunityPost() {
    */
 
   if (
-    entitlementLoading
+    entitlementLoading ||
+    (
+      isPremium &&
+      profilePreferenceLoading
+    )
   ) {
 
     return (
@@ -573,7 +887,7 @@ export default function CreateCommunityPost() {
 
   /*
    * ==========================================================
-   * FREE USER
+   * FREE / GUEST USER
    * ==========================================================
    */
 
@@ -834,9 +1148,9 @@ export default function CreateCommunityPost() {
 
               fontWeight:
                 800,
-          }}
+            }}
           >
-            Your post was submitted
+            Your conversation is live
           </h1>
 
 
@@ -858,9 +1172,9 @@ export default function CreateCommunityPost() {
                 1.65,
             }}
           >
-            Your post has been submitted for
-            Community review. Once approved, it
-            will appear in the appropriate topic.
+            Your post has been published to the
+            Community and is now available for
+            members to read.
           </p>
 
 
@@ -910,49 +1224,53 @@ export default function CreateCommunityPost() {
             </Link>
 
 
-            {submittedPostId && (
+            {
+              submittedPostId && (
 
-              <button
-                type="button"
+                <button
+                  type="button"
 
-                onClick={() => {
+                  onClick={
+                    () => {
 
-                  router.push(
-                    `/community/${submittedPostId}`
-                  );
+                      router.push(
+                        `/community/${submittedPostId}`
+                      );
 
-                }}
+                    }
+                  }
 
-                style={{
-                  padding:
-                    "11px 18px",
+                  style={{
+                    padding:
+                      "11px 18px",
 
-                  borderRadius:
-                    "10px",
+                    borderRadius:
+                      "10px",
 
-                  border:
-                    "1px solid #CBD5E1",
+                    border:
+                      "1px solid #CBD5E1",
 
-                  background:
-                    "#FFFFFF",
+                    background:
+                      "#FFFFFF",
 
-                  color:
-                    "#334155",
+                    color:
+                      "#334155",
 
-                  fontSize:
-                    "14px",
+                    fontSize:
+                      "14px",
 
-                  fontWeight:
-                    800,
+                    fontWeight:
+                      800,
 
-                  cursor:
-                    "pointer",
-                }}
-              >
-                View Submission
-              </button>
+                    cursor:
+                      "pointer",
+                  }}
+                >
+                  View Conversation
+                </button>
 
-            )}
+              )
+            }
 
           </div>
 
@@ -1090,41 +1408,45 @@ export default function CreateCommunityPost() {
       </header>
 
 
-      {error && (
+      {
+        error && (
 
-        <div
-          role="alert"
+          <div
+            role="alert"
 
-          style={{
-            marginBottom:
-              "20px",
+            style={{
+              marginBottom:
+                "20px",
 
-            padding:
-              "14px 16px",
+              padding:
+                "14px 16px",
 
-            borderRadius:
-              "12px",
+              borderRadius:
+                "12px",
 
-            border:
-              "1px solid #FECACA",
+              border:
+                "1px solid #FECACA",
 
-            background:
-              "#FEF2F2",
+              background:
+                "#FEF2F2",
 
-            color:
-              "#B91C1C",
+              color:
+                "#B91C1C",
 
-            fontSize:
-              "14px",
+              fontSize:
+                "14px",
 
-            lineHeight:
-              1.5,
-          }}
-        >
-          {error}
-        </div>
+              lineHeight:
+                1.5,
+            }}
+          >
+            {
+              error
+            }
+          </div>
 
-      )}
+        )
+      }
 
 
       <form
@@ -1194,15 +1516,21 @@ export default function CreateCommunityPost() {
                 category
               }
 
-              onChange={(
-                event
-              ) => {
+              onChange={
+                (
+                  event
+                ) => {
 
-                setCategory(
-                  event.target.value as CommunityCategory
-                );
+                  setCategory(
+                    event.target.value as CommunityCategory
+                  );
 
-              }}
+                }
+              }
+
+              disabled={
+                submitting
+              }
 
               style={{
                 width:
@@ -1233,29 +1561,35 @@ export default function CreateCommunityPost() {
                   "none",
 
                 cursor:
-                  "pointer",
+                  submitting
+                    ? "default"
+                    : "pointer",
               }}
             >
 
-              {CATEGORY_OPTIONS.map(
-                (
-                  option
-                ) => (
+              {
+                CATEGORY_OPTIONS.map(
+                  (
+                    option
+                  ) => (
 
-                  <option
-                    key={
-                      option.value
-                    }
+                    <option
+                      key={
+                        option.value
+                      }
 
-                    value={
-                      option.value
-                    }
-                  >
-                    {option.label}
-                  </option>
+                      value={
+                        option.value
+                      }
+                    >
+                      {
+                        option.label
+                      }
+                    </option>
 
+                  )
                 )
-              )}
+              }
 
             </select>
 
@@ -1327,21 +1661,27 @@ export default function CreateCommunityPost() {
                 title
               }
 
-              onChange={(
-                event
-              ) => {
+              onChange={
+                (
+                  event
+                ) => {
 
-                setTitle(
-                  event.target.value
-                );
+                  setTitle(
+                    event.target.value
+                  );
 
-              }}
+                }
+              }
 
               maxLength={
                 140
               }
 
               required
+
+              disabled={
+                submitting
+              }
 
               placeholder="What would you like the Community to know?"
 
@@ -1388,7 +1728,9 @@ export default function CreateCommunityPost() {
                   "11px",
               }}
             >
-              {title.length} / 140
+              {
+                title.length
+              } / 140
             </div>
 
           </div>
@@ -1436,21 +1778,27 @@ export default function CreateCommunityPost() {
                 body
               }
 
-              onChange={(
-                event
-              ) => {
+              onChange={
+                (
+                  event
+                ) => {
 
-                setBody(
-                  event.target.value
-                );
+                  setBody(
+                    event.target.value
+                  );
 
-              }}
+                }
+              }
 
               maxLength={
                 5000
               }
 
               required
+
+              disabled={
+                submitting
+              }
 
               rows={
                 9
@@ -1507,7 +1855,9 @@ export default function CreateCommunityPost() {
                   "11px",
               }}
             >
-              {body.length} / 5,000
+              {
+                body.length
+              } / 5,000
             </div>
 
           </div>
@@ -1532,7 +1882,7 @@ export default function CreateCommunityPost() {
                 "#F8FAFC",
 
               marginBottom:
-                "16px",
+                "24px",
             }}
           >
 
@@ -1548,7 +1898,9 @@ export default function CreateCommunityPost() {
                   "10px",
 
                 cursor:
-                  "pointer",
+                  submitting
+                    ? "default"
+                    : "pointer",
               }}
             >
 
@@ -1559,15 +1911,21 @@ export default function CreateCommunityPost() {
                   isAnonymous
                 }
 
-                onChange={(
-                  event
-                ) => {
+                onChange={
+                  (
+                    event
+                  ) => {
 
-                  setIsAnonymous(
-                    event.target.checked
-                  );
+                    setIsAnonymous(
+                      event.target.checked
+                    );
 
-                }}
+                  }
+                }
+
+                disabled={
+                  submitting
+                }
 
                 style={{
                   marginTop:
@@ -1621,127 +1979,11 @@ export default function CreateCommunityPost() {
                       1.5,
                   }}
                 >
-                  Your Community display name will
-                  not be shown on this post.
-                </span>
-
-              </span>
-
-            </label>
-
-          </div>
-
-
-          {/* ==================================================
-              PREMIUM ONLY
-          =================================================== */}
-
-          <div
-            style={{
-              padding:
-                "16px",
-
-              borderRadius:
-                "12px",
-
-              border:
-                "1px solid #E2E8F0",
-
-              background:
-                "#F8FAFC",
-
-              marginBottom:
-                "24px",
-            }}
-          >
-
-            <label
-              style={{
-                display:
-                  "flex",
-
-                alignItems:
-                  "flex-start",
-
-                gap:
-                  "10px",
-
-                cursor:
-                  "pointer",
-              }}
-            >
-
-              <input
-                type="checkbox"
-
-                checked={
-                  isPremiumOnly
-                }
-
-                onChange={(
-                  event
-                ) => {
-
-                  setIsPremiumOnly(
-                    event.target.checked
-                  );
-
-                }}
-
-                style={{
-                  marginTop:
-                    "3px",
-
-                  width:
-                    "16px",
-
-                  height:
-                    "16px",
-                }}
-              />
-
-
-              <span>
-
-                <span
-                  style={{
-                    display:
-                      "block",
-
-                    color:
-                      "#334155",
-
-                    fontSize:
-                      "14px",
-
-                    fontWeight:
-                      800,
-                  }}
-                >
-                  Premium-only conversation
-                </span>
-
-
-                <span
-                  style={{
-                    display:
-                      "block",
-
-                    marginTop:
-                      "3px",
-
-                    color:
-                      "#64748B",
-
-                    fontSize:
-                      "12px",
-
-                    lineHeight:
-                      1.5,
-                  }}
-                >
-                  Limit this conversation to Premium
-                  and Premium+ members.
+                  {
+                    isAnonymous
+                      ? "Your Community display name will not be shown on this post."
+                      : "Your saved Community display name will be shown on this post."
+                  }
                 </span>
 
               </span>
@@ -1882,8 +2124,8 @@ export default function CreateCommunityPost() {
             >
               {
                 submitting
-                  ? "Submitting..."
-                  : "Submit Post"
+                  ? "Publishing..."
+                  : "Publish Conversation"
               }
             </button>
 

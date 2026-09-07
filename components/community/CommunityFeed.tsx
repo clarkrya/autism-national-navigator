@@ -1,23 +1,11 @@
 "use client";
 
-import {
-  useEffect,
-  useState,
-} from "react";
-
+import { useEffect, useState } from "react";
 import Link from "next/link";
 
-import {
-  getCurrentUser,
-} from "../../lib/auth";
-
-import {
-  useAccountEntitlements,
-} from "../../lib/useAccountEntitlements";
-
-import {
-  getCommunityPosts,
-} from "../../lib/communityRepository";
+import { getCurrentUser } from "../../lib/auth";
+import { useAccountEntitlements } from "../../lib/useAccountEntitlements";
+import { getCommunityPosts } from "../../lib/communityRepository";
 
 import type {
   CommunityCategory,
@@ -35,22 +23,21 @@ import type {
  *
  * Free:
  *   Read-only Community access.
+ *   Can create/manage a Community profile.
  *
  * Premium:
  *   Read + participate.
+ *   Can create/manage a Community profile.
  *
  * Premium+:
  *   Read + participate.
+ *   Can create/manage a Community profile.
  *
+ * Community is one shared space.
+ * Premium controls participation, not visibility.
  * ============================================================
  */
 
-
-/*
- * ============================================================
- * COMMUNITY RETURN PATH
- * ============================================================
- */
 
 const COMMUNITY_RETURN_TO =
   "/community";
@@ -62,281 +49,158 @@ const COMMUNITY_RETURN_TO =
  * ============================================================
  */
 
-const CATEGORY_OPTIONS:
+const CATEGORY_OPTIONS: {
+  value: CommunityCategory | "all";
+  label: string;
+  description: string;
+}[] = [
   {
-    value:
-      CommunityCategory |
-      "all";
-
-    label:
-      string;
-
-    description:
-      string;
-  }[] = [
-
-  {
-    value:
-      "all",
-
-    label:
-      "All Topics",
-
+    value: "all",
+    label: "All Topics",
     description:
       "See recent conversations across the Community.",
   },
-
   {
-    value:
-      "general",
-
-    label:
-      "General",
-
+    value: "general",
+    label: "General",
     description:
       "Everyday questions, experiences, and support.",
   },
-
   {
-    value:
-      "newly_diagnosed",
-
-    label:
-      "Newly Diagnosed",
-
+    value: "newly_diagnosed",
+    label: "Newly Diagnosed",
     description:
       "Early questions and navigating what comes next.",
   },
-
   {
-    value:
-      "school",
-
-    label:
-      "School",
-
+    value: "school",
+    label: "School",
     description:
       "School experiences, support, and transitions.",
   },
-
   {
-    value:
-      "therapy",
-
-    label:
-      "Therapy",
-
+    value: "therapy",
+    label: "Therapy",
     description:
       "Therapy experiences, questions, and support.",
   },
-
   {
-    value:
-      "insurance",
-
-    label:
-      "Insurance",
-
+    value: "insurance",
+    label: "Insurance",
     description:
       "Coverage, claims, and navigating insurance.",
   },
-
   {
-    value:
-      "financial_support",
-
-    label:
-      "Financial Support",
-
+    value: "financial_support",
+    label: "Financial Support",
     description:
       "Financial assistance, costs, and support.",
   },
-
   {
-    value:
-      "parent_support",
-
-    label:
-      "Parent Support",
-
+    value: "parent_support",
+    label: "Parent Support",
     description:
       "Support and encouragement for parents and caregivers.",
   },
-
   {
-    value:
-      "teen_transition",
-
-    label:
-      "Teen Transition",
-
+    value: "teen_transition",
+    label: "Teen Transition",
     description:
       "Preparing for changing needs during the teen years.",
   },
-
   {
-    value:
-      "adult_transition",
-
-    label:
-      "Adult Transition",
-
+    value: "adult_transition",
+    label: "Adult Transition",
     description:
       "Preparing for adulthood and greater independence.",
   },
-
   {
-    value:
-      "siblings_family",
-
-    label:
-      "Siblings & Family",
-
+    value: "siblings_family",
+    label: "Siblings & Family",
     description:
       "Family relationships, siblings, and shared experiences.",
   },
-
   {
-    value:
-      "success_stories",
-
-    label:
-      "Success Stories",
-
+    value: "success_stories",
+    label: "Success Stories",
     description:
       "Celebrate progress, milestones, and encouraging moments.",
   },
-
   {
-    value:
-      "questions",
-
-    label:
-      "Questions",
-
+    value: "questions",
+    label: "Questions",
     description:
       "Ask about something you're navigating.",
   },
-
   {
-    value:
-      "other",
-
-    label:
-      "Other",
-
+    value: "other",
+    label: "Other",
     description:
       "Topics that don't fit another category.",
   },
-
 ];
 
 
 /*
  * ============================================================
- * CATEGORY LABEL
+ * HELPERS
  * ============================================================
  */
 
 function getCategoryLabel(
-  category:
-    CommunityCategory
+  category: CommunityCategory
 ): string {
-
   const option =
     CATEGORY_OPTIONS.find(
-      (
-        item
-      ) =>
-        item.value ===
-        category
+      (item) =>
+        item.value === category
     );
-
 
   return (
     option?.label ||
     "Community"
   );
-
 }
 
 
-/*
- * ============================================================
- * CATEGORY DESCRIPTION
- * ============================================================
- */
-
 function getCategoryDescription(
   category:
-    CommunityCategory |
-    "all"
+    CommunityCategory | "all"
 ): string {
-
   const option =
     CATEGORY_OPTIONS.find(
-      (
-        item
-      ) =>
-        item.value ===
-        category
+      (item) =>
+        item.value === category
     );
-
 
   return (
     option?.description ||
     "Explore Community conversations."
   );
-
 }
 
 
-/*
- * ============================================================
- * FORMAT DATE
- * ============================================================
- */
-
 function formatPostDate(
-  timestamp:
-    number
+  timestamp: number
 ): string {
-
-  if (
-    !timestamp
-  ) {
-
+  if (!timestamp) {
     return "";
-
   }
 
-
   try {
-
     return new Intl.DateTimeFormat(
       "en-US",
       {
-        month:
-          "short",
-
-        day:
-          "numeric",
-
-        year:
-          "numeric",
+        month: "short",
+        day: "numeric",
+        year: "numeric",
       }
     ).format(
-      new Date(
-        timestamp
-      )
+      new Date(timestamp)
     );
-
   } catch {
-
     return "";
-
   }
-
 }
 
 
@@ -347,75 +211,42 @@ function formatPostDate(
  */
 
 export default function CommunityFeed() {
-
-  /*
-   * ----------------------------------------------------------
-   * ACCOUNT ENTITLEMENTS
-   * ----------------------------------------------------------
-   */
-
   const {
     plan,
-    loading:
-      entitlementLoading,
+    loading: entitlementLoading,
     isPremium,
   } =
     useAccountEntitlements();
 
 
-  /*
-   * ----------------------------------------------------------
-   * POSTS
-   * ----------------------------------------------------------
-   */
-
   const [
     posts,
     setPosts,
-  ] = useState<
-    CommunityPost[]
-  >([]);
+  ] =
+    useState<CommunityPost[]>([]);
 
-
-  /*
-   * ----------------------------------------------------------
-   * LOADING
-   * ----------------------------------------------------------
-   */
 
   const [
     loading,
     setLoading,
-  ] = useState(true);
+  ] =
+    useState(true);
 
-
-  /*
-   * ----------------------------------------------------------
-   * ERROR
-   * ----------------------------------------------------------
-   */
 
   const [
     error,
     setError,
-  ] = useState("");
+  ] =
+    useState("");
 
-
-  /*
-   * ----------------------------------------------------------
-   * CATEGORY
-   * ----------------------------------------------------------
-   */
 
   const [
     selectedCategory,
     setSelectedCategory,
-  ] = useState<
-    CommunityCategory |
-    "all"
-  >(
-    "all"
-  );
+  ] =
+    useState<
+      CommunityCategory | "all"
+    >("all");
 
 
   /*
@@ -425,194 +256,81 @@ export default function CommunityFeed() {
    */
 
   useEffect(() => {
-
-    let active =
-      true;
-
+    let active = true;
 
     async function loadPosts() {
-
       const currentUser =
         getCurrentUser();
 
-
       /*
-       * ------------------------------------------------------
-       * GUEST
-       * ------------------------------------------------------
+       * Guests do not query Community content.
        */
 
-      if (
-        !currentUser
-      ) {
-
-        if (
-          active
-        ) {
-
+      if (!currentUser) {
+        if (active) {
           setPosts([]);
-
-          setLoading(
-            false
-          );
-
+          setLoading(false);
         }
 
         return;
-
       }
 
-
-      setLoading(
-        true
-      );
-
+      setLoading(true);
       setError("");
 
-
       try {
-
-        /*
-         * ----------------------------------------------------
-         * BUILD QUERY
-         * ----------------------------------------------------
-         */
-
         const feedFilters =
-          selectedCategory ===
-          "all"
-
+          selectedCategory === "all"
             ? {
-                premiumOnly:
-                  isPremium
-                    ? undefined
-                    : false,
-
-                limit:
-                  50,
+                limit: 50,
               }
-
             : {
                 category:
                   selectedCategory,
-
-                premiumOnly:
-                  isPremium
-                    ? undefined
-                    : false,
-
-                limit:
-                  50,
+                limit: 50,
               };
-
-
-        /*
-         * ----------------------------------------------------
-         * LOAD
-         * ----------------------------------------------------
-         */
 
         const loadedPosts =
           await getCommunityPosts(
             feedFilters
           );
 
-
-        if (
-          !active
-        ) {
-
+        if (!active) {
           return;
-
         }
 
-
-        /*
-         * ----------------------------------------------------
-         * ADDITIONAL CLIENT-SIDE SAFETY
-         * ----------------------------------------------------
-         */
-
-        const visiblePosts =
-          isPremium
-
-            ? loadedPosts
-
-            : loadedPosts.filter(
-                (
-                  post
-                ) =>
-                  !post.isPremiumOnly
-              );
-
-
         setPosts(
-          visiblePosts
+          loadedPosts
         );
-
-      } catch (
-        loadError
-      ) {
-
+      } catch (loadError) {
         console.error(
           "Unable to load Community posts:",
           loadError
         );
 
-
-        if (
-          !active
-        ) {
-
+        if (!active) {
           return;
-
         }
-
 
         setError(
           "We couldn't load the Community right now. Please try again."
         );
-
       } finally {
-
-        if (
-          active
-        ) {
-
-          setLoading(
-            false
-          );
-
+        if (active) {
+          setLoading(false);
         }
-
       }
-
     }
 
-
-    /*
-     * Don't query before auth/entitlement state is ready.
-     */
-
-    if (
-      !entitlementLoading
-    ) {
-
+    if (!entitlementLoading) {
       void loadPosts();
-
     }
-
 
     return () => {
-
-      active =
-        false;
-
+      active = false;
     };
-
   }, [
     selectedCategory,
-    isPremium,
     entitlementLoading,
   ]);
 
@@ -627,101 +345,59 @@ export default function CommunityFeed() {
     !entitlementLoading &&
     plan === "guest"
   ) {
-
     return (
-
       <section
         style={{
-          maxWidth:
-            "1050px",
-
-          margin:
-            "0 auto",
-
+          maxWidth: "1050px",
+          margin: "0 auto",
           padding:
             "40px 24px 80px",
         }}
       >
-
         <CommunityHeader />
-
 
         <div
           style={{
-            marginTop:
-              "26px",
-
-            padding:
-              "36px",
-
-            borderRadius:
-              "20px",
-
+            marginTop: "26px",
+            padding: "36px",
+            borderRadius: "20px",
             border:
               "1px solid #E2E8F0",
-
-            background:
-              "#FFFFFF",
-
-            textAlign:
-              "center",
-
+            background: "#FFFFFF",
+            textAlign: "center",
             boxShadow:
               "0 8px 24px rgba(15, 23, 42, 0.04)",
           }}
         >
-
           <div
             style={{
-              fontSize:
-                "34px",
-
-              marginBottom:
-                "12px",
+              fontSize: "34px",
+              marginBottom: "12px",
             }}
           >
             💬
           </div>
 
-
           <h2
             style={{
-              margin:
-                0,
-
-              color:
-                "#0F172A",
-
-              fontSize:
-                "26px",
-
-              lineHeight:
-                1.25,
-
-              fontWeight:
-                800,
+              margin: 0,
+              color: "#0F172A",
+              fontSize: "26px",
+              lineHeight: 1.25,
+              fontWeight: 800,
             }}
           >
             Join the Community
           </h2>
 
-
           <p
             style={{
-              maxWidth:
-                "620px",
-
+              maxWidth: "620px",
               margin:
                 "10px auto 22px",
-
-              color:
-                "#64748B",
-
-              fontSize:
-                "15px",
-
-              lineHeight:
-                1.65,
+              color: "#64748B",
+              fontSize: "15px",
+              lineHeight: 1.65,
             }}
           >
             Create a free account to explore
@@ -729,56 +405,33 @@ export default function CommunityFeed() {
             from other families.
           </p>
 
-
           <div
             style={{
-              display:
-                "flex",
-
-              justifyContent:
-                "center",
-
-              gap:
-                "10px",
-
-              flexWrap:
-                "wrap",
+              display: "flex",
+              justifyContent: "center",
+              gap: "10px",
+              flexWrap: "wrap",
             }}
           >
-
             <Link
               href={
                 `/signup?returnTo=${encodeURIComponent(
                   COMMUNITY_RETURN_TO
                 )}`
               }
-
               style={{
                 padding:
                   "12px 20px",
-
-                borderRadius:
-                  "10px",
-
-                background:
-                  "#2563EB",
-
-                color:
-                  "#FFFFFF",
-
-                fontSize:
-                  "14px",
-
-                fontWeight:
-                  800,
-
-                textDecoration:
-                  "none",
+                borderRadius: "10px",
+                background: "#2563EB",
+                color: "#FFFFFF",
+                fontSize: "14px",
+                fontWeight: 800,
+                textDecoration: "none",
               }}
             >
               Create Free Account
             </Link>
-
 
             <Link
               href={
@@ -786,44 +439,25 @@ export default function CommunityFeed() {
                   COMMUNITY_RETURN_TO
                 )}`
               }
-
               style={{
                 padding:
                   "12px 20px",
-
-                borderRadius:
-                  "10px",
-
+                borderRadius: "10px",
                 border:
                   "1px solid #CBD5E1",
-
-                background:
-                  "#FFFFFF",
-
-                color:
-                  "#334155",
-
-                fontSize:
-                  "14px",
-
-                fontWeight:
-                  800,
-
-                textDecoration:
-                  "none",
+                background: "#FFFFFF",
+                color: "#334155",
+                fontSize: "14px",
+                fontWeight: 800,
+                textDecoration: "none",
               }}
             >
               Log In
             </Link>
-
           </div>
-
         </div>
-
       </section>
-
     );
-
   }
 
 
@@ -834,178 +468,189 @@ export default function CommunityFeed() {
    */
 
   return (
-
     <section
       style={{
-        maxWidth:
-          "1050px",
-
-        margin:
-          "0 auto",
-
+        maxWidth: "1050px",
+        margin: "0 auto",
         padding:
           "40px 24px 90px",
       }}
     >
-
       <CommunityHeader />
 
 
-      {/* ======================================================
+      {/* ====================================================
+          MEMBER ACTIONS
+      ===================================================== */}
+
+      {!entitlementLoading &&
+        plan !== "guest" && (
+          <div
+            style={{
+              marginTop: "20px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent:
+                "space-between",
+              gap: "12px",
+              flexWrap: "wrap",
+            }}
+          >
+            <Link
+              href="/community/profile"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "7px",
+                padding:
+                  "10px 16px",
+                borderRadius: "10px",
+                border:
+                  "1px solid #CBD5E1",
+                background: "#FFFFFF",
+                color: "#334155",
+                fontSize: "13px",
+                fontWeight: 800,
+                textDecoration: "none",
+              }}
+            >
+              <span
+                aria-hidden="true"
+              >
+                👤
+              </span>
+
+              Community Profile
+            </Link>
+
+            {isPremium && (
+              <Link
+                href="/community/create"
+                style={{
+                  display:
+                    "inline-flex",
+                  alignItems:
+                    "center",
+                  gap: "7px",
+                  padding:
+                    "11px 18px",
+                  borderRadius:
+                    "10px",
+                  background:
+                    "#2563EB",
+                  color: "#FFFFFF",
+                  fontSize: "14px",
+                  fontWeight: 800,
+                  textDecoration:
+                    "none",
+                }}
+              >
+                <span
+                  aria-hidden="true"
+                >
+                  +
+                </span>
+
+                Create a Post
+              </Link>
+            )}
+          </div>
+        )}
+
+
+      {/* ====================================================
           FREE ACCOUNT NOTICE
-      ======================================================= */}
+      ===================================================== */}
 
       {!entitlementLoading &&
         plan === "free" && (
-
-        <div
-          style={{
-            marginTop:
-              "20px",
-
-            padding:
-              "14px 16px",
-
-            borderRadius:
-              "12px",
-
-            background:
-              "#EFF6FF",
-
-            border:
-              "1px solid #BFDBFE",
-
-            color:
-              "#1E40AF",
-
-            fontSize:
-              "13px",
-
-            lineHeight:
-              1.5,
-          }}
-        >
-          You're viewing the Community as a
-          Free member. You can read
-          conversations, while posting and
-          replying are available with Premium.
-        </div>
-
-      )}
+          <div
+            style={{
+              marginTop: "20px",
+              padding:
+                "14px 16px",
+              borderRadius: "12px",
+              background: "#EFF6FF",
+              border:
+                "1px solid #BFDBFE",
+              color: "#1E40AF",
+              fontSize: "13px",
+              lineHeight: 1.5,
+            }}
+          >
+            You're viewing the Community as a
+            Free member. You can read
+            conversations, while posting and
+            replying are available with Premium.
+          </div>
+        )}
 
 
-      {/* ======================================================
+      {/* ====================================================
           BROWSE BY TOPIC
-      ======================================================= */}
+      ===================================================== */}
 
       <section
         style={{
-          marginTop:
-            "28px",
-
-          padding:
-            "22px",
-
-          borderRadius:
-            "18px",
-
+          marginTop: "28px",
+          padding: "22px",
+          borderRadius: "18px",
           border:
             "1px solid #E2E8F0",
-
-          background:
-            "#FFFFFF",
-
+          background: "#FFFFFF",
           boxShadow:
             "0 4px 14px rgba(15, 23, 42, 0.03)",
         }}
       >
-
         <div
           style={{
-            display:
-              "flex",
-
+            display: "flex",
             alignItems:
               "flex-start",
-
             justifyContent:
               "space-between",
-
-            gap:
-              "20px",
-
-            flexWrap:
-              "wrap",
+            gap: "20px",
+            flexWrap: "wrap",
           }}
         >
-
           <div
             style={{
-              flex:
-                "1 1 420px",
+              flex: "1 1 420px",
             }}
           >
-
             <div
               style={{
-                color:
-                  "#2563EB",
-
-                fontSize:
-                  "11px",
-
-                fontWeight:
-                  800,
-
+                color: "#2563EB",
+                fontSize: "11px",
+                fontWeight: 800,
                 letterSpacing:
                   "0.08em",
-
                 textTransform:
                   "uppercase",
-
-                marginBottom:
-                  "5px",
+                marginBottom: "5px",
               }}
             >
               Explore conversations
             </div>
 
-
             <h2
               style={{
-                margin:
-                  0,
-
-                color:
-                  "#0F172A",
-
-                fontSize:
-                  "23px",
-
-                lineHeight:
-                  1.25,
-
-                fontWeight:
-                  800,
+                margin: 0,
+                color: "#0F172A",
+                fontSize: "23px",
+                lineHeight: 1.25,
+                fontWeight: 800,
               }}
             >
               Browse by topic
             </h2>
 
-
             <p
               style={{
-                margin:
-                  "7px 0 0",
-
-                color:
-                  "#64748B",
-
-                fontSize:
-                  "14px",
-
-                lineHeight:
-                  1.55,
+                margin: "7px 0 0",
+                color: "#64748B",
+                fontSize: "14px",
+                lineHeight: 1.55,
               }}
             >
               {
@@ -1014,113 +659,63 @@ export default function CommunityFeed() {
                 )
               }
             </p>
-
           </div>
 
 
-          {/* ==================================================
-              TOPIC SELECTOR
-          =================================================== */}
-
           <div
             style={{
-              flex:
-                "0 1 270px",
-
-              minWidth:
-                "230px",
+              flex: "0 1 270px",
+              minWidth: "230px",
             }}
           >
-
             <label
               htmlFor="community-category"
-
               style={{
-                display:
-                  "block",
-
-                marginBottom:
-                  "7px",
-
-                color:
-                  "#334155",
-
-                fontSize:
-                  "12px",
-
-                fontWeight:
-                  800,
+                display: "block",
+                marginBottom: "7px",
+                color: "#334155",
+                fontSize: "12px",
+                fontWeight: 800,
               }}
             >
               Topic
             </label>
 
-
             <select
               id="community-category"
-
               value={
                 selectedCategory
               }
-
-              onChange={(
-                event
-              ) => {
-
+              onChange={(event) => {
                 setSelectedCategory(
                   event.target.value as
                     CommunityCategory |
                     "all"
                 );
-
               }}
-
               style={{
-                width:
-                  "100%",
-
+                width: "100%",
                 boxSizing:
                   "border-box",
-
                 padding:
                   "11px 12px",
-
-                borderRadius:
-                  "10px",
-
+                borderRadius: "10px",
                 border:
                   "1px solid #CBD5E1",
-
-                background:
-                  "#FFFFFF",
-
-                color:
-                  "#0F172A",
-
-                fontSize:
-                  "14px",
-
-                fontWeight:
-                  700,
-
-                outline:
-                  "none",
-
-                cursor:
-                  "pointer",
+                background: "#FFFFFF",
+                color: "#0F172A",
+                fontSize: "14px",
+                fontWeight: 700,
+                outline: "none",
+                cursor: "pointer",
               }}
             >
-
               {CATEGORY_OPTIONS.map(
-                (
-                  option
-                ) => (
-
+                (option) => (
                   <option
                     key={
                       option.value
                     }
-
                     value={
                       option.value
                     }
@@ -1129,600 +724,320 @@ export default function CommunityFeed() {
                       option.label
                     }
                   </option>
-
                 )
               )}
-
             </select>
-
           </div>
-
         </div>
 
 
-        {/* ====================================================
-            SELECTED TOPIC CHIP
-        ===================================================== */}
-
         <div
           style={{
-            marginTop:
-              "17px",
-
-            paddingTop:
-              "15px",
-
+            marginTop: "17px",
+            paddingTop: "15px",
             borderTop:
               "1px solid #F1F5F9",
-
-            display:
-              "flex",
-
-            alignItems:
-              "center",
-
-            gap:
-              "8px",
-
-            flexWrap:
-              "wrap",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            flexWrap: "wrap",
           }}
         >
-
           <span
             style={{
-              color:
-                "#64748B",
-
-              fontSize:
-                "12px",
-
-              fontWeight:
-                700,
+              color: "#64748B",
+              fontSize: "12px",
+              fontWeight: 700,
             }}
           >
             Showing:
           </span>
 
-
           <span
             style={{
-              padding:
-                "5px 10px",
-
-              borderRadius:
-                "999px",
-
-              background:
-                "#EFF6FF",
-
-              color:
-                "#1D4ED8",
-
-              fontSize:
-                "12px",
-
-              fontWeight:
-                800,
+              padding: "5px 10px",
+              borderRadius: "999px",
+              background: "#EFF6FF",
+              color: "#1D4ED8",
+              fontSize: "12px",
+              fontWeight: 800,
             }}
           >
             {
               selectedCategory ===
               "all"
-
                 ? "All Topics"
-
                 : getCategoryLabel(
                     selectedCategory
                   )
             }
           </span>
-
         </div>
-
       </section>
 
 
-      {/* ======================================================
-          PREMIUM CREATE POST
-      ======================================================= */}
-
-      {isPremium && (
-
-        <div
-          style={{
-            marginTop:
-              "20px",
-
-            display:
-              "flex",
-
-            justifyContent:
-              "flex-end",
-          }}
-        >
-
-          <Link
-            href="/community/create"
-
-            style={{
-              display:
-                "inline-flex",
-
-              alignItems:
-                "center",
-
-              gap:
-                "7px",
-
-              padding:
-                "11px 18px",
-
-              borderRadius:
-                "10px",
-
-              background:
-                "#2563EB",
-
-              color:
-                "#FFFFFF",
-
-              fontSize:
-                "14px",
-
-              fontWeight:
-                800,
-
-              textDecoration:
-                "none",
-            }}
-          >
-            <span>
-              +
-            </span>
-
-            Create a Post
-          </Link>
-
-        </div>
-
-      )}
-
-
-      {/* ======================================================
-          SECTION TITLE
-      ======================================================= */}
+      {/* ====================================================
+          RECENT CONVERSATIONS HEADING
+      ===================================================== */}
 
       <div
         style={{
-          marginTop:
-            "32px",
-
-          display:
-            "flex",
-
-          alignItems:
-            "center",
-
+          marginTop: "32px",
+          display: "flex",
+          alignItems: "center",
           justifyContent:
             "space-between",
-
-          gap:
-            "15px",
-
-          flexWrap:
-            "wrap",
+          gap: "15px",
+          flexWrap: "wrap",
         }}
       >
-
         <div>
-
           <h2
             style={{
-              margin:
-                0,
-
-              color:
-                "#0F172A",
-
-              fontSize:
-                "23px",
-
-              fontWeight:
-                800,
+              margin: 0,
+              color: "#0F172A",
+              fontSize: "23px",
+              fontWeight: 800,
             }}
           >
             Recent Conversations
           </h2>
 
-
           <p
             style={{
-              margin:
-                "5px 0 0",
-
-              color:
-                "#64748B",
-
-              fontSize:
-                "13px",
+              margin: "5px 0 0",
+              color: "#64748B",
+              fontSize: "13px",
             }}
           >
             {
               selectedCategory ===
               "all"
-
                 ? "The latest published Community conversations."
-                
                 : `Recent conversations about ${getCategoryLabel(
                     selectedCategory
                   ).toLowerCase()}.`
             }
           </p>
-
         </div>
-
 
         {!loading &&
           !error &&
           posts.length > 0 && (
-
-          <span
-            style={{
-              color:
-                "#94A3B8",
-
-              fontSize:
-                "12px",
-
-              fontWeight:
-                700,
-            }}
-          >
-            {posts.length}{" "}
-            {posts.length ===
-            1
-              ? "conversation"
-              : "conversations"}
-          </span>
-
-        )}
-
+            <span
+              style={{
+                color: "#94A3B8",
+                fontSize: "12px",
+                fontWeight: 700,
+              }}
+            >
+              {posts.length}{" "}
+              {
+                posts.length === 1
+                  ? "conversation"
+                  : "conversations"
+              }
+            </span>
+          )}
       </div>
 
 
-      {/* ======================================================
+      {/* ====================================================
           LOADING
-      ======================================================= */}
+      ===================================================== */}
 
       {loading && (
-
         <div
           style={{
-            marginTop:
-              "20px",
-
-            padding:
-              "30px",
-
-            borderRadius:
-              "18px",
-
+            marginTop: "20px",
+            padding: "30px",
+            borderRadius: "18px",
             border:
               "1px solid #E2E8F0",
-
-            background:
-              "#FFFFFF",
-
-            textAlign:
-              "center",
-
-            color:
-              "#64748B",
-
-            fontSize:
-              "14px",
+            background: "#FFFFFF",
+            textAlign: "center",
+            color: "#64748B",
+            fontSize: "14px",
           }}
         >
           Loading Community conversations...
         </div>
-
       )}
 
 
-      {/* ======================================================
+      {/* ====================================================
           ERROR
-      ======================================================= */}
+      ===================================================== */}
 
       {!loading &&
         error && (
-
-        <div
-          role="alert"
-
-          style={{
-            marginTop:
-              "20px",
-
-            padding:
-              "16px",
-
-            borderRadius:
-              "14px",
-
-            border:
-              "1px solid #FECACA",
-
-            background:
-              "#FEF2F2",
-
-            color:
-              "#B91C1C",
-
-            fontSize:
-              "14px",
-
-            lineHeight:
-              1.5,
-          }}
-        >
-          {
-            error
-          }
-        </div>
-
-      )}
+          <div
+            role="alert"
+            style={{
+              marginTop: "20px",
+              padding: "16px",
+              borderRadius: "14px",
+              border:
+                "1px solid #FECACA",
+              background: "#FEF2F2",
+              color: "#B91C1C",
+              fontSize: "14px",
+              lineHeight: 1.5,
+            }}
+          >
+            {error}
+          </div>
+        )}
 
 
-      {/* ======================================================
-          EMPTY
-      ======================================================= */}
+      {/* ====================================================
+          EMPTY STATE
+      ===================================================== */}
 
       {!loading &&
         !error &&
         posts.length === 0 && (
-
-        <div
-          style={{
-            marginTop:
-              "20px",
-
-            padding:
-              "38px 24px",
-
-            borderRadius:
-              "18px",
-
-            border:
-              "1px solid #E2E8F0",
-
-            background:
-              "#FFFFFF",
-
-            textAlign:
-              "center",
-          }}
-        >
-
           <div
             style={{
-              fontSize:
-                "30px",
-
-              marginBottom:
-                "10px",
+              marginTop: "20px",
+              padding:
+                "38px 24px",
+              borderRadius: "18px",
+              border:
+                "1px solid #E2E8F0",
+              background: "#FFFFFF",
+              textAlign: "center",
             }}
           >
-            💙
+            <div
+              style={{
+                fontSize: "30px",
+                marginBottom: "10px",
+              }}
+            >
+              💙
+            </div>
+
+            <h3
+              style={{
+                margin: 0,
+                color: "#0F172A",
+                fontSize: "20px",
+                fontWeight: 800,
+              }}
+            >
+              No conversations yet.
+            </h3>
+
+            <p
+              style={{
+                maxWidth: "590px",
+                margin:
+                  "8px auto 0",
+                color: "#64748B",
+                fontSize: "14px",
+                lineHeight: 1.6,
+              }}
+            >
+              There aren't any published
+              conversations in this topic yet.
+              Check another topic or come back
+              as the Community grows.
+            </p>
           </div>
+        )}
 
 
-          <h3
-            style={{
-              margin:
-                0,
-
-              color:
-                "#0F172A",
-
-              fontSize:
-                "20px",
-
-              fontWeight:
-                800,
-            }}
-          >
-            No conversations yet.
-          </h3>
-
-
-          <p
-            style={{
-              maxWidth:
-                "590px",
-
-              margin:
-                "8px auto 0",
-
-              color:
-                "#64748B",
-
-              fontSize:
-                "14px",
-
-              lineHeight:
-                1.6,
-            }}
-          >
-            There aren't any published conversations
-            in this topic yet. Check another topic
-            or come back as the Community grows.
-          </p>
-
-        </div>
-
-      )}
-
-
-      {/* ======================================================
+      {/* ====================================================
           POSTS
-      ======================================================= */}
+      ===================================================== */}
 
       {!loading &&
         !error &&
         posts.length > 0 && (
-
-        <div
-          style={{
-            display:
-              "grid",
-
-            gap:
-              "14px",
-
-            marginTop:
-              "20px",
-          }}
-        >
-
-          {posts.map(
-            (
-              post
-            ) => (
-
-              <CommunityPostCard
-                key={
-                  post.id
-                }
-
-                post={
-                  post
-                }
-
-                isPremium={
-                  isPremium
-                }
-
-              />
-
-            )
-          )}
-
-        </div>
-
-      )}
+          <div
+            style={{
+              display: "grid",
+              gap: "14px",
+              marginTop: "20px",
+            }}
+          >
+            {posts.map(
+              (post) => (
+                <CommunityPostCard
+                  key={post.id}
+                  post={post}
+                />
+              )
+            )}
+          </div>
+        )}
 
 
-      {/* ======================================================
-          FREE ACCOUNT CONVERSION
-      ======================================================= */}
+      {/* ====================================================
+          FREE UPGRADE
+      ===================================================== */}
 
       {!entitlementLoading &&
         plan === "free" && (
-
-        <div
-          style={{
-            marginTop:
-              "35px",
-
-            padding:
-              "25px",
-
-            borderRadius:
-              "18px",
-
-            background:
-              "#F8FAFC",
-
-            border:
-              "1px solid #E2E8F0",
-
-            textAlign:
-              "center",
-          }}
-        >
-
-          <h3
+          <div
             style={{
-              margin:
-                0,
-
-              color:
-                "#0F172A",
-
-              fontSize:
-                "21px",
-
-              fontWeight:
-                800,
+              marginTop: "35px",
+              padding: "25px",
+              borderRadius: "18px",
+              background: "#F8FAFC",
+              border:
+                "1px solid #E2E8F0",
+              textAlign: "center",
             }}
           >
-            Want to be part of the conversation?
-          </h3>
+            <h3
+              style={{
+                margin: 0,
+                color: "#0F172A",
+                fontSize: "21px",
+                fontWeight: 800,
+              }}
+            >
+              Want to be part of the conversation?
+            </h3>
 
+            <p
+              style={{
+                maxWidth: "620px",
+                margin:
+                  "9px auto 17px",
+                color: "#64748B",
+                fontSize: "14px",
+                lineHeight: 1.6,
+              }}
+            >
+              Premium members can create posts,
+              reply to other families, and
+              participate in Community
+              discussions.
+            </p>
 
-          <p
-            style={{
-              maxWidth:
-                "620px",
-
-              margin:
-                "9px auto 17px",
-
-              color:
-                "#64748B",
-
-              fontSize:
-                "14px",
-
-              lineHeight:
-                1.6,
-            }}
-          >
-            Premium members can create posts,
-            reply to other families, and
-            participate in Community discussions.
-          </p>
-
-
-          <Link
-            href="/pricing"
-
-            style={{
-              display:
-                "inline-block",
-
-              padding:
-                "11px 19px",
-
-              borderRadius:
-                "10px",
-
-              background:
-                "#2563EB",
-
-              color:
-                "#FFFFFF",
-
-              fontSize:
-                "14px",
-
-              fontWeight:
-                800,
-
-              textDecoration:
-                "none",
-            }}
-          >
-            Explore Premium
-          </Link>
-
-        </div>
-
-      )}
-
+            <Link
+              href="/pricing"
+              style={{
+                display:
+                  "inline-block",
+                padding:
+                  "11px 19px",
+                borderRadius: "10px",
+                background: "#2563EB",
+                color: "#FFFFFF",
+                fontSize: "14px",
+                fontWeight: 800,
+                textDecoration: "none",
+              }}
+            >
+              Explore Premium
+            </Link>
+          </div>
+        )}
     </section>
-
   );
 }
 
@@ -1734,85 +1049,50 @@ export default function CommunityFeed() {
  */
 
 function CommunityHeader() {
-
   return (
-
     <header>
-
       <div
         style={{
-          color:
-            "#2563EB",
-
-          fontSize:
-            "12px",
-
-          fontWeight:
-            800,
-
+          color: "#2563EB",
+          fontSize: "12px",
+          fontWeight: 800,
           letterSpacing:
             "0.08em",
-
           textTransform:
             "uppercase",
-
-          marginBottom:
-            "7px",
+          marginBottom: "7px",
         }}
       >
         Myriad Autism Journey
       </div>
 
-
       <h1
         style={{
-          margin:
-            0,
-
-          color:
-            "#0F172A",
-
-          fontSize:
-            "40px",
-
-          lineHeight:
-            1.15,
-
-          fontWeight:
-            850,
+          margin: 0,
+          color: "#0F172A",
+          fontSize: "40px",
+          lineHeight: 1.15,
+          fontWeight: 850,
         }}
       >
         Community
       </h1>
 
-
       <p
         style={{
-          maxWidth:
-            "760px",
-
-          margin:
-            "12px 0 0",
-
-          color:
-            "#64748B",
-
-          fontSize:
-            "17px",
-
-          lineHeight:
-            1.65,
+          maxWidth: "760px",
+          margin: "12px 0 0",
+          color: "#64748B",
+          fontSize: "17px",
+          lineHeight: 1.65,
         }}
       >
         Explore conversations, experiences,
         and encouragement from families
         navigating the autism journey.
       </p>
-
     </header>
-
   );
-
 }
 
 
@@ -1824,164 +1104,63 @@ function CommunityHeader() {
 
 function CommunityPostCard({
   post,
-  isPremium,
 }: {
-  post:
-    CommunityPost;
-
-  isPremium:
-    boolean;
+  post: CommunityPost;
 }) {
-
   const displayAuthor =
     post.isAnonymous
       ? "Anonymous"
       : post.authorDisplayName ||
         "Community Member";
 
-
   return (
-
     <article
       style={{
-        padding:
-          "22px",
-
-        borderRadius:
-          "18px",
-
+        padding: "22px",
+        borderRadius: "18px",
         border:
           "1px solid #E2E8F0",
-
-        background:
-          "#FFFFFF",
-
+        background: "#FFFFFF",
         boxShadow:
           "0 4px 14px rgba(15, 23, 42, 0.03)",
       }}
     >
-
-      {/* ====================================================
-          POST META
-      ===================================================== */}
-
       <div
         style={{
-          display:
-            "flex",
-
-          alignItems:
-            "center",
-
+          display: "flex",
+          alignItems: "center",
           justifyContent:
             "space-between",
-
-          gap:
-            "12px",
-
-          flexWrap:
-            "wrap",
-
-          marginBottom:
-            "10px",
+          gap: "12px",
+          flexWrap: "wrap",
+          marginBottom: "10px",
         }}
       >
-
-        <div
+        <span
           style={{
-            display:
-              "flex",
-
-            alignItems:
-              "center",
-
-            gap:
-              "8px",
-
-            flexWrap:
-              "wrap",
+            padding: "4px 8px",
+            borderRadius: "999px",
+            background: "#EFF6FF",
+            color: "#2563EB",
+            fontSize: "10px",
+            fontWeight: 800,
+            textTransform:
+              "uppercase",
+            letterSpacing:
+              "0.04em",
           }}
         >
-
-          <span
-            style={{
-              padding:
-                "4px 8px",
-
-              borderRadius:
-                "999px",
-
-              background:
-                "#EFF6FF",
-
-              color:
-                "#2563EB",
-
-              fontSize:
-                "10px",
-
-              fontWeight:
-                800,
-
-              textTransform:
-                "uppercase",
-
-              letterSpacing:
-                "0.04em",
-            }}
-          >
-            {
-              getCategoryLabel(
-                post.category
-              )
-            }
-          </span>
-
-
-          {post.isPremiumOnly && (
-
-            <span
-              style={{
-                padding:
-                  "4px 8px",
-
-                borderRadius:
-                  "999px",
-
-                background:
-                  "#F0FDFA",
-
-                color:
-                  "#0F766E",
-
-                fontSize:
-                  "10px",
-
-                fontWeight:
-                  800,
-
-                textTransform:
-                  "uppercase",
-
-                letterSpacing:
-                  "0.04em",
-              }}
-            >
-              Premium
-            </span>
-
-          )}
-
-        </div>
-
+          {
+            getCategoryLabel(
+              post.category
+            )
+          }
+        </span>
 
         <span
           style={{
-            color:
-              "#94A3B8",
-
-            fontSize:
-              "12px",
+            color: "#94A3B8",
+            fontSize: "12px",
           }}
         >
           {
@@ -1990,181 +1169,98 @@ function CommunityPostCard({
             )
           }
         </span>
-
       </div>
 
 
-      {/* ====================================================
-          TITLE
-      ===================================================== */}
-
       <h3
         style={{
-          margin:
-            "0 0 8px",
-
-          color:
-            "#0F172A",
-
-          fontSize:
-            "20px",
-
-          lineHeight:
-            1.3,
-
-          fontWeight:
-            800,
+          margin: "0 0 8px",
+          color: "#0F172A",
+          fontSize: "20px",
+          lineHeight: 1.3,
+          fontWeight: 800,
         }}
       >
-        {
-          post.title
-        }
+        {post.title}
       </h3>
 
 
-      {/* ====================================================
-          BODY
-      ===================================================== */}
-
       <p
         style={{
-          margin:
-            0,
-
-          color:
-            "#475569",
-
-          fontSize:
-            "14px",
-
-          lineHeight:
-            1.65,
-
-          whiteSpace:
-            "pre-wrap",
+          margin: 0,
+          color: "#475569",
+          fontSize: "14px",
+          lineHeight: 1.65,
+          whiteSpace: "pre-wrap",
         }}
       >
-        {
-          post.body
-        }
+        {post.body}
       </p>
 
 
-      {/* ====================================================
-          AUTHOR / STATS
-      ===================================================== */}
-
       <div
         style={{
-          display:
-            "flex",
-
-          alignItems:
-            "center",
-
+          display: "flex",
+          alignItems: "center",
           justifyContent:
             "space-between",
-
-          gap:
-            "12px",
-
-          flexWrap:
-            "wrap",
-
-          marginTop:
-            "17px",
-
-          paddingTop:
-            "15px",
-
+          gap: "12px",
+          flexWrap: "wrap",
+          marginTop: "17px",
+          paddingTop: "15px",
           borderTop:
             "1px solid #F1F5F9",
-
-          color:
-            "#94A3B8",
-
-          fontSize:
-            "12px",
+          color: "#94A3B8",
+          fontSize: "12px",
         }}
       >
-
         <span>
           Shared by{" "}
-
           <strong
             style={{
-              color:
-                "#64748B",
+              color: "#64748B",
             }}
           >
-            {
-              displayAuthor
-            }
+            {displayAuthor}
           </strong>
         </span>
 
-
         <div
           style={{
-            display:
-              "flex",
-
-            gap:
-              "12px",
+            display: "flex",
+            gap: "12px",
           }}
         >
-
           <span>
             💬 {post.replyCount}
           </span>
 
-
           <span>
             ♥ {post.reactionCount}
           </span>
-
         </div>
-
       </div>
 
 
-      {/* ====================================================
-          VIEW CONVERSATION
-      ===================================================== */}
-
       <div
         style={{
-          marginTop:
-            "15px",
+          marginTop: "15px",
         }}
       >
-
         <Link
           href={
             `/community/${post.id}`
           }
-
           style={{
-            color:
-              "#2563EB",
-
-            fontSize:
-              "13px",
-
-            fontWeight:
-              800,
-
-            textDecoration:
-              "none",
+            color: "#2563EB",
+            fontSize: "13px",
+            fontWeight: 800,
+            textDecoration: "none",
           }}
         >
           View conversation →
         </Link>
-
       </div>
-
     </article>
-
   );
-
 }
