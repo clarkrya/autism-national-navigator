@@ -21,45 +21,17 @@ import type {
 } from "../../../lib/communityTypes";
 
 
-/*
- * ============================================================
- * COMMUNITY CONVERSATION
- * ============================================================
- *
- * Guest:
- *   Login/create account required.
- *
- * Free:
- *   Read published conversations and replies.
- *   See Helpful reaction counts.
- *
- * Premium / Premium+:
- *   Read and participate.
- *   Add/remove Helpful reactions.
- *
- * Community profile:
- *   The saved isAnonymousByDefault preference controls the
- *   initial state of the reply anonymity checkbox.
- *
- * Published conversations are shared across Community.
- * Premium controls participation, not visibility.
- * ============================================================
- */
-
-
 type CommunityPostPageProps = {
   params: {
     postId: string;
   };
 };
 
-
 type CreateReplyResponse = {
   success?: boolean;
   replyId?: string;
   error?: string;
 };
-
 
 type ReactionApiResponse = {
   success?: boolean;
@@ -71,30 +43,71 @@ type ReactionApiResponse = {
   error?: string;
 };
 
+type ReportTargetType = "post" | "reply";
+
+type ReportReason =
+  | "harassment"
+  | "hate_or_abuse"
+  | "misinformation"
+  | "privacy"
+  | "spam"
+  | "unsafe_content"
+  | "other";
+
+type ReportApiResponse = {
+  success?: boolean;
+  alreadyReported?: boolean;
+  message?: string;
+  targetType?: ReportTargetType;
+  targetId?: string;
+  error?: string;
+};
 
 type ReplyReactionSummaryMap = Record<
   string,
   CommunityReactionSummary
 >;
 
-
-type ReactionLoadingMap = Record<
-  string,
-  boolean
->;
-
+type ReactionLoadingMap = Record<string, boolean>;
 
 const EMPTY_REACTION_SUMMARY: CommunityReactionSummary = {
   count: 0,
   currentUserReacted: false,
 };
 
-
-/*
- * ============================================================
- * HELPERS
- * ============================================================
- */
+const REPORT_REASONS: Array<{
+  value: ReportReason;
+  label: string;
+}> = [
+  {
+    value: "harassment",
+    label: "Harassment or bullying",
+  },
+  {
+    value: "hate_or_abuse",
+    label: "Hate or abusive content",
+  },
+  {
+    value: "misinformation",
+    label: "Potentially harmful misinformation",
+  },
+  {
+    value: "privacy",
+    label: "Privacy or personal information",
+  },
+  {
+    value: "spam",
+    label: "Spam or promotional content",
+  },
+  {
+    value: "unsafe_content",
+    label: "Unsafe or concerning content",
+  },
+  {
+    value: "other",
+    label: "Other",
+  },
+];
 
 
 function formatDate(timestamp: number): string {
@@ -123,23 +136,10 @@ function getCategoryLabel(category: string): string {
 }
 
 
-/*
- * ============================================================
- * PAGE
- * ============================================================
- */
-
-
 export default function CommunityPostPage({
   params,
 }: CommunityPostPageProps) {
   const postId = params.postId;
-
-  /*
-   * ==========================================================
-   * ACCOUNT
-   * ==========================================================
-   */
 
   const {
     plan,
@@ -147,25 +147,11 @@ export default function CommunityPostPage({
     isPremium,
   } = useAccountEntitlements();
 
-
-  /*
-   * ==========================================================
-   * CONVERSATION
-   * ==========================================================
-   */
-
   const [post, setPost] =
     useState<CommunityPost | null>(null);
 
   const [replies, setReplies] =
     useState<CommunityReply[]>([]);
-
-
-  /*
-   * ==========================================================
-   * PAGE STATE
-   * ==========================================================
-   */
 
   const [loading, setLoading] =
     useState(true);
@@ -173,11 +159,10 @@ export default function CommunityPostPage({
   const [error, setError] =
     useState("");
 
-
   /*
-   * ==========================================================
-   * REACTION STATE
-   * ==========================================================
+   * ============================================================
+   * REACTIONS
+   * ============================================================
    */
 
   const [postReaction, setPostReaction] =
@@ -194,28 +179,17 @@ export default function CommunityPostPage({
   const [reactionError, setReactionError] =
     useState("");
 
-
   /*
-   * ==========================================================
-   * REPLY FORM
-   * ==========================================================
+   * ============================================================
+   * REPLY
+   * ============================================================
    */
 
   const [replyBody, setReplyBody] =
     useState("");
 
-  /*
-   * Privacy-safe fallback:
-   * anonymous until the saved Community profile is loaded.
-   */
-
   const [replyAnonymously, setReplyAnonymously] =
     useState(true);
-
-  /*
-   * Keep the saved default separately so after a successful
-   * reply we reset to the user's profile preference.
-   */
 
   const [
     replyAnonymousDefault,
@@ -231,11 +205,40 @@ export default function CommunityPostPage({
   const [replySuccess, setReplySuccess] =
     useState("");
 
+  /*
+   * ============================================================
+   * REPORTING
+   * ============================================================
+   */
+
+  const [
+    reportTarget,
+    setReportTarget,
+  ] = useState<{
+    type: ReportTargetType;
+    id: string;
+  } | null>(null);
+
+  const [reportReason, setReportReason] =
+    useState<ReportReason | "">("");
+
+  const [reportDetails, setReportDetails] =
+    useState("");
+
+  const [submittingReport, setSubmittingReport] =
+    useState(false);
+
+  const [reportError, setReportError] =
+    useState("");
+
+  const [reportSuccess, setReportSuccess] =
+    useState("");
+
 
   /*
-   * ==========================================================
-   * LOAD SAVED COMMUNITY PROFILE PREFERENCE
-   * ==========================================================
+   * ============================================================
+   * COMMUNITY PROFILE PREFERENCE
+   * ============================================================
    */
 
   useEffect(() => {
@@ -302,9 +305,9 @@ export default function CommunityPostPage({
 
 
   /*
-   * ==========================================================
-   * LOAD REACTION SUMMARIES
-   * ==========================================================
+   * ============================================================
+   * REACTION SUMMARIES
+   * ============================================================
    */
 
   async function loadReactionSummaries(
@@ -345,9 +348,7 @@ export default function CommunityPostPage({
 
     loadedReplies.forEach(
       (reply, index) => {
-        nextReplyReactions[
-          reply.id
-        ] =
+        nextReplyReactions[reply.id] =
           loadedReplyReactions[index] ||
           EMPTY_REACTION_SUMMARY;
       }
@@ -360,9 +361,9 @@ export default function CommunityPostPage({
 
 
   /*
-   * ==========================================================
+   * ============================================================
    * LOAD CONVERSATION
-   * ==========================================================
+   * ============================================================
    */
 
   useEffect(() => {
@@ -417,11 +418,6 @@ export default function CommunityPostPage({
         setReplies(
           loadedReplies
         );
-
-        /*
-         * Reaction data is read independently from the stale
-         * reactionCount fields stored on posts/replies.
-         */
 
         try {
           const currentUser =
@@ -530,9 +526,9 @@ export default function CommunityPostPage({
 
 
   /*
-   * ==========================================================
+   * ============================================================
    * REFRESH REPLIES
-   * ==========================================================
+   * ============================================================
    */
 
   async function refreshReplies() {
@@ -561,9 +557,9 @@ export default function CommunityPostPage({
 
 
   /*
-   * ==========================================================
-   * REACTION HELPERS
-   * ==========================================================
+   * ============================================================
+   * HELPFUL REACTIONS
+   * ============================================================
    */
 
   function getReactionKey(
@@ -598,12 +594,6 @@ export default function CommunityPostPage({
     );
   }
 
-
-  /*
-   * ==========================================================
-   * TOGGLE HELPFUL REACTION
-   * ==========================================================
-   */
 
   async function toggleHelpfulReaction(
     targetType:
@@ -695,11 +685,6 @@ export default function CommunityPostPage({
         );
       }
 
-      /*
-       * Read the saved state back from Firestore instead of
-       * relying on optimistic counters.
-       */
-
       const refreshedSummary =
         await getCommunityReactionSummary(
           targetType,
@@ -737,9 +722,167 @@ export default function CommunityPostPage({
 
 
   /*
-   * ==========================================================
-   * SUBMIT REPLY
-   * ==========================================================
+   * ============================================================
+   * REPORTING
+   * ============================================================
+   */
+
+  function openReport(
+    targetType: ReportTargetType,
+    targetId: string
+  ) {
+    setReportTarget({
+      type: targetType,
+      id: targetId,
+    });
+
+    setReportReason("");
+    setReportDetails("");
+    setReportError("");
+    setReportSuccess("");
+  }
+
+
+  function closeReport() {
+    if (submittingReport) {
+      return;
+    }
+
+    setReportTarget(null);
+    setReportReason("");
+    setReportDetails("");
+    setReportError("");
+  }
+
+
+  async function submitReport(
+    event:
+      FormEvent<HTMLFormElement>
+  ) {
+    event.preventDefault();
+
+    setReportError("");
+    setReportSuccess("");
+
+    if (!reportTarget) {
+      return;
+    }
+
+    if (!reportReason) {
+      setReportError(
+        "Please select a reason for your report."
+      );
+
+      return;
+    }
+
+    if (
+      reportDetails.length >
+      1000
+    ) {
+      setReportError(
+        "Additional details must be 1,000 characters or fewer."
+      );
+
+      return;
+    }
+
+    const currentUser =
+      getCurrentUser();
+
+    if (!currentUser) {
+      setReportError(
+        "Please log in again before submitting your report."
+      );
+
+      return;
+    }
+
+    setSubmittingReport(true);
+
+    try {
+      const idToken =
+        await currentUser.getIdToken();
+
+      const response =
+        await fetch(
+          "/api/community/reports",
+          {
+            method: "POST",
+
+            headers: {
+              Authorization:
+                `Bearer ${idToken}`,
+
+              "Content-Type":
+                "application/json",
+            },
+
+            body: JSON.stringify({
+              targetType:
+                reportTarget.type,
+
+              targetId:
+                reportTarget.id,
+
+              reason:
+                reportReason,
+
+              details:
+                reportDetails.trim(),
+            }),
+          }
+        );
+
+      let result:
+        ReportApiResponse = {};
+
+      try {
+        result =
+          await response.json() as
+            ReportApiResponse;
+      } catch {
+        result = {};
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          result.error ||
+          "We couldn't submit your report right now."
+        );
+      }
+
+      setReportTarget(null);
+      setReportReason("");
+      setReportDetails("");
+
+      setReportSuccess(
+        result.message ||
+        "Thank you. Your report has been submitted for review."
+      );
+    } catch (
+      submitReportError
+    ) {
+      console.error(
+        "Unable to submit Community report:",
+        submitReportError
+      );
+
+      setReportError(
+        submitReportError instanceof Error
+          ? submitReportError.message
+          : "We couldn't submit your report right now."
+      );
+    } finally {
+      setSubmittingReport(false);
+    }
+  }
+
+
+  /*
+   * ============================================================
+   * REPLY
+   * ============================================================
    */
 
   async function submitReply(
@@ -844,13 +987,6 @@ export default function CommunityPostPage({
 
       setReplyBody("");
 
-      /*
-       * IMPORTANT:
-       *
-       * Reset the checkbox to the SAVED Community profile
-       * preference instead of hardcoding false.
-       */
-
       setReplyAnonymously(
         replyAnonymousDefault
       );
@@ -878,9 +1014,9 @@ export default function CommunityPostPage({
 
 
   /*
-   * ==========================================================
-   * GUEST VIEW
-   * ==========================================================
+   * ============================================================
+   * GUEST
+   * ============================================================
    */
 
   if (
@@ -912,8 +1048,7 @@ export default function CommunityPostPage({
             marginTop: "25px",
             padding: "40px",
             borderRadius: "20px",
-            border:
-              "1px solid #E2E8F0",
+            border: "1px solid #E2E8F0",
             background: "#FFFFFF",
             textAlign: "center",
             boxShadow:
@@ -943,8 +1078,7 @@ export default function CommunityPostPage({
           <p
             style={{
               maxWidth: "620px",
-              margin:
-                "12px auto 22px",
+              margin: "12px auto 22px",
               color: "#64748B",
               fontSize: "15px",
               lineHeight: 1.65,
@@ -990,8 +1124,7 @@ export default function CommunityPostPage({
               style={{
                 padding: "12px 20px",
                 borderRadius: "10px",
-                border:
-                  "1px solid #CBD5E1",
+                border: "1px solid #CBD5E1",
                 background: "#FFFFFF",
                 color: "#334155",
                 fontSize: "14px",
@@ -1009,9 +1142,9 @@ export default function CommunityPostPage({
 
 
   /*
-   * ==========================================================
+   * ============================================================
    * LOADING
-   * ==========================================================
+   * ============================================================
    */
 
   if (
@@ -1043,8 +1176,7 @@ export default function CommunityPostPage({
             marginTop: "25px",
             padding: "40px",
             borderRadius: "20px",
-            border:
-              "1px solid #E2E8F0",
+            border: "1px solid #E2E8F0",
             background: "#FFFFFF",
             textAlign: "center",
             color: "#64748B",
@@ -1059,9 +1191,9 @@ export default function CommunityPostPage({
 
 
   /*
-   * ==========================================================
+   * ============================================================
    * ERROR
-   * ==========================================================
+   * ============================================================
    */
 
   if (
@@ -1093,8 +1225,7 @@ export default function CommunityPostPage({
             marginTop: "25px",
             padding: "35px",
             borderRadius: "18px",
-            border:
-              "1px solid #FECACA",
+            border: "1px solid #FECACA",
             background: "#FEF2F2",
             color: "#B91C1C",
             textAlign: "center",
@@ -1111,12 +1242,6 @@ export default function CommunityPostPage({
     );
   }
 
-
-  /*
-   * ==========================================================
-   * DISPLAY VALUES
-   * ==========================================================
-   */
 
   const postAuthor =
     post.isAnonymous
@@ -1139,12 +1264,6 @@ export default function CommunityPostPage({
     ] === true;
 
 
-  /*
-   * ==========================================================
-   * MAIN PAGE
-   * ==========================================================
-   */
-
   return (
     <main
       style={{
@@ -1166,17 +1285,14 @@ export default function CommunityPostPage({
       </Link>
 
 
-      {/* ==================================================
-          ORIGINAL POST
-      =================================================== */}
+      {/* ORIGINAL POST */}
 
       <article
         style={{
           marginTop: "22px",
           padding: "30px",
           borderRadius: "20px",
-          border:
-            "1px solid #E2E8F0",
+          border: "1px solid #E2E8F0",
           background: "#FFFFFF",
           boxShadow:
             "0 6px 20px rgba(15, 23, 42, 0.04)",
@@ -1251,9 +1367,7 @@ export default function CommunityPostPage({
         </p>
 
 
-        {/* ==================================================
-            POST REACTION
-        =================================================== */}
+        {/* POST ACTIONS */}
 
         <div
           style={{
@@ -1320,8 +1434,7 @@ export default function CommunityPostPage({
                     postReactionBusy
                       ? "Updating..."
                       : `👍 Helpful${
-                          postReaction.count >
-                          0
+                          postReaction.count > 0
                             ? ` ${postReaction.count}`
                             : ""
                         }`
@@ -1342,6 +1455,30 @@ export default function CommunityPostPage({
                 </span>
               )
           }
+
+          <button
+            type="button"
+            onClick={
+              () =>
+                openReport(
+                  "post",
+                  post.id
+                )
+            }
+            style={{
+              padding: "8px 12px",
+              borderRadius: "999px",
+              border:
+                "1px solid #CBD5E1",
+              background: "#FFFFFF",
+              color: "#64748B",
+              fontSize: "12px",
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            Report
+          </button>
         </div>
 
 
@@ -1388,10 +1525,6 @@ export default function CommunityPostPage({
       </article>
 
 
-      {/* ==================================================
-          REACTION ERROR
-      =================================================== */}
-
       {
         reactionError && (
           <div
@@ -1414,9 +1547,320 @@ export default function CommunityPostPage({
       }
 
 
-      {/* ==================================================
-          CONVERSATION
-      =================================================== */}
+      {
+        reportSuccess && (
+          <div
+            role="status"
+            style={{
+              marginTop: "14px",
+              padding: "12px 14px",
+              borderRadius: "10px",
+              border:
+                "1px solid #BBF7D0",
+              background: "#F0FDF4",
+              color: "#166534",
+              fontSize: "13px",
+              lineHeight: 1.5,
+            }}
+          >
+            {reportSuccess}
+          </div>
+        )
+      }
+
+
+      {/* REPORT PANEL */}
+
+      {
+        reportTarget && (
+          <section
+            style={{
+              marginTop: "18px",
+              padding: "22px",
+              borderRadius: "16px",
+              border:
+                "1px solid #E2E8F0",
+              background: "#F8FAFC",
+            }}
+          >
+            <h2
+              style={{
+                margin: "0 0 7px",
+                color: "#0F172A",
+                fontSize: "19px",
+                fontWeight: 800,
+              }}
+            >
+              Report this {
+                reportTarget.type ===
+                "post"
+                  ? "conversation"
+                  : "reply"
+              }
+            </h2>
+
+            <p
+              style={{
+                margin: "0 0 16px",
+                color: "#64748B",
+                fontSize: "13px",
+                lineHeight: 1.6,
+              }}
+            >
+              Reports help us identify
+              Community content that may
+              need review.
+            </p>
+
+            {
+              reportError && (
+                <div
+                  role="alert"
+                  style={{
+                    marginBottom: "14px",
+                    padding:
+                      "11px 13px",
+                    borderRadius:
+                      "10px",
+                    border:
+                      "1px solid #FECACA",
+                    background:
+                      "#FEF2F2",
+                    color: "#B91C1C",
+                    fontSize: "12px",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {reportError}
+                </div>
+              )
+            }
+
+            <form
+              onSubmit={
+                submitReport
+              }
+            >
+              <label
+                htmlFor="report-reason"
+                style={{
+                  display: "block",
+                  marginBottom: "6px",
+                  color: "#334155",
+                  fontSize: "13px",
+                  fontWeight: 800,
+                }}
+              >
+                Reason
+              </label>
+
+              <select
+                id="report-reason"
+                value={
+                  reportReason
+                }
+                onChange={
+                  (event) => {
+                    setReportReason(
+                      event.target
+                        .value as
+                        ReportReason | ""
+                    );
+
+                    if (reportError) {
+                      setReportError("");
+                    }
+                  }
+                }
+                disabled={
+                  submittingReport
+                }
+                style={{
+                  width: "100%",
+                  boxSizing:
+                    "border-box",
+                  padding: "11px 12px",
+                  borderRadius: "10px",
+                  border:
+                    "1px solid #CBD5E1",
+                  background: "#FFFFFF",
+                  color: "#0F172A",
+                  fontSize: "13px",
+                }}
+              >
+                <option value="">
+                  Select a reason
+                </option>
+
+                {
+                  REPORT_REASONS.map(
+                    (reason) => (
+                      <option
+                        key={
+                          reason.value
+                        }
+                        value={
+                          reason.value
+                        }
+                      >
+                        {reason.label}
+                      </option>
+                    )
+                  )
+                }
+              </select>
+
+              <label
+                htmlFor="report-details"
+                style={{
+                  display: "block",
+                  marginTop: "15px",
+                  marginBottom: "6px",
+                  color: "#334155",
+                  fontSize: "13px",
+                  fontWeight: 800,
+                }}
+              >
+                Additional details{" "}
+                <span
+                  style={{
+                    color: "#94A3B8",
+                    fontWeight: 500,
+                  }}
+                >
+                  (optional)
+                </span>
+              </label>
+
+              <textarea
+                id="report-details"
+                value={
+                  reportDetails
+                }
+                onChange={
+                  (event) => {
+                    setReportDetails(
+                      event.target.value
+                    );
+
+                    if (reportError) {
+                      setReportError("");
+                    }
+                  }
+                }
+                maxLength={1000}
+                disabled={
+                  submittingReport
+                }
+                placeholder="Tell us anything that may help with review."
+                style={{
+                  width: "100%",
+                  minHeight: "100px",
+                  boxSizing:
+                    "border-box",
+                  resize: "vertical",
+                  padding: "11px 12px",
+                  borderRadius: "10px",
+                  border:
+                    "1px solid #CBD5E1",
+                  background: "#FFFFFF",
+                  color: "#0F172A",
+                  fontSize: "13px",
+                  lineHeight: 1.6,
+                }}
+              />
+
+              <div
+                style={{
+                  marginTop: "6px",
+                  color: "#94A3B8",
+                  fontSize: "11px",
+                  textAlign: "right",
+                }}
+              >
+                {reportDetails.length}/1000
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent:
+                    "flex-end",
+                  gap: "9px",
+                  flexWrap: "wrap",
+                  marginTop: "16px",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={
+                    closeReport
+                  }
+                  disabled={
+                    submittingReport
+                  }
+                  style={{
+                    padding:
+                      "10px 15px",
+                    borderRadius:
+                      "9px",
+                    border:
+                      "1px solid #CBD5E1",
+                    background:
+                      "#FFFFFF",
+                    color: "#475569",
+                    fontSize: "12px",
+                    fontWeight: 800,
+                    cursor:
+                      submittingReport
+                        ? "not-allowed"
+                        : "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={
+                    submittingReport ||
+                    !reportReason
+                  }
+                  style={{
+                    padding:
+                      "10px 15px",
+                    borderRadius:
+                      "9px",
+                    border: "none",
+                    background:
+                      submittingReport ||
+                      !reportReason
+                        ? "#94A3B8"
+                        : "#DC2626",
+                    color: "#FFFFFF",
+                    fontSize: "12px",
+                    fontWeight: 800,
+                    cursor:
+                      submittingReport ||
+                      !reportReason
+                        ? "not-allowed"
+                        : "pointer",
+                  }}
+                >
+                  {
+                    submittingReport
+                      ? "Submitting..."
+                      : "Submit Report"
+                  }
+                </button>
+              </div>
+            </form>
+          </section>
+        )
+      }
+
+
+      {/* CONVERSATION */}
 
       <section
         style={{
@@ -1596,9 +2040,7 @@ export default function CommunityPostPage({
                           </p>
 
 
-                          {/* ==============================
-                              REPLY REACTION
-                          =============================== */}
+                          {/* REPLY ACTIONS */}
 
                           <div
                             style={{
@@ -1613,6 +2055,8 @@ export default function CommunityPostPage({
                               alignItems:
                                 "center",
                               gap: "8px",
+                              flexWrap:
+                                "wrap",
                             }}
                           >
                             {
@@ -1673,8 +2117,7 @@ export default function CommunityPostPage({
                                       replyReactionBusy
                                         ? "Updating..."
                                         : `👍 Helpful${
-                                            replyReaction.count >
-                                            0
+                                            replyReaction.count > 0
                                               ? ` ${replyReaction.count}`
                                               : ""
                                           }`
@@ -1699,6 +2142,37 @@ export default function CommunityPostPage({
                                   </span>
                                 )
                             }
+
+                            <button
+                              type="button"
+                              onClick={
+                                () =>
+                                  openReport(
+                                    "reply",
+                                    reply.id
+                                  )
+                              }
+                              style={{
+                                padding:
+                                  "7px 11px",
+                                borderRadius:
+                                  "999px",
+                                border:
+                                  "1px solid #CBD5E1",
+                                background:
+                                  "#FFFFFF",
+                                color:
+                                  "#64748B",
+                                fontSize:
+                                  "11px",
+                                fontWeight:
+                                  700,
+                                cursor:
+                                  "pointer",
+                              }}
+                            >
+                              Report
+                            </button>
                           </div>
                         </article>
                       );
@@ -1711,9 +2185,7 @@ export default function CommunityPostPage({
       </section>
 
 
-      {/* ==================================================
-          PREMIUM REPLY FORM
-      =================================================== */}
+      {/* PREMIUM REPLY FORM */}
 
       {
         isPremium && (
@@ -1991,9 +2463,7 @@ export default function CommunityPostPage({
       }
 
 
-      {/* ==================================================
-          FREE MEMBER MESSAGE
-      =================================================== */}
+      {/* FREE MEMBER MESSAGE */}
 
       {
         plan === "free" && (
@@ -2030,9 +2500,11 @@ export default function CommunityPostPage({
               }}
             >
               Free members can read Community
-              conversations and see Helpful
-              reactions. Community participation
-              is part of Premium.
+              conversations, see Helpful
+              reactions, and report content
+              that may need review. Posting,
+              replying, and Helpful reactions
+              are part of Premium.
             </p>
 
             <Link

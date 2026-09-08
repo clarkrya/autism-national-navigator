@@ -830,6 +830,174 @@ function normalizeSubscription(
 }
 
 
+
+/*
+ * ============================================================
+ * COMMUNITY MODERATOR AUTHORIZATION
+ * ============================================================
+ *
+ * Community moderation authority is intentionally separate
+ * from subscription plans.
+ *
+ * A Premium or Premium+ subscription does NOT automatically
+ * grant moderator access.
+ *
+ * Trusted Community access is stored at:
+ *
+ * users/{uid}/communityAccess/current
+ *
+ * Expected document:
+ *
+ * {
+ *   role: "moderator" | "admin",
+ *   active: true
+ * }
+ *
+ * The authenticated user's Firebase ID token is used to read
+ * this document through Firestore REST.
+ *
+ * Firestore Security Rules remain active.
+ * ============================================================
+ */
+
+
+export type CommunityModeratorRole =
+  | "moderator"
+  | "admin";
+
+
+export type VerifiedCommunityModerator = {
+  uid: string;
+
+  email?: string;
+
+  role: CommunityModeratorRole;
+
+  idToken: string;
+};
+
+
+/*
+ * ============================================================
+ * ROLE VALIDATION
+ * ============================================================
+ */
+
+function isCommunityModeratorRole(
+  value: unknown
+): value is CommunityModeratorRole {
+
+  return (
+    value === "moderator" ||
+    value === "admin"
+  );
+}
+
+
+/*
+ * ============================================================
+ * REQUIRE COMMUNITY MODERATOR
+ * ============================================================
+ *
+ * Verifies:
+ *
+ * 1. Firebase authentication
+ * 2. communityAccess/current exists
+ * 3. active === true
+ * 4. role === moderator or admin
+ *
+ * Throws COMMUNITY_MODERATOR_REQUIRED when the authenticated
+ * account does not have active moderation authority.
+ * ============================================================
+ */
+
+export async function requireCommunityModerator(
+  request: Request
+): Promise<VerifiedCommunityModerator> {
+
+  /*
+   * Verify Firebase authentication once and retain the same
+   * ID token for the Firestore authorization check.
+   */
+
+  const account =
+    await requireAuthenticatedUser(
+      request
+    );
+
+
+  /*
+   * Read the trusted Community access document.
+   *
+   * Firestore rules permit the account owner to read this
+   * document but prohibit client creation or modification.
+   */
+
+  const access =
+    await getAuthenticatedFirestoreDocument(
+      `users/${account.uid}/communityAccess/current`,
+      account.idToken
+    );
+
+
+  /*
+   * No access document means the account is an ordinary
+   * Community member.
+   */
+
+  if (!access) {
+
+    throw new Error(
+      "COMMUNITY_MODERATOR_REQUIRED"
+    );
+  }
+
+
+  /*
+   * The role must currently be active.
+   */
+
+  if (
+    access.active !== true
+  ) {
+
+    throw new Error(
+      "COMMUNITY_MODERATOR_REQUIRED"
+    );
+  }
+
+
+  /*
+   * Only explicitly recognized trusted roles are accepted.
+   */
+
+  if (
+    !isCommunityModeratorRole(
+      access.role
+    )
+  ) {
+
+    throw new Error(
+      "COMMUNITY_MODERATOR_REQUIRED"
+    );
+  }
+
+
+  return {
+    uid:
+      account.uid,
+
+    email:
+      account.email,
+
+    role:
+      access.role,
+
+    idToken:
+      account.idToken,
+  };
+}
+
 /*
  * ============================================================
  * VERIFY FIREBASE REQUEST
