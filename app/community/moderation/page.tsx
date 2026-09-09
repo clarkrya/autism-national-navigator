@@ -43,18 +43,24 @@ type ReportReason =
   | "other";
 
 
-  type CommunityModerationReport = {
-    id: string;
-  
-    reporterId: string;
-  
-    targetType: ReportTargetType;
-  
-    targetId: string;
-  
-    parentPostId: string;
-  
-    reason: ReportReason;
+type CommunityModerationAction =
+  | "hide"
+  | "restore"
+  | "remove";
+
+
+type CommunityModerationReport = {
+  id: string;
+
+  reporterId: string;
+
+  targetType: ReportTargetType;
+
+  targetId: string;
+
+  parentPostId: string;
+
+  reason: ReportReason;
 
   details: string;
 
@@ -90,45 +96,74 @@ type ModerationStatusResponse = {
 };
 
 
+type ContentModerationResponse = {
+  success?: boolean;
+
+  contentType?: ReportTargetType;
+
+  contentId?: string;
+
+  action?: CommunityModerationAction;
+
+  recordId?: string;
+
+  status?:
+    | "published"
+    | "hidden"
+    | "removed";
+
+  moderationStatus?:
+    | "reviewed"
+    | "flagged"
+    | "removed";
+
+  updatedAt?: number;
+
+  error?: string;
+};
+
+
 const REASON_LABELS:
   Record<ReportReason, string> = {
-    harassment:
-      "Harassment or bullying",
 
-    hate_or_abuse:
-      "Hate or abusive content",
+  harassment:
+    "Harassment or bullying",
 
-    misinformation:
-      "Potentially harmful misinformation",
+  hate_or_abuse:
+    "Hate or abusive content",
 
-    privacy:
-      "Privacy or personal information",
+  misinformation:
+    "Potentially harmful misinformation",
 
-    spam:
-      "Spam or promotional content",
+  privacy:
+    "Privacy or personal information",
 
-    unsafe_content:
-      "Unsafe or concerning content",
+  spam:
+    "Spam or promotional content",
 
-    other:
-      "Other",
-  };
+  unsafe_content:
+    "Unsafe or concerning content",
+
+  other:
+    "Other",
+};
 
 
 const STATUS_LABELS:
   Record<ReportStatus, string> = {
-    open:
-      "Open",
 
-    reviewing:
-      "Reviewing",
+  open:
+    "Open",
 
-    resolved:
-      "Resolved",
+  reviewing:
+    "Reviewing",
 
-    dismissed:
-      "Dismissed",
-  };
+  resolved:
+    "Resolved",
+
+  dismissed:
+    "Dismissed",
+};
 
 
 const STATUS_OPTIONS:
@@ -138,6 +173,23 @@ const STATUS_OPTIONS:
     "resolved",
     "dismissed",
   ];
+
+
+const CONTENT_ACTION_LABELS:
+  Record<
+    CommunityModerationAction,
+    string
+  > = {
+
+  hide:
+    "Hide",
+
+  restore:
+    "Restore",
+
+  remove:
+    "Remove",
+};
 
 
 function formatDate(
@@ -275,6 +327,122 @@ function getConversationUrl(
 }
 
 
+function getAuditReason(
+  report: CommunityModerationReport
+): string {
+
+  const reasonLabel =
+    REASON_LABELS[
+      report.reason
+    ];
+
+
+  if (
+    !report.details
+      .trim()
+  ) {
+
+    return reasonLabel;
+  }
+
+
+  return `${reasonLabel}: ${report.details.trim()}`
+    .slice(
+      0,
+      1000
+    );
+}
+
+
+function confirmContentAction(
+  report: CommunityModerationReport,
+  action: CommunityModerationAction
+): boolean {
+
+  const contentLabel =
+    report.targetType ===
+      "post"
+      ? "conversation"
+      : "reply";
+
+
+  if (
+    action === "hide"
+  ) {
+
+    return window.confirm(
+      `Hide this ${contentLabel}?\n\nIt will no longer be visible to regular Community members, but it can be restored later.`
+    );
+  }
+
+
+  if (
+    action === "remove"
+  ) {
+
+    return window.confirm(
+      `Remove this ${contentLabel}?\n\nIt will no longer be visible to regular Community members. The content will remain stored for the moderation audit trail and may be restored by an authorized moderator.`
+    );
+  }
+
+
+  return window.confirm(
+    `Restore this ${contentLabel}?\n\nIt will become visible in the Community again.`
+  );
+}
+
+
+function getContentActionButtonStyle(
+  action: CommunityModerationAction
+) {
+
+  if (
+    action === "remove"
+  ) {
+
+    return {
+      border:
+        "1px solid #FCA5A5",
+
+      background:
+        "#FFF1F2",
+
+      color:
+        "#B91C1C",
+    };
+  }
+
+
+  if (
+    action === "hide"
+  ) {
+
+    return {
+      border:
+        "1px solid #FCD34D",
+
+      background:
+        "#FFFBEB",
+
+      color:
+        "#92400E",
+    };
+  }
+
+
+  return {
+    border:
+      "1px solid #86EFAC",
+
+    background:
+      "#F0FDF4",
+
+    color:
+      "#166534",
+  };
+}
+
+
 export default function CommunityModerationPage() {
 
   const [
@@ -310,8 +478,7 @@ export default function CommunityModerationPage() {
 
 
   /*
-   * Track the report currently being updated so
-   * only that report's controls are disabled.
+   * Report-status update in progress.
    */
 
   const [
@@ -324,8 +491,17 @@ export default function CommunityModerationPage() {
 
 
   /*
-   * Success/error feedback for moderation actions.
+   * Content moderation action in progress.
    */
+
+  const [
+    moderatingContentReportId,
+    setModeratingContentReportId,
+  ] =
+    useState<
+      string | null
+    >(null);
+
 
   const [
     actionMessage,
@@ -349,9 +525,14 @@ export default function CommunityModerationPage() {
 
   const loadReports =
     useCallback(
-      async () => {
+      async (
+        showLoading = true
+      ) => {
 
-        setLoading(true);
+        if (showLoading) {
+          setLoading(true);
+        }
+
 
         setError("");
 
@@ -480,7 +661,9 @@ export default function CommunityModerationPage() {
 
         } finally {
 
-          setLoading(false);
+          if (showLoading) {
+            setLoading(false);
+          }
         }
       },
       []
@@ -547,11 +730,6 @@ export default function CommunityModerationPage() {
         reportId: string,
         status: ReportStatus
       ) => {
-
-        /*
-         * Do nothing if another status update for this
-         * report is already in progress.
-         */
 
         if (
           updatingReportId ===
@@ -646,13 +824,6 @@ export default function CommunityModerationPage() {
           }
 
 
-          /*
-           * Update the local queue immediately.
-           *
-           * We still reload from the server afterward so
-           * Firestore remains the authoritative source.
-           */
-
           setReports(
             (
               currentReports
@@ -680,10 +851,13 @@ export default function CommunityModerationPage() {
 
 
           /*
-           * Re-read the moderation queue from Firestore.
+           * Refresh from Firestore without replacing the entire
+           * page with the loading state.
            */
 
-          await loadReports();
+          await loadReports(
+            false
+          );
 
 
         } catch (
@@ -717,6 +891,210 @@ export default function CommunityModerationPage() {
 
   /*
    * ============================================================
+   * MODERATE COMMUNITY CONTENT
+   * ============================================================
+   */
+
+  const moderateContent =
+    useCallback(
+      async (
+        report:
+          CommunityModerationReport,
+        action:
+          CommunityModerationAction
+      ) => {
+
+        if (
+          moderatingContentReportId ===
+            report.id
+        ) {
+          return;
+        }
+
+
+        /*
+         * Destructive / visibility-changing actions require
+         * moderator confirmation before reaching the API.
+         */
+
+        if (
+          !confirmContentAction(
+            report,
+            action
+          )
+        ) {
+          return;
+        }
+
+
+        setModeratingContentReportId(
+          report.id
+        );
+
+        setActionMessage("");
+
+        setActionError("");
+
+
+        try {
+
+          const user =
+            auth.currentUser;
+
+
+          if (!user) {
+
+            setActionError(
+              "Please log in again before performing a moderation action."
+            );
+
+            return;
+          }
+
+
+          const idToken =
+            await user.getIdToken();
+
+
+          const response =
+            await fetch(
+              "/api/community/moderation/content",
+              {
+                method:
+                  "POST",
+
+                headers: {
+                  Authorization:
+                    `Bearer ${idToken}`,
+
+                  "Content-Type":
+                    "application/json",
+                },
+
+                body:
+                  JSON.stringify({
+                    contentType:
+                      report.targetType,
+
+                    contentId:
+                      report.targetId,
+
+                    action,
+
+                    reason:
+                      getAuditReason(
+                        report
+                      ),
+                  }),
+
+                cache:
+                  "no-store",
+              }
+            );
+
+
+          let result:
+            ContentModerationResponse =
+            {};
+
+
+          try {
+
+            result =
+              await response.json() as
+                ContentModerationResponse;
+
+          } catch {
+
+            result =
+              {};
+          }
+
+
+          if (!response.ok) {
+
+            setActionError(
+              result.error ||
+              "We couldn't moderate this Community content."
+            );
+
+            return;
+          }
+
+
+          const contentLabel =
+            report.targetType ===
+              "post"
+              ? "Conversation"
+              : "Reply";
+
+
+          if (
+            action === "hide"
+          ) {
+
+            setActionMessage(
+              `${contentLabel} hidden successfully. An audit record was created.`
+            );
+
+          } else if (
+            action === "remove"
+          ) {
+
+            setActionMessage(
+              `${contentLabel} removed successfully. An audit record was created.`
+            );
+
+          } else {
+
+            setActionMessage(
+              `${contentLabel} restored successfully. An audit record was created.`
+            );
+          }
+
+
+          /*
+           * Reports remain in the queue and are not automatically
+           * resolved. Their workflow status remains a separate
+           * moderator decision.
+           */
+
+          await loadReports(
+            false
+          );
+
+
+        } catch (
+          moderationError
+        ) {
+
+          console.error(
+            "Unable to moderate Community content:",
+            moderationError
+          );
+
+
+          setActionError(
+            "We couldn't moderate this Community content right now."
+          );
+
+
+        } finally {
+
+          setModeratingContentReportId(
+            null
+          );
+        }
+      },
+      [
+        loadReports,
+        moderatingContentReportId,
+      ]
+    );
+
+
+  /*
+   * ============================================================
    * STATUS COUNTS
    * ============================================================
    */
@@ -725,7 +1103,7 @@ export default function CommunityModerationPage() {
     reports.filter(
       (report) =>
         report.status ===
-        "open"
+          "open"
     ).length;
 
 
@@ -733,7 +1111,7 @@ export default function CommunityModerationPage() {
     reports.filter(
       (report) =>
         report.status ===
-        "reviewing"
+          "reviewing"
     ).length;
 
 
@@ -741,7 +1119,7 @@ export default function CommunityModerationPage() {
     reports.filter(
       (report) =>
         report.status ===
-        "resolved"
+          "resolved"
     ).length;
 
 
@@ -749,7 +1127,7 @@ export default function CommunityModerationPage() {
     reports.filter(
       (report) =>
         report.status ===
-        "dismissed"
+          "dismissed"
     ).length;
 
 
@@ -763,7 +1141,7 @@ export default function CommunityModerationPage() {
           "0 auto",
 
         padding:
-          "45px 24px 90px",
+          "45px 20px 90px",
       }}
     >
 
@@ -793,7 +1171,7 @@ export default function CommunityModerationPage() {
             "22px",
 
           padding:
-            "30px",
+            "clamp(22px, 5vw, 30px)",
 
           borderRadius:
             "20px",
@@ -864,7 +1242,7 @@ export default function CommunityModerationPage() {
                   "#0F172A",
 
                 fontSize:
-                  "30px",
+                  "clamp(26px, 5vw, 30px)",
 
                 lineHeight:
                   1.2,
@@ -895,9 +1273,9 @@ export default function CommunityModerationPage() {
                   1.65,
               }}
             >
-              Review Community content reported by members.
-              Reports remain part of the moderation audit
-              trail after review.
+              Review reports, manage report workflow, and take
+              action on Community content. Moderation actions
+              are retained in the audit trail.
             </p>
 
           </div>
@@ -1043,7 +1421,7 @@ export default function CommunityModerationPage() {
                   "grid",
 
                 gridTemplateColumns:
-                  "repeat(auto-fit, minmax(150px, 1fr))",
+                  "repeat(auto-fit, minmax(140px, 1fr))",
 
                 gap:
                   "10px",
@@ -1390,8 +1768,8 @@ export default function CommunityModerationPage() {
                           1.6,
                       }}
                     >
-                      Community reports will appear here
-                      when members submit them.
+                      Community reports will appear here when
+                      members submit them.
                     </p>
 
                   </section>
@@ -1426,9 +1804,19 @@ export default function CommunityModerationPage() {
                             );
 
 
-                          const isUpdating =
+                          const isUpdatingReport =
                             updatingReportId ===
-                            report.id;
+                              report.id;
+
+
+                          const isModeratingContent =
+                            moderatingContentReportId ===
+                              report.id;
+
+
+                          const controlsDisabled =
+                            isUpdatingReport ||
+                            isModeratingContent;
 
 
                           return (
@@ -1438,7 +1826,7 @@ export default function CommunityModerationPage() {
                               }
                               style={{
                                 padding:
-                                  "22px",
+                                  "clamp(18px, 4vw, 22px)",
 
                                 borderRadius:
                                   "16px",
@@ -1578,6 +1966,9 @@ export default function CommunityModerationPage() {
 
                                       whiteSpace:
                                         "pre-wrap",
+
+                                      overflowWrap:
+                                        "anywhere",
                                     }}
                                   >
                                     {report.details}
@@ -1605,6 +1996,9 @@ export default function CommunityModerationPage() {
 
                                   lineHeight:
                                     1.5,
+
+                                  overflowWrap:
+                                    "anywhere",
                                 }}
                               >
 
@@ -1641,10 +2035,10 @@ export default function CommunityModerationPage() {
                               <div
                                 style={{
                                   marginTop:
-                                    "17px",
+                                    "18px",
 
                                   paddingTop:
-                                    "14px",
+                                    "15px",
 
                                   borderTop:
                                     "1px solid #F1F5F9",
@@ -1669,7 +2063,178 @@ export default function CommunityModerationPage() {
                                       "uppercase",
                                   }}
                                 >
-                                  Moderation Status
+                                  Content Action
+                                </div>
+
+
+                                <p
+                                  style={{
+                                    margin:
+                                      "0 0 10px",
+
+                                    color:
+                                      "#64748B",
+
+                                    fontSize:
+                                      "12px",
+
+                                    lineHeight:
+                                      1.55,
+                                  }}
+                                >
+                                  Hide content temporarily, restore it
+                                  to the Community, or remove it from
+                                  public view. Every successful action
+                                  creates an immutable audit record.
+                                </p>
+
+
+                                <div
+                                  style={{
+                                    display:
+                                      "flex",
+
+                                    gap:
+                                      "8px",
+
+                                    flexWrap:
+                                      "wrap",
+                                  }}
+                                >
+
+                                  {
+                                    (
+                                      [
+                                        "hide",
+                                        "restore",
+                                        "remove",
+                                      ] as
+                                        CommunityModerationAction[]
+                                    ).map(
+                                      (
+                                        contentAction
+                                      ) => {
+
+                                        const buttonStyle =
+                                          getContentActionButtonStyle(
+                                            contentAction
+                                          );
+
+
+                                        return (
+                                          <button
+                                            key={
+                                              contentAction
+                                            }
+                                            type="button"
+                                            onClick={
+                                              () =>
+                                                void moderateContent(
+                                                  report,
+                                                  contentAction
+                                                )
+                                            }
+                                            disabled={
+                                              controlsDisabled
+                                            }
+                                            style={{
+                                              padding:
+                                                "9px 13px",
+
+                                              borderRadius:
+                                                "9px",
+
+                                              ...buttonStyle,
+
+                                              fontSize:
+                                                "12px",
+
+                                              fontWeight:
+                                                800,
+
+                                              cursor:
+                                                controlsDisabled
+                                                  ? "not-allowed"
+                                                  : "pointer",
+
+                                              opacity:
+                                                controlsDisabled
+                                                  ? 0.55
+                                                  : 1,
+                                            }}
+                                          >
+                                            {
+                                              CONTENT_ACTION_LABELS[
+                                                contentAction
+                                              ]
+                                            }
+                                          </button>
+                                        );
+                                      }
+                                    )
+                                  }
+
+                                </div>
+
+
+                                {
+                                  isModeratingContent && (
+                                    <div
+                                      style={{
+                                        marginTop:
+                                          "8px",
+
+                                        color:
+                                          "#64748B",
+
+                                        fontSize:
+                                          "11px",
+
+                                        fontWeight:
+                                          700,
+                                      }}
+                                    >
+                                      Updating Community content and
+                                      creating audit record...
+                                    </div>
+                                  )
+                                }
+
+                              </div>
+
+
+                              <div
+                                style={{
+                                  marginTop:
+                                    "18px",
+
+                                  paddingTop:
+                                    "15px",
+
+                                  borderTop:
+                                    "1px solid #F1F5F9",
+                                }}
+                              >
+
+                                <div
+                                  style={{
+                                    marginBottom:
+                                      "8px",
+
+                                    color:
+                                      "#64748B",
+
+                                    fontSize:
+                                      "11px",
+
+                                    fontWeight:
+                                      800,
+
+                                    textTransform:
+                                      "uppercase",
+                                  }}
+                                >
+                                  Report Status
                                 </div>
 
 
@@ -1694,7 +2259,7 @@ export default function CommunityModerationPage() {
 
                                         const isCurrentStatus =
                                           report.status ===
-                                          statusOption;
+                                            statusOption;
 
 
                                         return (
@@ -1711,7 +2276,7 @@ export default function CommunityModerationPage() {
                                                 )
                                             }
                                             disabled={
-                                              isUpdating ||
+                                              controlsDisabled ||
                                               isCurrentStatus
                                             }
                                             aria-pressed={
@@ -1746,27 +2311,22 @@ export default function CommunityModerationPage() {
                                                 800,
 
                                               cursor:
-                                                isUpdating ||
+                                                controlsDisabled ||
                                                 isCurrentStatus
                                                   ? "not-allowed"
                                                   : "pointer",
 
                                               opacity:
-                                                isUpdating &&
+                                                controlsDisabled &&
                                                 !isCurrentStatus
                                                   ? 0.55
                                                   : 1,
                                             }}
                                           >
                                             {
-                                              isUpdating &&
-                                              !isCurrentStatus
-                                                ? STATUS_LABELS[
-                                                    statusOption
-                                                  ]
-                                                : STATUS_LABELS[
-                                                    statusOption
-                                                  ]
+                                              STATUS_LABELS[
+                                                statusOption
+                                              ]
                                             }
                                           </button>
                                         );
@@ -1778,7 +2338,7 @@ export default function CommunityModerationPage() {
 
 
                                 {
-                                  isUpdating && (
+                                  isUpdatingReport && (
                                     <div
                                       style={{
                                         marginTop:
@@ -1794,7 +2354,7 @@ export default function CommunityModerationPage() {
                                           700,
                                       }}
                                     >
-                                      Updating report...
+                                      Updating report status...
                                     </div>
                                   )
                                 }
@@ -1873,8 +2433,8 @@ export default function CommunityModerationPage() {
                                             700,
                                         }}
                                       >
-                                        Reply context will be available
-                                        in the next moderation step.
+                                        The parent conversation could
+                                        not be resolved for this reply.
                                       </span>
                                     )
                                 }
