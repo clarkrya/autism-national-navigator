@@ -206,6 +206,17 @@ export default function CommunityProfileForm() {
     }
 
 
+    /*
+     * Capture the UID after the null check.
+     *
+     * TypeScript cannot safely preserve the currentUser
+     * narrowing inside the nested async loadProfile function.
+     */
+
+    const currentUserId =
+      currentUser.uid;
+
+
     let active =
       true;
 
@@ -226,7 +237,7 @@ export default function CommunityProfileForm() {
           doc(
             db,
             "users",
-            currentUser.uid,
+            currentUserId,
             "communityProfile",
             "current"
           );
@@ -1835,7 +1846,7 @@ export default function CommunityProfileForm() {
               disabled={
                 saving ||
                 displayName.trim().length <
-                  2
+                2
               }
 
               style={{
@@ -1851,7 +1862,7 @@ export default function CommunityProfileForm() {
                 background:
                   saving ||
                   displayName.trim().length <
-                    2
+                  2
                     ? "#94A3B8"
                     : "#2563EB",
 
@@ -1867,7 +1878,7 @@ export default function CommunityProfileForm() {
                 cursor:
                   saving ||
                   displayName.trim().length <
-                    2
+                  2
                     ? "not-allowed"
                     : "pointer",
               }}

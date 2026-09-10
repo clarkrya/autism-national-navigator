@@ -352,34 +352,46 @@ async function lookupFirebaseUser(
     data.users?.[0];
 
 
-  const uid =
-    user?.localId
-      ?.trim();
+  
+   const uid =
+  user?.localId
+    ?.trim();
 
 
-  if (
-    !uid
-  ) {
+if (
+  !uid
+) {
 
-    throw new Error(
-      "AUTH_INVALID"
-    );
+  throw new Error(
+    "AUTH_INVALID"
+  );
 
-  }
+}
 
 
-  return {
-    uid,
+/*
+ * Normalize the optional email independently.
+ *
+ * The Firebase user object may be undefined according to the
+ * lookup response type, even though a valid UID has already
+ * been confirmed above.
+ */
 
-    email:
-      typeof user.email ===
-        "string" &&
-      user.email.trim()
+const email =
+  typeof user?.email ===
+    "string" &&
+  user.email.trim()
 
-        ? user.email.trim()
+    ? user.email.trim()
 
-        : undefined,
-  };
+    : undefined;
+
+
+return {
+  uid,
+
+  email,
+};
 }
 
 

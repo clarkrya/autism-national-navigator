@@ -1,4 +1,7 @@
 export interface FamilyProfile {
+
+  childId: string;
+
   childName: string;
 
   childAge: string;
@@ -14,4 +17,5 @@ export interface FamilyProfile {
   insurance: string;
 
   notes: string;
+
 }

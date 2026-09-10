@@ -250,17 +250,31 @@ export type CommunityReaction = {
  * ============================================================
  * COMMUNITY REPORT
  * ============================================================
+ *
+ * These values must stay aligned with:
+ *
+ * - Community report UI
+ * - Community reporting API
+ * - Firestore Security Rules
+ *
+ * Current supported report reasons:
+ *
+ * harassment
+ * hate_or_abuse
+ * misinformation
+ * privacy
+ * spam
+ * unsafe_content
+ * other
  */
 
 export type CommunityReportReason =
   | "harassment"
-  | "hate"
-  | "threat"
-  | "spam"
+  | "hate_or_abuse"
   | "misinformation"
   | "privacy"
-  | "self_harm"
-  | "medical_advice"
+  | "spam"
+  | "unsafe_content"
   | "other";
 
 

@@ -4,11 +4,21 @@ import {
   useEffect,
   useState,
 } from "react";
+
 import Link from "next/link";
+
+import {
+  doc,
+  getDoc,
+} from "firebase/firestore";
 
 import {
   getCurrentUser,
 } from "../../lib/auth";
+
+import {
+  db,
+} from "../../lib/firebase";
 
 import {
   useAccountEntitlements,
@@ -60,6 +70,11 @@ type CommunityPostCounts = {
   replyCount: number;
   reactionCount: number;
 };
+
+
+type CommunityModeratorRole =
+  | "moderator"
+  | "admin";
 
 
 /*
@@ -314,6 +329,15 @@ export default function CommunityFeed() {
     >("all");
 
 
+  const [
+    moderatorRole,
+    setModeratorRole,
+  ] =
+    useState<
+      CommunityModeratorRole | null
+    >(null);
+
+
   /*
    * ==========================================================
    * LOAD POSTS
@@ -520,6 +544,164 @@ export default function CommunityFeed() {
   }, [
     selectedCategory,
     entitlementLoading,
+  ]);
+
+
+  /*
+   * ==========================================================
+   * COMMUNITY MODERATOR NAVIGATION
+   * ==========================================================
+   *
+   * This reads only the signed-in user's own trusted Community
+   * access record:
+   *
+   * users/{uid}/communityAccess/current
+   *
+   * Showing this link is navigation only. The moderation page,
+   * protected API routes, and Firestore Security Rules remain
+   * the actual authorization boundary.
+   */
+
+  useEffect(() => {
+
+    let active = true;
+
+
+    async function loadModeratorRole() {
+
+      const currentUser =
+        getCurrentUser();
+
+
+      if (!currentUser) {
+
+        if (active) {
+          setModeratorRole(
+            null
+          );
+        }
+
+
+        return;
+      }
+
+
+      try {
+
+        const accessSnapshot =
+          await getDoc(
+            doc(
+              db,
+              "users",
+              currentUser.uid,
+              "communityAccess",
+              "current"
+            )
+          );
+
+
+        if (!active) {
+          return;
+        }
+
+
+        if (
+          !accessSnapshot.exists()
+        ) {
+
+          setModeratorRole(
+            null
+          );
+
+          return;
+        }
+
+
+        const accessData =
+          accessSnapshot.data();
+
+
+        const role =
+          accessData.role;
+
+
+        const isActive =
+          accessData.active ===
+          true;
+
+
+        if (
+          isActive &&
+          (
+            role ===
+              "moderator" ||
+            role ===
+              "admin"
+          )
+        ) {
+
+          setModeratorRole(
+            role
+          );
+
+          return;
+        }
+
+
+        setModeratorRole(
+          null
+        );
+
+      } catch (
+        moderatorError
+      ) {
+
+        /*
+         * Failure to load this optional navigation control
+         * should never prevent the Community feed from loading.
+         */
+
+        console.error(
+          "Unable to load Community moderator navigation access:",
+          moderatorError
+        );
+
+
+        if (active) {
+
+          setModeratorRole(
+            null
+          );
+        }
+      }
+    }
+
+
+    if (
+      !entitlementLoading &&
+      plan !== "guest"
+    ) {
+
+      void loadModeratorRole();
+
+    } else if (
+      !entitlementLoading &&
+      plan === "guest"
+    ) {
+
+      setModeratorRole(
+        null
+      );
+    }
+
+
+    return () => {
+      active = false;
+    };
+
+  }, [
+    entitlementLoading,
+    plan,
   ]);
 
 
@@ -770,51 +952,116 @@ export default function CommunityFeed() {
                 "wrap",
             }}
           >
-            <Link
-              href="/community/profile"
+            <div
               style={{
                 display:
-                  "inline-flex",
+                  "flex",
 
                 alignItems:
                   "center",
 
                 gap:
-                  "7px",
+                  "9px",
 
-                padding:
-                  "10px 16px",
-
-                borderRadius:
-                  "10px",
-
-                border:
-                  "1px solid #CBD5E1",
-
-                background:
-                  "#FFFFFF",
-
-                color:
-                  "#334155",
-
-                fontSize:
-                  "13px",
-
-                fontWeight:
-                  800,
-
-                textDecoration:
-                  "none",
+                flexWrap:
+                  "wrap",
               }}
             >
-              <span
-                aria-hidden="true"
-              >
-                👤
-              </span>
+              <Link
+                href="/community/profile"
+                style={{
+                  display:
+                    "inline-flex",
 
-              Community Profile
-            </Link>
+                  alignItems:
+                    "center",
+
+                  gap:
+                    "7px",
+
+                  padding:
+                    "10px 16px",
+
+                  borderRadius:
+                    "10px",
+
+                  border:
+                    "1px solid #CBD5E1",
+
+                  background:
+                    "#FFFFFF",
+
+                  color:
+                    "#334155",
+
+                  fontSize:
+                    "13px",
+
+                  fontWeight:
+                    800,
+
+                  textDecoration:
+                    "none",
+                }}
+              >
+                <span
+                  aria-hidden="true"
+                >
+                  👤
+                </span>
+
+                Community Profile
+              </Link>
+
+
+              {moderatorRole && (
+                <Link
+                  href="/community/moderation"
+                  style={{
+                    display:
+                      "inline-flex",
+
+                    alignItems:
+                      "center",
+
+                    gap:
+                      "7px",
+
+                    padding:
+                      "10px 16px",
+
+                    borderRadius:
+                      "10px",
+
+                    border:
+                      "1px solid #BFDBFE",
+
+                    background:
+                      "#EFF6FF",
+
+                    color:
+                      "#1D4ED8",
+
+                    fontSize:
+                      "13px",
+
+                    fontWeight:
+                      800,
+
+                    textDecoration:
+                      "none",
+                  }}
+                >
+                  <span
+                    aria-hidden="true"
+                  >
+                    🛡️
+                  </span>
+
+                  Moderation
+                </Link>
+              )}
+            </div>
 
 
             {isPremium && (

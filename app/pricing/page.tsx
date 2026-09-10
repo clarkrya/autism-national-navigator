@@ -68,10 +68,10 @@ function getFeatureLabel(
       return "Journey History";
 
     case "community_read":
-      return "Read the community";
+      return "Read community posts";
 
     case "community_participate":
-      return "Participate in the community";
+      return "Post in the Community";
 
     case "ask_navigator":
       return "Ask Your Navigator";

@@ -49,6 +49,19 @@ type CommunityModerationAction =
   | "remove";
 
 
+type CommunityContentStatus =
+  | "published"
+  | "hidden"
+  | "removed";
+
+
+type CommunityContentModerationStatus =
+  | "not_reviewed"
+  | "reviewed"
+  | "flagged"
+  | "removed";
+
+
 type CommunityModerationReport = {
   id: string;
 
@@ -59,6 +72,14 @@ type CommunityModerationReport = {
   targetId: string;
 
   parentPostId: string;
+
+  contentStatus: CommunityContentStatus | null;
+
+  contentModerationStatus:
+    | CommunityContentModerationStatus
+    | null;
+
+  targetMissing: boolean;
 
   reason: ReportReason;
 
@@ -190,6 +211,91 @@ const CONTENT_ACTION_LABELS:
   remove:
     "Remove",
 };
+
+
+function getAvailableContentActions(
+  report: CommunityModerationReport
+): CommunityModerationAction[] {
+
+  if (report.targetMissing) {
+    return [];
+  }
+
+
+  if (
+    report.contentStatus ===
+      "published"
+  ) {
+
+    return [
+      "hide",
+      "remove",
+    ];
+  }
+
+
+  if (
+    report.contentStatus ===
+      "hidden"
+  ) {
+
+    return [
+      "restore",
+      "remove",
+    ];
+  }
+
+
+  if (
+    report.contentStatus ===
+      "removed"
+  ) {
+
+    return [
+      "restore",
+    ];
+  }
+
+
+  return [];
+}
+
+
+function getContentStatusLabel(
+  report: CommunityModerationReport
+): string {
+
+  if (report.targetMissing) {
+    return "Target unavailable";
+  }
+
+
+  if (
+    report.contentStatus ===
+      "published"
+  ) {
+    return "Published";
+  }
+
+
+  if (
+    report.contentStatus ===
+      "hidden"
+  ) {
+    return "Hidden";
+  }
+
+
+  if (
+    report.contentStatus ===
+      "removed"
+  ) {
+    return "Removed";
+  }
+
+
+  return "Unknown";
+}
 
 
 function formatDate(
@@ -2047,134 +2153,246 @@ export default function CommunityModerationPage() {
 
                                 <div
                                   style={{
-                                    marginBottom:
-                                      "8px",
-
-                                    color:
-                                      "#64748B",
-
-                                    fontSize:
-                                      "11px",
-
-                                    fontWeight:
-                                      800,
-
-                                    textTransform:
-                                      "uppercase",
-                                  }}
-                                >
-                                  Content Action
-                                </div>
-
-
-                                <p
-                                  style={{
-                                    margin:
-                                      "0 0 10px",
-
-                                    color:
-                                      "#64748B",
-
-                                    fontSize:
-                                      "12px",
-
-                                    lineHeight:
-                                      1.55,
-                                  }}
-                                >
-                                  Hide content temporarily, restore it
-                                  to the Community, or remove it from
-                                  public view. Every successful action
-                                  creates an immutable audit record.
-                                </p>
-
-
-                                <div
-                                  style={{
                                     display:
                                       "flex",
 
+                                    justifyContent:
+                                      "space-between",
+
+                                    alignItems:
+                                      "center",
+
                                     gap:
-                                      "8px",
+                                      "10px",
 
                                     flexWrap:
                                       "wrap",
+
+                                    marginBottom:
+                                      "8px",
                                   }}
                                 >
 
-                                  {
-                                    (
-                                      [
-                                        "hide",
-                                        "restore",
-                                        "remove",
-                                      ] as
-                                        CommunityModerationAction[]
-                                    ).map(
-                                      (
-                                        contentAction
-                                      ) => {
+                                  <div
+                                    style={{
+                                      color:
+                                        "#64748B",
 
-                                        const buttonStyle =
-                                          getContentActionButtonStyle(
-                                            contentAction
-                                          );
+                                      fontSize:
+                                        "11px",
+
+                                      fontWeight:
+                                        800,
+
+                                      textTransform:
+                                        "uppercase",
+                                    }}
+                                  >
+                                    Content Action
+                                  </div>
 
 
-                                        return (
-                                          <button
-                                            key={
-                                              contentAction
-                                            }
-                                            type="button"
-                                            onClick={
-                                              () =>
-                                                void moderateContent(
-                                                  report,
-                                                  contentAction
-                                                )
-                                            }
-                                            disabled={
-                                              controlsDisabled
-                                            }
-                                            style={{
-                                              padding:
-                                                "9px 13px",
+                                  <span
+                                    style={{
+                                      padding:
+                                        "5px 9px",
 
-                                              borderRadius:
-                                                "9px",
+                                      borderRadius:
+                                        "999px",
 
-                                              ...buttonStyle,
+                                      border:
+                                        report.targetMissing
+                                          ? "1px solid #FECACA"
+                                          : report.contentStatus === "published"
+                                          ? "1px solid #BBF7D0"
+                                          : report.contentStatus === "hidden"
+                                          ? "1px solid #FED7AA"
+                                          : "1px solid #CBD5E1",
 
-                                              fontSize:
-                                                "12px",
+                                      background:
+                                        report.targetMissing
+                                          ? "#FEF2F2"
+                                          : report.contentStatus === "published"
+                                          ? "#F0FDF4"
+                                          : report.contentStatus === "hidden"
+                                          ? "#FFF7ED"
+                                          : "#F8FAFC",
 
-                                              fontWeight:
-                                                800,
+                                      color:
+                                        report.targetMissing
+                                          ? "#B91C1C"
+                                          : report.contentStatus === "published"
+                                          ? "#166534"
+                                          : report.contentStatus === "hidden"
+                                          ? "#C2410C"
+                                          : "#475569",
 
-                                              cursor:
-                                                controlsDisabled
-                                                  ? "not-allowed"
-                                                  : "pointer",
+                                      fontSize:
+                                        "10px",
 
-                                              opacity:
-                                                controlsDisabled
-                                                  ? 0.55
-                                                  : 1,
-                                            }}
-                                          >
-                                            {
-                                              CONTENT_ACTION_LABELS[
-                                                contentAction
-                                              ]
-                                            }
-                                          </button>
-                                        );
-                                      }
-                                    )
-                                  }
+                                      fontWeight:
+                                        800,
+
+                                      textTransform:
+                                        "uppercase",
+
+                                      letterSpacing:
+                                        "0.03em",
+                                    }}
+                                  >
+                                    {getContentStatusLabel(report)}
+                                  </span>
 
                                 </div>
+
+
+                                {
+                                  report.targetMissing
+                                    ? (
+                                      <div
+                                        style={{
+                                          padding:
+                                            "12px 13px",
+
+                                          borderRadius:
+                                            "9px",
+
+                                          border:
+                                            "1px solid #E2E8F0",
+
+                                          background:
+                                            "#F8FAFC",
+
+                                          color:
+                                            "#64748B",
+
+                                          fontSize:
+                                            "12px",
+
+                                          lineHeight:
+                                            1.55,
+                                        }}
+                                      >
+                                        The reported Community content could not be found.
+                                        The report remains available for moderation history,
+                                        but no content action can be performed.
+                                      </div>
+                                    )
+                                    : (
+                                      <>
+
+                                        <p
+                                          style={{
+                                            margin:
+                                              "0 0 10px",
+
+                                            color:
+                                              "#64748B",
+
+                                            fontSize:
+                                              "12px",
+
+                                            lineHeight:
+                                              1.55,
+                                          }}
+                                        >
+                                          {
+                                            report.contentStatus === "published"
+                                              ? "This content is currently visible in the Community."
+                                              : report.contentStatus === "hidden"
+                                              ? "This content is hidden from Community members but can be restored or removed."
+                                              : report.contentStatus === "removed"
+                                              ? "This content has been removed from public view but remains stored for the moderation audit trail."
+                                              : "The current content state could not be determined."
+                                          }
+                                        </p>
+
+
+                                        <div
+                                          style={{
+                                            display:
+                                              "flex",
+
+                                            gap:
+                                              "8px",
+
+                                            flexWrap:
+                                              "wrap",
+                                          }}
+                                        >
+
+                                          {
+                                            getAvailableContentActions(
+                                              report
+                                            ).map(
+                                              (
+                                                contentAction
+                                              ) => {
+
+                                                const buttonStyle =
+                                                  getContentActionButtonStyle(
+                                                    contentAction
+                                                  );
+
+
+                                                return (
+                                                  <button
+                                                    key={
+                                                      contentAction
+                                                    }
+                                                    type="button"
+                                                    onClick={
+                                                      () =>
+                                                        void moderateContent(
+                                                          report,
+                                                          contentAction
+                                                        )
+                                                    }
+                                                    disabled={
+                                                      controlsDisabled
+                                                    }
+                                                    style={{
+                                                      padding:
+                                                        "9px 13px",
+
+                                                      borderRadius:
+                                                        "9px",
+
+                                                      ...buttonStyle,
+
+                                                      fontSize:
+                                                        "12px",
+
+                                                      fontWeight:
+                                                        800,
+
+                                                      cursor:
+                                                        controlsDisabled
+                                                          ? "not-allowed"
+                                                          : "pointer",
+
+                                                      opacity:
+                                                        controlsDisabled
+                                                          ? 0.55
+                                                          : 1,
+                                                    }}
+                                                  >
+                                                    {
+                                                      CONTENT_ACTION_LABELS[
+                                                        contentAction
+                                                      ]
+                                                    }
+                                                  </button>
+                                                );
+                                              }
+                                            )
+                                          }
+
+                                        </div>
+
+                                      </>
+                                    )
+                                }
 
 
                                 {

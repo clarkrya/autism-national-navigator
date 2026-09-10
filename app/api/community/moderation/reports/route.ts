@@ -5,7 +5,6 @@ import {
   requireCommunityModerator,
 } from "../../../../../lib/serverSubscriptionAuth";
 
-
 /*
  * ============================================================
  * COMMUNITY MODERATION REPORTS API
@@ -27,11 +26,14 @@ import {
  *
  * No Firebase Admin SDK.
  *
- * Reply reports are enriched with the parent post ID so the
- * moderation queue can open the correct conversation.
+ * Each moderation report is enriched with the current state of
+ * the reported post/reply so the moderation queue can display
+ * only actions that make sense for that content.
+ *
+ * Reply reports are also enriched with parentPostId so the
+ * moderator can open the correct Community conversation.
  * ============================================================
  */
-
 
 type ModerationReportStatus =
   | "open"
@@ -39,11 +41,9 @@ type ModerationReportStatus =
   | "resolved"
   | "dismissed";
 
-
 type ModerationReportTargetType =
   | "post"
   | "reply";
-
 
 type ModerationReportReason =
   | "harassment"
@@ -54,6 +54,16 @@ type ModerationReportReason =
   | "unsafe_content"
   | "other";
 
+type CommunityContentStatus =
+  | "published"
+  | "hidden"
+  | "removed";
+
+type CommunityContentModerationStatus =
+  | "not_reviewed"
+  | "reviewed"
+  | "flagged"
+  | "removed";
 
 type CommunityModerationReport = {
   id: string;
@@ -64,14 +74,15 @@ type CommunityModerationReport = {
 
   targetId: string;
 
-  /*
-   * For post reports this is the reported post ID.
-   *
-   * For reply reports this is resolved from the existing
-   * communityReplies/{replyId} document.
-   */
-
   parentPostId: string;
+
+  contentStatus: CommunityContentStatus | null;
+
+  contentModerationStatus:
+    | CommunityContentModerationStatus
+    | null;
+
+  targetMissing: boolean;
 
   reason: ModerationReportReason;
 
@@ -84,15 +95,12 @@ type CommunityModerationReport = {
   updatedAt: number;
 };
 
-
 type FirestoreRestValue =
   | {
       stringValue?: string;
     }
   | {
-      integerValue?:
-        | string
-        | number;
+      integerValue?: string | number;
     }
   | {
       doubleValue?: number;
@@ -120,7 +128,6 @@ type FirestoreRestValue =
       };
     };
 
-
 type FirestoreRestDocument = {
   name?: string;
 
@@ -133,7 +140,6 @@ type FirestoreRestDocument = {
 
   updateTime?: string;
 };
-
 
 type FirestoreListResponse = {
   documents?: FirestoreRestDocument[];
@@ -149,7 +155,6 @@ type FirestoreListResponse = {
   };
 };
 
-
 /*
  * ============================================================
  * FIREBASE PROJECT ID
@@ -157,28 +162,21 @@ type FirestoreListResponse = {
  */
 
 function getFirebaseProjectId(): string {
-
-  const projectId =
-    (
-      process.env
-        .NEXT_PUBLIC_FIREBASE_PROJECT_ID ||
-      process.env
-        .FIREBASE_ADMIN_PROJECT_ID
-    )
-      ?.trim();
-
+  const projectId = (
+    process.env
+      .NEXT_PUBLIC_FIREBASE_PROJECT_ID ||
+    process.env
+      .FIREBASE_ADMIN_PROJECT_ID
+  )?.trim();
 
   if (!projectId) {
-
     throw new Error(
       "FIREBASE_PROJECT_ID_MISSING"
     );
   }
 
-
   return projectId;
 }
-
 
 /*
  * ============================================================
@@ -191,7 +189,6 @@ function decodeFirestoreValue(
     | FirestoreRestValue
     | undefined
 ): unknown {
-
   if (
     !value ||
     typeof value !== "object"
@@ -199,103 +196,61 @@ function decodeFirestoreValue(
     return undefined;
   }
 
-
-  if (
-    "stringValue" in value
-  ) {
+  if ("stringValue" in value) {
     return value.stringValue;
   }
 
-
-  if (
-    "integerValue" in value
-  ) {
-
+  if ("integerValue" in value) {
     const raw =
       value.integerValue;
 
-
-    if (
-      typeof raw === "number"
-    ) {
+    if (typeof raw === "number") {
       return raw;
     }
 
-
-    if (
-      typeof raw === "string"
-    ) {
-
+    if (typeof raw === "string") {
       const parsed =
         Number(raw);
 
-
-      return Number.isFinite(
-        parsed
-      )
+      return Number.isFinite(parsed)
         ? parsed
         : 0;
     }
   }
 
-
-  if (
-    "doubleValue" in value
-  ) {
+  if ("doubleValue" in value) {
     return value.doubleValue;
   }
 
-
-  if (
-    "booleanValue" in value
-  ) {
+  if ("booleanValue" in value) {
     return value.booleanValue;
   }
 
-
-  if (
-    "nullValue" in value
-  ) {
+  if ("nullValue" in value) {
     return null;
   }
 
-
-  if (
-    "timestampValue" in value
-  ) {
+  if ("timestampValue" in value) {
     return value.timestampValue;
   }
 
-
-  if (
-    "mapValue" in value
-  ) {
-
+  if ("mapValue" in value) {
     return decodeFirestoreFields(
       value.mapValue?.fields
     );
   }
 
-
-  if (
-    "arrayValue" in value
-  ) {
-
+  if ("arrayValue" in value) {
     return (
       value.arrayValue?.values ||
       []
-    ).map(
-      (item) =>
-        decodeFirestoreValue(
-          item
-        )
+    ).map((item) =>
+      decodeFirestoreValue(item)
     );
   }
 
-
   return undefined;
 }
-
 
 function decodeFirestoreFields(
   fields:
@@ -305,27 +260,16 @@ function decodeFirestoreFields(
       >
     | undefined
 ): Record<string, unknown> {
-
   const decoded:
     Record<string, unknown> =
     {};
-
 
   if (!fields) {
     return decoded;
   }
 
-
-  Object.entries(
-    fields
-  ).forEach(
-    (
-      [
-        key,
-        value,
-      ]
-    ) => {
-
+  Object.entries(fields).forEach(
+    ([key, value]) => {
       decoded[key] =
         decodeFirestoreValue(
           value
@@ -333,10 +277,8 @@ function decodeFirestoreFields(
     }
   );
 
-
   return decoded;
 }
-
 
 /*
  * ============================================================
@@ -349,24 +291,19 @@ function getDocumentId(
     | string
     | undefined
 ): string {
-
   if (!documentName) {
     return "";
   }
 
-
   const parts =
     documentName.split("/");
-
 
   return (
     parts[
       parts.length - 1
-    ] ||
-    ""
+    ] || ""
   );
 }
-
 
 /*
  * ============================================================
@@ -377,7 +314,6 @@ function getDocumentId(
 function isReportStatus(
   value: unknown
 ): value is ModerationReportStatus {
-
   return (
     value === "open" ||
     value === "reviewing" ||
@@ -386,22 +322,18 @@ function isReportStatus(
   );
 }
 
-
 function isReportTargetType(
   value: unknown
 ): value is ModerationReportTargetType {
-
   return (
     value === "post" ||
     value === "reply"
   );
 }
 
-
 function isReportReason(
   value: unknown
 ): value is ModerationReportReason {
-
   return (
     value === "harassment" ||
     value === "hate_or_abuse" ||
@@ -413,6 +345,26 @@ function isReportReason(
   );
 }
 
+function isContentStatus(
+  value: unknown
+): value is CommunityContentStatus {
+  return (
+    value === "published" ||
+    value === "hidden" ||
+    value === "removed"
+  );
+}
+
+function isContentModerationStatus(
+  value: unknown
+): value is CommunityContentModerationStatus {
+  return (
+    value === "not_reviewed" ||
+    value === "reviewed" ||
+    value === "flagged" ||
+    value === "removed"
+  );
+}
 
 /*
  * ============================================================
@@ -424,23 +376,19 @@ function normalizeReport(
   document:
     FirestoreRestDocument
 ): CommunityModerationReport | null {
-
   const data =
     decodeFirestoreFields(
       document.fields
     );
-
 
   const id =
     getDocumentId(
       document.name
     );
 
-
   if (!id) {
     return null;
   }
-
 
   if (
     typeof data.reporterId !==
@@ -450,7 +398,6 @@ function normalizeReport(
     return null;
   }
 
-
   if (
     !isReportTargetType(
       data.targetType
@@ -458,7 +405,6 @@ function normalizeReport(
   ) {
     return null;
   }
-
 
   if (
     typeof data.targetId !==
@@ -468,7 +414,6 @@ function normalizeReport(
     return null;
   }
 
-
   if (
     !isReportReason(
       data.reason
@@ -477,7 +422,6 @@ function normalizeReport(
     return null;
   }
 
-
   if (
     !isReportStatus(
       data.status
@@ -485,7 +429,6 @@ function normalizeReport(
   ) {
     return null;
   }
-
 
   return {
     id,
@@ -500,16 +443,29 @@ function normalizeReport(
       data.targetId,
 
     /*
-     * Post reports already know their conversation.
+     * Post reports already know their conversation ID.
      *
-     * Reply reports are enriched after the report collection
-     * has been loaded.
+     * Reply reports receive parentPostId during enrichment.
      */
 
     parentPostId:
       data.targetType === "post"
         ? data.targetId
         : "",
+
+    /*
+     * These are populated from the live target document during
+     * enrichment below.
+     */
+
+    contentStatus:
+      null,
+
+    contentModerationStatus:
+      null,
+
+    targetMissing:
+      false,
 
     reason:
       data.reason,
@@ -537,65 +493,156 @@ function normalizeReport(
   };
 }
 
-
 /*
  * ============================================================
- * RESOLVE REPLY PARENT POST
+ * TARGET DOCUMENT
  * ============================================================
  *
- * Community replies already contain postId.
+ * Moderators are permitted by Firestore Security Rules to read
+ * Community posts and replies regardless of whether they are
+ * published, hidden, or removed.
  *
- * We read the reply through the same authenticated Firestore
- * helper used elsewhere in the application. No Admin SDK or
- * private key is involved.
- *
- * If the reply cannot be resolved, the report remains visible
- * in the moderation queue. Its parentPostId simply remains
- * empty rather than breaking the entire queue.
+ * This lets the moderation queue inspect the current state of
+ * the reported content without using the Admin SDK.
  * ============================================================
  */
 
-async function resolveReplyParentPostId(
-  replyId: string,
+async function getReportTargetDocument(
+  report: CommunityModerationReport,
   idToken: string
-): Promise<string> {
+): Promise<Record<string, unknown> | null> {
+  const collectionName =
+    report.targetType === "post"
+      ? "communityPosts"
+      : "communityReplies";
+
+  const documentPath =
+    `${collectionName}/${report.targetId}`;
 
   try {
-
-    const reply =
+    const document =
       await getAuthenticatedFirestoreDocument(
-        `communityReplies/${replyId}`,
+        documentPath,
         idToken
       );
 
-
     if (
-      !reply ||
-      typeof reply.postId !==
-        "string"
+      !document ||
+      typeof document !== "object"
     ) {
-      return "";
+      return null;
     }
 
-
-    return reply.postId.trim();
-
-
+    return document;
   } catch (error) {
+    /*
+     * A target may no longer exist because it predates the
+     * current moderation architecture or was removed outside
+     * the normal moderation workflow.
+     *
+     * Do not remove its report from the queue.
+     */
 
     console.error(
-      "Unable to resolve parent post for Community reply report:",
+      "Unable to resolve Community moderation target:",
       {
-        replyId,
+        targetType:
+          report.targetType,
+
+        targetId:
+          report.targetId,
+
         error,
       }
     );
 
-
-    return "";
+    return null;
   }
 }
 
+/*
+ * ============================================================
+ * ENRICH ONE REPORT
+ * ============================================================
+ */
+
+async function enrichSingleReport(
+  report: CommunityModerationReport,
+  idToken: string
+): Promise<CommunityModerationReport> {
+  const target =
+    await getReportTargetDocument(
+      report,
+      idToken
+    );
+
+  /*
+   * Preserve the report even when its target cannot be found.
+   */
+
+  if (!target) {
+    return {
+      ...report,
+
+      contentStatus:
+        null,
+
+      contentModerationStatus:
+        null,
+
+      targetMissing:
+        true,
+    };
+  }
+
+  const contentStatus =
+    isContentStatus(
+      target.status
+    )
+      ? target.status
+      : null;
+
+  const contentModerationStatus =
+    isContentModerationStatus(
+      target.moderationStatus
+    )
+      ? target.moderationStatus
+      : null;
+
+  /*
+   * Post reports already have parentPostId.
+   *
+   * Reply documents contain their parent post in postId, so we
+   * can resolve both navigation and moderation state from the
+   * same authenticated Firestore read.
+   */
+
+  let parentPostId =
+    report.parentPostId;
+
+  if (
+    report.targetType === "reply"
+  ) {
+    parentPostId =
+      typeof target.postId ===
+        "string"
+        ? target.postId.trim()
+        : "";
+  }
+
+  return {
+    ...report,
+
+    parentPostId,
+
+    contentStatus,
+
+    contentModerationStatus,
+
+    targetMissing:
+      false,
+  };
+}
 
 /*
  * ============================================================
@@ -608,47 +655,15 @@ async function enrichReportContext(
     CommunityModerationReport[],
   idToken: string
 ): Promise<CommunityModerationReport[]> {
-
   return Promise.all(
-    reports.map(
-      async (
-        report
-      ) => {
-
-        /*
-         * Post reports already have the parent conversation ID.
-         */
-
-        if (
-          report.targetType ===
-            "post"
-        ) {
-
-          return report;
-        }
-
-
-        /*
-         * Reply reports need the parent post ID.
-         */
-
-        const parentPostId =
-          await resolveReplyParentPostId(
-            report.targetId,
-            idToken
-          );
-
-
-        return {
-          ...report,
-
-          parentPostId,
-        };
-      }
+    reports.map((report) =>
+      enrichSingleReport(
+        report,
+        idToken
+      )
     )
   );
 }
-
 
 /*
  * ============================================================
@@ -659,10 +674,8 @@ async function enrichReportContext(
 async function loadModerationReports(
   idToken: string
 ): Promise<CommunityModerationReport[]> {
-
   const projectId =
     getFirebaseProjectId();
-
 
   const params =
     new URLSearchParams({
@@ -673,12 +686,10 @@ async function loadModerationReports(
         "createdAt desc",
     });
 
-
   const endpoint =
     `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(
       projectId
     )}/databases/(default)/documents/communityReports?${params.toString()}`;
-
 
   const response =
     await fetch(
@@ -697,53 +708,41 @@ async function loadModerationReports(
       }
     );
 
-
   let result:
     FirestoreListResponse =
     {};
 
-
   try {
-
     result =
       await response.json() as
         FirestoreListResponse;
-
   } catch {
-
     result =
       {};
   }
 
-
   if (
     response.status === 401
   ) {
-
     throw new Error(
       "AUTH_INVALID"
     );
   }
 
-
   if (
     response.status === 403
   ) {
-
     console.error(
       "Firestore denied Community moderation report access:",
       result.error
     );
-
 
     throw new Error(
       "FIRESTORE_PERMISSION_DENIED"
     );
   }
 
-
   if (!response.ok) {
-
     console.error(
       "Firestore moderation report query failed:",
       {
@@ -755,12 +754,10 @@ async function loadModerationReports(
       }
     );
 
-
     throw new Error(
       "FIRESTORE_READ_FAILED"
     );
   }
-
 
   const reports =
     (
@@ -777,9 +774,8 @@ async function loadModerationReports(
           report !== null
       );
 
-
   /*
-   * Add parent conversation context to reply reports.
+   * Add live content state and reply conversation context.
    */
 
   return enrichReportContext(
@@ -787,7 +783,6 @@ async function loadModerationReports(
     idToken
   );
 }
-
 
 /*
  * ============================================================
@@ -798,9 +793,7 @@ async function loadModerationReports(
 export async function GET(
   request: Request
 ) {
-
   try {
-
     /*
      * Verify the Firebase user and their trusted
      * Community moderator/admin access record.
@@ -811,10 +804,9 @@ export async function GET(
         request
       );
 
-
     /*
-     * Use the same authenticated Firebase ID token
-     * to read the private report collection.
+     * Use the same authenticated Firebase ID token to read the
+     * private report collection and reported content.
      *
      * Firestore Security Rules independently require
      * isCommunityModerator().
@@ -824,7 +816,6 @@ export async function GET(
       await loadModerationReports(
         moderator.idToken
       );
-
 
     return NextResponse.json(
       {
@@ -840,10 +831,7 @@ export async function GET(
           reports.length,
       }
     );
-
-
   } catch (error) {
-
     /*
      * Authentication required.
      */
@@ -853,7 +841,6 @@ export async function GET(
       error.message ===
         "AUTH_REQUIRED"
     ) {
-
       return NextResponse.json(
         {
           error:
@@ -866,7 +853,6 @@ export async function GET(
       );
     }
 
-
     /*
      * Invalid/expired Firebase login.
      */
@@ -876,7 +862,6 @@ export async function GET(
       error.message ===
         "AUTH_INVALID"
     ) {
-
       return NextResponse.json(
         {
           error:
@@ -889,7 +874,6 @@ export async function GET(
       );
     }
 
-
     /*
      * Authenticated but not a trusted moderator/admin.
      */
@@ -899,7 +883,6 @@ export async function GET(
       error.message ===
         "COMMUNITY_MODERATOR_REQUIRED"
     ) {
-
       return NextResponse.json(
         {
           error:
@@ -912,7 +895,6 @@ export async function GET(
       );
     }
 
-
     /*
      * Firestore independently denied the operation.
      */
@@ -922,7 +904,6 @@ export async function GET(
       error.message ===
         "FIRESTORE_PERMISSION_DENIED"
     ) {
-
       return NextResponse.json(
         {
           error:
@@ -935,7 +916,6 @@ export async function GET(
       );
     }
 
-
     /*
      * Firebase project configuration.
      */
@@ -945,7 +925,6 @@ export async function GET(
       error.message ===
         "FIREBASE_PROJECT_ID_MISSING"
     ) {
-
       return NextResponse.json(
         {
           error:
@@ -958,7 +937,6 @@ export async function GET(
       );
     }
 
-
     /*
      * Firestore query failure.
      */
@@ -968,7 +946,6 @@ export async function GET(
       error.message ===
         "FIRESTORE_READ_FAILED"
     ) {
-
       return NextResponse.json(
         {
           error:
@@ -981,7 +958,6 @@ export async function GET(
       );
     }
 
-
     /*
      * Unexpected failure.
      */
@@ -990,7 +966,6 @@ export async function GET(
       "Community moderation reports error:",
       error
     );
-
 
     return NextResponse.json(
       {
