@@ -29,9 +29,12 @@ import type {
  *      ↓
  * Firestore Security Rules
  *
- * This architecture is compatible with environments where
- * Firebase Admin private-key cryptography is unavailable.
+ * Premium access may come from:
  *
+ * 1. An active/trialing paid Premium subscription
+ * 2. Active, unexpired Premium tester access
+ *
+ * Tester access NEVER grants Premium+.
  * ============================================================
  */
 
@@ -141,6 +144,19 @@ type FirestoreRestDocument = {
 
     message?: string;
   };
+};
+
+
+type TesterAccessRecord = {
+  active: true;
+
+  plan: "premium";
+
+  voucherId?: string;
+
+  redeemedAt?: number;
+
+  expiresAt: number;
 };
 
 
@@ -257,14 +273,6 @@ function getRequestIdToken(
  * ============================================================
  * VERIFY FIREBASE ID TOKEN
  * ============================================================
- *
- * Firebase's accounts:lookup endpoint validates the supplied
- * Firebase ID token and returns the authenticated Firebase user.
- *
- * This avoids Firebase Admin private-key cryptography while
- * still allowing the server to verify the authenticated user.
- *
- * ============================================================
  */
 
 async function lookupFirebaseUser(
@@ -352,46 +360,37 @@ async function lookupFirebaseUser(
     data.users?.[0];
 
 
-  
-   const uid =
-  user?.localId
-    ?.trim();
+  const uid =
+    user?.localId
+      ?.trim();
 
 
-if (
-  !uid
-) {
+  if (
+    !uid
+  ) {
 
-  throw new Error(
-    "AUTH_INVALID"
-  );
+    throw new Error(
+      "AUTH_INVALID"
+    );
 
-}
-
-
-/*
- * Normalize the optional email independently.
- *
- * The Firebase user object may be undefined according to the
- * lookup response type, even though a valid UID has already
- * been confirmed above.
- */
-
-const email =
-  typeof user?.email ===
-    "string" &&
-  user.email.trim()
-
-    ? user.email.trim()
-
-    : undefined;
+  }
 
 
-return {
-  uid,
+  const email =
+    typeof user?.email ===
+      "string" &&
+    user.email.trim()
 
-  email,
-};
+      ? user.email.trim()
+
+      : undefined;
+
+
+  return {
+    uid,
+
+    email,
+  };
 }
 
 
@@ -595,11 +594,7 @@ function decodeFirestoreFields(
  * Reads a Firestore document using the authenticated user's
  * Firebase ID token.
  *
- * Firestore Security Rules remain active. This does NOT provide
- * Admin access and does NOT bypass ownership or Premium rules.
- *
- * Returns null when the requested document does not exist.
- *
+ * Firestore Security Rules remain active.
  * ============================================================
  */
 
@@ -842,36 +837,108 @@ function normalizeSubscription(
 }
 
 
+/*
+ * ============================================================
+ * TESTER ACCESS NORMALIZATION
+ * ============================================================
+ */
+
+function normalizeTesterAccess(
+  data:
+    Record<string, unknown> |
+    null
+): TesterAccessRecord | null {
+
+  if (
+    !data
+  ) {
+    return null;
+  }
+
+
+  if (
+    data.active !==
+      true
+  ) {
+
+    return null;
+
+  }
+
+
+  /*
+   * Tester access deliberately grants Premium only.
+   */
+
+  if (
+    data.plan !==
+      "premium"
+  ) {
+
+    return null;
+
+  }
+
+
+  const expiresAt =
+    typeof data.expiresAt ===
+      "number"
+      ? data.expiresAt
+      : undefined;
+
+
+  if (
+    typeof expiresAt !==
+      "number"
+  ) {
+
+    return null;
+
+  }
+
+
+  if (
+    !Number.isFinite(
+      expiresAt
+    ) ||
+    expiresAt <=
+      Date.now()
+  ) {
+
+    return null;
+
+  }
+
+
+  return {
+    active:
+      true,
+
+    plan:
+      "premium",
+
+    voucherId:
+      typeof data.voucherId ===
+        "string"
+        ? data.voucherId
+        : undefined,
+
+    redeemedAt:
+      typeof data.redeemedAt ===
+        "number"
+        ? data.redeemedAt
+        : undefined,
+
+    expiresAt,
+  };
+}
+
 
 /*
  * ============================================================
  * COMMUNITY MODERATOR AUTHORIZATION
  * ============================================================
- *
- * Community moderation authority is intentionally separate
- * from subscription plans.
- *
- * A Premium or Premium+ subscription does NOT automatically
- * grant moderator access.
- *
- * Trusted Community access is stored at:
- *
- * users/{uid}/communityAccess/current
- *
- * Expected document:
- *
- * {
- *   role: "moderator" | "admin",
- *   active: true
- * }
- *
- * The authenticated user's Firebase ID token is used to read
- * this document through Firestore REST.
- *
- * Firestore Security Rules remain active.
- * ============================================================
  */
-
 
 export type CommunityModeratorRole =
   | "moderator"
@@ -889,12 +956,6 @@ export type VerifiedCommunityModerator = {
 };
 
 
-/*
- * ============================================================
- * ROLE VALIDATION
- * ============================================================
- */
-
 function isCommunityModeratorRole(
   value: unknown
 ): value is CommunityModeratorRole {
@@ -906,44 +967,15 @@ function isCommunityModeratorRole(
 }
 
 
-/*
- * ============================================================
- * REQUIRE COMMUNITY MODERATOR
- * ============================================================
- *
- * Verifies:
- *
- * 1. Firebase authentication
- * 2. communityAccess/current exists
- * 3. active === true
- * 4. role === moderator or admin
- *
- * Throws COMMUNITY_MODERATOR_REQUIRED when the authenticated
- * account does not have active moderation authority.
- * ============================================================
- */
-
 export async function requireCommunityModerator(
   request: Request
 ): Promise<VerifiedCommunityModerator> {
-
-  /*
-   * Verify Firebase authentication once and retain the same
-   * ID token for the Firestore authorization check.
-   */
 
   const account =
     await requireAuthenticatedUser(
       request
     );
 
-
-  /*
-   * Read the trusted Community access document.
-   *
-   * Firestore rules permit the account owner to read this
-   * document but prohibit client creation or modification.
-   */
 
   const access =
     await getAuthenticatedFirestoreDocument(
@@ -952,22 +984,16 @@ export async function requireCommunityModerator(
     );
 
 
-  /*
-   * No access document means the account is an ordinary
-   * Community member.
-   */
-
-  if (!access) {
+  if (
+    !access
+  ) {
 
     throw new Error(
       "COMMUNITY_MODERATOR_REQUIRED"
     );
+
   }
 
-
-  /*
-   * The role must currently be active.
-   */
 
   if (
     access.active !== true
@@ -976,12 +1002,9 @@ export async function requireCommunityModerator(
     throw new Error(
       "COMMUNITY_MODERATOR_REQUIRED"
     );
+
   }
 
-
-  /*
-   * Only explicitly recognized trusted roles are accepted.
-   */
 
   if (
     !isCommunityModeratorRole(
@@ -992,6 +1015,7 @@ export async function requireCommunityModerator(
     throw new Error(
       "COMMUNITY_MODERATOR_REQUIRED"
     );
+
   }
 
 
@@ -1010,9 +1034,18 @@ export async function requireCommunityModerator(
   };
 }
 
+
 /*
  * ============================================================
  * VERIFY FIREBASE REQUEST
+ * ============================================================
+ *
+ * Determines the effective server-side plan.
+ *
+ * Paid subscriptions take precedence.
+ *
+ * If no paid Premium subscription exists, an active,
+ * unexpired tester entitlement may grant Premium.
  * ============================================================
  */
 
@@ -1032,11 +1065,27 @@ export async function verifyFirebaseRequest(
     );
 
 
-  const subscriptionData =
-    await getAuthenticatedFirestoreDocument(
-      `users/${user.uid}/subscription/current`,
-      idToken
-    );
+  /*
+   * Both documents are owner-readable under Firestore rules.
+   *
+   * Read them concurrently to avoid unnecessary latency.
+   */
+
+  const [
+    subscriptionData,
+    testerAccessData,
+  ] =
+    await Promise.all([
+      getAuthenticatedFirestoreDocument(
+        `users/${user.uid}/subscription/current`,
+        idToken
+      ),
+
+      getAuthenticatedFirestoreDocument(
+        `users/${user.uid}/testerAccess/current`,
+        idToken
+      ),
+    ]);
 
 
   const subscription =
@@ -1046,9 +1095,16 @@ export async function verifyFirebaseRequest(
     );
 
 
+  const testerAccess =
+    normalizeTesterAccess(
+      testerAccessData
+    );
+
+
   const plan =
     getEffectiveServerPlan(
-      subscription
+      subscription,
+      testerAccess
     );
 
 
@@ -1073,11 +1129,6 @@ export async function verifyFirebaseRequest(
 /*
  * ============================================================
  * GET SERVER SUBSCRIPTION
- * ============================================================
- *
- * A user ID token is required because this architecture keeps
- * Firestore Security Rules active.
- *
  * ============================================================
  */
 
@@ -1124,48 +1175,124 @@ export async function getServerSubscription(
 
 /*
  * ============================================================
+ * GET SERVER TESTER ACCESS
+ * ============================================================
+ */
+
+export async function getServerTesterAccess(
+  uid: string,
+  idToken: string
+): Promise<TesterAccessRecord | null> {
+
+  if (
+    !uid
+  ) {
+
+    throw new Error(
+      "A Firebase UID is required."
+    );
+
+  }
+
+
+  if (
+    !idToken
+  ) {
+
+    throw new Error(
+      "A Firebase ID token is required."
+    );
+
+  }
+
+
+  const data =
+    await getAuthenticatedFirestoreDocument(
+      `users/${uid}/testerAccess/current`,
+      idToken
+    );
+
+
+  return normalizeTesterAccess(
+    data
+  );
+}
+
+
+/*
+ * ============================================================
  * EFFECTIVE SERVER PLAN
+ * ============================================================
+ *
+ * Paid Premium/Premium+ takes precedence.
+ *
+ * Tester access grants Premium only.
  * ============================================================
  */
 
 export function getEffectiveServerPlan(
   subscription:
     | SubscriptionRecord
-    | null
+    | null,
+  testerAccess:
+    | TesterAccessRecord
+    | null =
+      null
 ): SubscriptionPlan {
 
-  if (
-    !subscription
-  ) {
-
-    return "free";
-
-  }
-
+  /*
+   * ----------------------------------------------------------
+   * PAID SUBSCRIPTION
+   * ----------------------------------------------------------
+   */
 
   if (
-    subscription.status !==
-      "active" &&
-    subscription.status !==
-      "trialing"
-  ) {
-
-    return "free";
-
-  }
-
-
-  if (
-    subscription.plan ===
-      "premium" ||
-    subscription.plan ===
-      "premium_plus"
+    subscription &&
+    (
+      subscription.status ===
+        "active" ||
+      subscription.status ===
+        "trialing"
+    ) &&
+    (
+      subscription.plan ===
+        "premium" ||
+      subscription.plan ===
+        "premium_plus"
+    )
   ) {
 
     return subscription.plan;
 
   }
 
+
+  /*
+   * ----------------------------------------------------------
+   * TESTER PREMIUM ACCESS
+   * ----------------------------------------------------------
+   */
+
+  if (
+    testerAccess &&
+    testerAccess.active ===
+      true &&
+    testerAccess.plan ===
+      "premium" &&
+    testerAccess.expiresAt >
+      Date.now()
+  ) {
+
+    return "premium";
+
+  }
+
+
+  /*
+   * ----------------------------------------------------------
+   * DEFAULT
+   * ----------------------------------------------------------
+   */
 
   return "free";
 }
@@ -1248,6 +1375,9 @@ export async function requirePremium(
 /*
  * ============================================================
  * REQUIRE PREMIUM+
+ * ============================================================
+ *
+ * Tester access cannot satisfy this requirement.
  * ============================================================
  */
 

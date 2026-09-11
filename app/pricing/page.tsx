@@ -1,6 +1,18 @@
 "use client";
 
+import {
+  useState,
+} from "react";
+
 import Link from "next/link";
+
+import {
+  getCurrentUser,
+} from "../../lib/auth";
+
+import {
+  useAccountEntitlements,
+} from "../../lib/useAccountEntitlements";
 
 import {
   PLAN_DEFINITIONS,
@@ -23,8 +35,10 @@ import {
  * Upgrade buttons currently lead to the signup/login flow
  * while preserving the Pricing page as the return destination.
  *
- * Once Stripe is implemented, these buttons can launch the
- * appropriate checkout session.
+ * Beta testers may redeem a private tester access code below.
+ *
+ * Once Stripe is implemented, the upgrade buttons can launch
+ * the appropriate checkout session.
  * ============================================================
  */
 
@@ -41,6 +55,35 @@ const planOrder:
     "premium",
     "premium_plus",
   ];
+
+
+/*
+ * ============================================================
+ * TESTER REDEMPTION RESPONSE
+ * ============================================================
+ */
+
+type TesterRedemptionResponse = {
+  success?: boolean;
+
+  plan?: string;
+
+  voucherId?: string;
+
+  redeemedAt?: number;
+
+  expiresAt?: number;
+
+  accessDays?: number;
+
+  error?: string;
+};
+
+
+type TesterMessageType =
+  | "success"
+  | "error"
+  | null;
 
 
 /*
@@ -140,6 +183,60 @@ function getMonthlyPrice(
 
 /*
  * ============================================================
+ * TESTER EXPIRATION DISPLAY
+ * ============================================================
+ */
+
+function formatTesterExpiration(
+  expiresAt:
+    number |
+    undefined
+): string {
+
+  if (
+    typeof expiresAt !==
+      "number" ||
+    !Number.isFinite(
+      expiresAt
+    )
+  ) {
+
+    return "";
+
+  }
+
+
+  try {
+
+    return new Intl.DateTimeFormat(
+      "en-US",
+      {
+        month:
+          "long",
+
+        day:
+          "numeric",
+
+        year:
+          "numeric",
+      }
+    ).format(
+      new Date(
+        expiresAt
+      )
+    );
+
+  } catch {
+
+    return "";
+
+  }
+
+}
+
+
+/*
+ * ============================================================
  * RETURN TO PRICING
  * ============================================================
  */
@@ -155,6 +252,361 @@ const pricingReturnTo =
  */
 
 export default function PricingPage() {
+
+  /*
+   * ----------------------------------------------------------
+   * CURRENT ACCOUNT ENTITLEMENTS
+   * ----------------------------------------------------------
+   */
+
+  const {
+    plan,
+    refresh,
+  } =
+    useAccountEntitlements();
+
+
+  /*
+   * ----------------------------------------------------------
+   * TESTER ACCESS STATE
+   * ----------------------------------------------------------
+   */
+
+  const [
+    testerCode,
+    setTesterCode,
+  ] =
+    useState(
+      ""
+    );
+
+
+  const [
+    isRedeemingTesterCode,
+    setIsRedeemingTesterCode,
+  ] =
+    useState(
+      false
+    );
+
+
+  const [
+    testerMessage,
+    setTesterMessage,
+  ] =
+    useState(
+      ""
+    );
+
+
+  const [
+    testerMessageType,
+    setTesterMessageType,
+  ] =
+    useState<TesterMessageType>(
+      null
+    );
+
+
+  const [
+    testerExpiresAt,
+    setTesterExpiresAt,
+  ] =
+    useState<
+      number |
+      undefined
+    >(
+      undefined
+    );
+
+
+  /*
+   * ----------------------------------------------------------
+   * ACCOUNT STATE
+   * ----------------------------------------------------------
+   */
+
+  const hasPremiumAccess =
+    plan === "premium" ||
+    plan === "premium_plus";
+
+
+  /*
+   * ----------------------------------------------------------
+   * REDEEM TESTER ACCESS
+   * ----------------------------------------------------------
+   */
+
+  async function handleRedeemTesterCode() {
+
+    if (
+      isRedeemingTesterCode
+    ) {
+
+      return;
+
+    }
+
+
+    setTesterMessage(
+      ""
+    );
+
+    setTesterMessageType(
+      null
+    );
+
+    setTesterExpiresAt(
+      undefined
+    );
+
+
+    /*
+     * --------------------------------------------------------
+     * BASIC INPUT VALIDATION
+     * --------------------------------------------------------
+     */
+
+    const normalizedCode =
+      testerCode.trim();
+
+
+    if (
+      !normalizedCode
+    ) {
+
+      setTesterMessage(
+        "Please enter your tester access code."
+      );
+
+      setTesterMessageType(
+        "error"
+      );
+
+      return;
+
+    }
+
+
+    /*
+     * --------------------------------------------------------
+     * REQUIRE SIGNED-IN USER
+     * --------------------------------------------------------
+     */
+
+    const user =
+      getCurrentUser();
+
+
+    if (
+      !user
+    ) {
+
+      setTesterMessage(
+        "Please log in before redeeming your tester access code."
+      );
+
+      setTesterMessageType(
+        "error"
+      );
+
+      return;
+
+    }
+
+
+    setIsRedeemingTesterCode(
+      true
+    );
+
+
+    try {
+
+      /*
+       * ------------------------------------------------------
+       * GET FRESH FIREBASE ID TOKEN
+       * ------------------------------------------------------
+       */
+
+      const idToken =
+        await user.getIdToken();
+
+
+      /*
+       * ------------------------------------------------------
+       * REDEEM TESTER CODE
+       * ------------------------------------------------------
+       */
+
+      const response =
+        await fetch(
+          "/api/tester-access/redeem",
+          {
+            method:
+              "POST",
+
+            headers: {
+              Authorization:
+                `Bearer ${idToken}`,
+
+              "Content-Type":
+                "application/json",
+            },
+
+            body:
+              JSON.stringify({
+                code:
+                  normalizedCode,
+              }),
+
+            cache:
+              "no-store",
+          }
+        );
+
+
+      let result:
+        TesterRedemptionResponse =
+        {};
+
+
+      try {
+
+        result =
+          await response.json() as
+            TesterRedemptionResponse;
+
+      } catch {
+
+        result =
+          {};
+
+      }
+
+
+      /*
+       * ------------------------------------------------------
+       * HANDLE API ERROR
+       * ------------------------------------------------------
+       */
+
+      if (
+        !response.ok ||
+        result.success !==
+          true
+      ) {
+
+        setTesterMessage(
+          result.error ||
+          "We couldn't activate tester access right now. Please try again."
+        );
+
+        setTesterMessageType(
+          "error"
+        );
+
+        return;
+
+      }
+
+
+      /*
+       * ------------------------------------------------------
+       * REFRESH EFFECTIVE ENTITLEMENTS
+       * ------------------------------------------------------
+       *
+       * This causes the client entitlement layer to re-read the
+       * user's current subscription/tester access state.
+       */
+
+      await refresh();
+
+
+      /*
+       * ------------------------------------------------------
+       * SUCCESS
+       * ------------------------------------------------------
+       */
+
+      setTesterCode(
+        ""
+      );
+
+
+      setTesterExpiresAt(
+        result.expiresAt
+      );
+
+
+      setTesterMessage(
+        "Tester access activated. Premium features are now available on your account."
+      );
+
+      setTesterMessageType(
+        "success"
+      );
+
+
+    } catch (
+      error
+    ) {
+
+      console.error(
+        "Tester access redemption failed:",
+        error
+      );
+
+
+      setTesterMessage(
+        "We couldn't activate tester access right now. Please try again."
+      );
+
+      setTesterMessageType(
+        "error"
+      );
+
+
+    } finally {
+
+      setIsRedeemingTesterCode(
+        false
+      );
+
+    }
+
+  }
+
+
+  /*
+   * ----------------------------------------------------------
+   * ENTER KEY SUPPORT
+   * ----------------------------------------------------------
+   */
+
+  function handleTesterCodeKeyDown(
+    event:
+      React.KeyboardEvent<HTMLInputElement>
+  ) {
+
+    if (
+      event.key ===
+      "Enter"
+    ) {
+
+      event.preventDefault();
+
+      void handleRedeemTesterCode();
+
+    }
+
+  }
+
+
+  /*
+   * ==========================================================
+   * PAGE
+   * ==========================================================
+   */
 
   return (
 
@@ -329,21 +781,23 @@ export default function PricingPage() {
       >
 
         {planOrder.map(
-          (plan) => {
+          (
+            planOption
+          ) => {
 
             const definition =
               PLAN_DEFINITIONS[
-                plan
+                planOption
               ];
 
 
             const isPremium =
-              plan ===
+              planOption ===
               "premium";
 
 
             const isPremiumPlus =
-              plan ===
+              planOption ===
               "premium_plus";
 
 
@@ -351,7 +805,7 @@ export default function PricingPage() {
 
               <section
                 key={
-                  plan
+                  planOption
                 }
 
                 style={{
@@ -509,7 +963,7 @@ export default function PricingPage() {
                   }}
                 >
                   {getPlanDescription(
-                    plan
+                    planOption
                   )}
                 </p>
 
@@ -551,13 +1005,13 @@ export default function PricingPage() {
                   >
                     {
                       getMonthlyPrice(
-                        plan
+                        planOption
                       )
                     }
                   </span>
 
 
-                  {plan !==
+                  {planOption !==
                     "free" && (
 
                     <span
@@ -620,7 +1074,7 @@ export default function PricingPage() {
                   }}
                 >
 
-                  {plan ===
+                  {planOption ===
                     "free" ? (
 
                     <Link
@@ -840,6 +1294,543 @@ export default function PricingPage() {
 
           }
         )}
+
+      </section>
+
+
+      {/* ======================================================
+          TESTER ACCESS
+      ======================================================= */}
+
+      <section
+        style={{
+          maxWidth:
+            "720px",
+
+          margin:
+            "48px auto 0",
+
+          padding:
+            "30px",
+
+          borderRadius:
+            "20px",
+
+          border:
+            "1px solid #BFDBFE",
+
+          background:
+            "#EFF6FF",
+
+          boxSizing:
+            "border-box",
+        }}
+      >
+
+        <div
+          style={{
+            textAlign:
+              "center",
+          }}
+        >
+
+          <div
+            style={{
+              display:
+                "inline-flex",
+
+              padding:
+                "6px 11px",
+
+              borderRadius:
+                "999px",
+
+              background:
+                "#DBEAFE",
+
+              color:
+                "#1D4ED8",
+
+              fontSize:
+                "11px",
+
+              fontWeight:
+                800,
+
+              letterSpacing:
+                "0.05em",
+
+              textTransform:
+                "uppercase",
+
+              marginBottom:
+                "12px",
+            }}
+          >
+            Beta Testing
+          </div>
+
+
+          <h2
+            style={{
+              margin:
+                0,
+
+              color:
+                "#0F172A",
+
+              fontSize:
+                "24px",
+
+              lineHeight:
+                1.25,
+
+              fontWeight:
+                800,
+            }}
+          >
+            Have a tester access code?
+          </h2>
+
+
+          <p
+            style={{
+              maxWidth:
+                "560px",
+
+              margin:
+                "10px auto 0",
+
+              color:
+                "#475569",
+
+              fontSize:
+                "14px",
+
+              lineHeight:
+                1.6,
+            }}
+          >
+            Approved testers can activate temporary Premium
+            access without entering payment information.
+          </p>
+
+        </div>
+
+
+        {/* ==================================================
+            ALREADY PREMIUM
+        =================================================== */}
+
+        {hasPremiumAccess ? (
+
+          <div
+            style={{
+              marginTop:
+                "22px",
+
+              padding:
+                "16px",
+
+              borderRadius:
+                "12px",
+
+              border:
+                "1px solid #A7F3D0",
+
+              background:
+                "#ECFDF5",
+
+              color:
+                "#065F46",
+
+              fontSize:
+                "14px",
+
+              lineHeight:
+                1.55,
+
+              textAlign:
+                "center",
+
+              fontWeight:
+                700,
+            }}
+          >
+            Your account currently has
+            {" "}
+            {
+              plan ===
+                "premium_plus"
+                ? "Premium+"
+                : "Premium"
+            }
+            {" "}
+            access.
+          </div>
+
+        ) : (
+
+          <>
+            {/* ==============================================
+                CODE FIELD
+            =============================================== */}
+
+            <div
+              style={{
+                marginTop:
+                  "24px",
+              }}
+            >
+
+              <label
+                htmlFor="tester-access-code"
+
+                style={{
+                  display:
+                    "block",
+
+                  marginBottom:
+                    "7px",
+
+                  color:
+                    "#334155",
+
+                  fontSize:
+                    "13px",
+
+                  fontWeight:
+                    800,
+                }}
+              >
+                Tester access code
+              </label>
+
+
+              <input
+                id="tester-access-code"
+
+                type="text"
+
+                autoComplete="off"
+
+                spellCheck={
+                  false
+                }
+
+                value={
+                  testerCode
+                }
+
+                disabled={
+                  isRedeemingTesterCode
+                }
+
+                onChange={
+                  (
+                    event
+                  ) => {
+
+                    setTesterCode(
+                      event.target.value
+                    );
+
+
+                    if (
+                      testerMessageType ===
+                      "error"
+                    ) {
+
+                      setTesterMessage(
+                        ""
+                      );
+
+                      setTesterMessageType(
+                        null
+                      );
+
+                    }
+
+                  }
+                }
+
+                onKeyDown={
+                  handleTesterCodeKeyDown
+                }
+
+                placeholder="Enter your tester code"
+
+                style={{
+                  width:
+                    "100%",
+
+                  padding:
+                    "13px 14px",
+
+                  borderRadius:
+                    "10px",
+
+                  border:
+                    "1px solid #CBD5E1",
+
+                  background:
+                    isRedeemingTesterCode
+                      ? "#F8FAFC"
+                      : "#FFFFFF",
+
+                  color:
+                    "#0F172A",
+
+                  fontSize:
+                    "15px",
+
+                  outline:
+                    "none",
+
+                  boxSizing:
+                    "border-box",
+                }}
+              />
+
+            </div>
+
+
+            {/* ==============================================
+                REDEEM BUTTON
+            =============================================== */}
+
+            <button
+              type="button"
+
+              disabled={
+                isRedeemingTesterCode
+              }
+
+              onClick={
+                () => {
+
+                  void handleRedeemTesterCode();
+
+                }
+              }
+
+              style={{
+                width:
+                  "100%",
+
+                marginTop:
+                  "12px",
+
+                padding:
+                  "13px 18px",
+
+                border:
+                  "none",
+
+                borderRadius:
+                  "10px",
+
+                background:
+                  isRedeemingTesterCode
+                    ? "#93C5FD"
+                    : "#2563EB",
+
+                color:
+                  "#FFFFFF",
+
+                fontSize:
+                  "14px",
+
+                fontWeight:
+                  800,
+
+                cursor:
+                  isRedeemingTesterCode
+                    ? "not-allowed"
+                    : "pointer",
+              }}
+            >
+              {
+                isRedeemingTesterCode
+                  ? "Activating..."
+                  : "Activate Tester Access"
+              }
+            </button>
+
+
+            {/* ==============================================
+                SIGN-IN NOTE
+            =============================================== */}
+
+            {plan ===
+              "guest" && (
+
+              <p
+                style={{
+                  margin:
+                    "12px 0 0",
+
+                  textAlign:
+                    "center",
+
+                  color:
+                    "#64748B",
+
+                  fontSize:
+                    "12px",
+
+                  lineHeight:
+                    1.5,
+                }}
+              >
+                Already have a tester code?
+                {" "}
+                <Link
+                  href={
+                    `/login?returnTo=${encodeURIComponent(
+                      pricingReturnTo
+                    )}`
+                  }
+
+                  style={{
+                    color:
+                      "#2563EB",
+
+                    fontWeight:
+                      800,
+
+                    textDecoration:
+                      "none",
+                  }}
+                >
+                  Log in first
+                </Link>
+                {" "}
+                so the access can be added to your account.
+              </p>
+
+            )}
+
+          </>
+
+        )}
+
+
+        {/* ==================================================
+            SUCCESS / ERROR MESSAGE
+        =================================================== */}
+
+        {testerMessage && (
+
+          <div
+            role={
+              testerMessageType ===
+                "error"
+                ? "alert"
+                : "status"
+            }
+
+            style={{
+              marginTop:
+                "16px",
+
+              padding:
+                "14px",
+
+              borderRadius:
+                "10px",
+
+              border:
+                testerMessageType ===
+                  "success"
+                  ? "1px solid #A7F3D0"
+                  : "1px solid #FECACA",
+
+              background:
+                testerMessageType ===
+                  "success"
+                  ? "#ECFDF5"
+                  : "#FEF2F2",
+
+              color:
+                testerMessageType ===
+                  "success"
+                  ? "#065F46"
+                  : "#991B1B",
+
+              fontSize:
+                "13px",
+
+              lineHeight:
+                1.55,
+
+              textAlign:
+                "center",
+
+              fontWeight:
+                700,
+            }}
+          >
+            {testerMessage}
+
+
+            {testerMessageType ===
+              "success" &&
+              testerExpiresAt && (
+
+              <div
+                style={{
+                  marginTop:
+                    "5px",
+
+                  fontSize:
+                    "12px",
+
+                  fontWeight:
+                    600,
+                }}
+              >
+                Access available through
+                {" "}
+                {
+                  formatTesterExpiration(
+                    testerExpiresAt
+                  )
+                }.
+              </div>
+
+            )}
+
+          </div>
+
+        )}
+
+
+        {/* ==================================================
+            TESTER LIMITATION
+        =================================================== */}
+
+        <p
+          style={{
+            margin:
+              "14px 0 0",
+
+            color:
+              "#64748B",
+
+            fontSize:
+              "11px",
+
+            lineHeight:
+              1.5,
+
+            textAlign:
+              "center",
+          }}
+        >
+          Tester access includes Premium features only.
+          Premium+ Human Navigator support is not included.
+        </p>
 
       </section>
 

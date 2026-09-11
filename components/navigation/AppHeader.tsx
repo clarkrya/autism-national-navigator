@@ -29,23 +29,23 @@ import {
  *
  * Guest:
  *   My Journey
+ *   Support Tools
  *   Community
  *   Log In ▾
  *
- * Log In dropdown:
- *   Log In
- *   Pricing
- *   Create Free Account
- *
  * Authenticated:
  *   My Journey
+ *   Support Tools
  *   Community
  *   Account ▾
  *
- * Account dropdown:
- *   My Journey
- *   Pricing
- *   Log Out
+ * Support Tools:
+ *   Ask Your Navigator
+ *   Future Premium tools shown as Coming Soon
+ *
+ * Human Navigator is intentionally NOT directly accessible.
+ * Human support will only be offered through Ask Your Navigator
+ * after the AI determines escalation may be appropriate.
  *
  * The header remains sticky while the user scrolls.
  * ============================================================
@@ -58,6 +58,18 @@ type NavigationLinkProps = {
   onClick?: () => void;
 };
 
+
+type OpenMenu =
+  | "support"
+  | "account"
+  | null;
+
+
+/*
+ * ============================================================
+ * STANDARD NAVIGATION LINK
+ * ============================================================
+ */
 
 function NavigationLink({
   href,
@@ -103,6 +115,136 @@ function NavigationLink({
 }
 
 
+/*
+ * ============================================================
+ * COMING SOON SUPPORT TOOL
+ * ============================================================
+ */
+
+function ComingSoonTool({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+
+  return (
+
+    <div
+      aria-disabled="true"
+
+      style={{
+        padding:
+          "10px 11px",
+
+        borderRadius:
+          "9px",
+
+        opacity:
+          0.72,
+      }}
+    >
+
+      <div
+        style={{
+          display:
+            "flex",
+
+          alignItems:
+            "center",
+
+          justifyContent:
+            "space-between",
+
+          gap:
+            "10px",
+        }}
+      >
+
+        <span
+          style={{
+            color:
+              "#334155",
+
+            fontSize:
+              "13px",
+
+            fontWeight:
+              750,
+          }}
+        >
+          {title}
+        </span>
+
+
+        <span
+          style={{
+            flexShrink:
+              0,
+
+            padding:
+              "3px 7px",
+
+            borderRadius:
+              "999px",
+
+            background:
+              "#F1F5F9",
+
+            color:
+              "#64748B",
+
+            fontSize:
+              "9px",
+
+            fontWeight:
+              800,
+
+            textTransform:
+              "uppercase",
+
+            letterSpacing:
+              "0.04em",
+          }}
+        >
+          Coming Soon
+        </span>
+
+      </div>
+
+
+      <div
+        style={{
+          marginTop:
+            "3px",
+
+          color:
+            "#64748B",
+
+          fontSize:
+            "10px",
+
+          lineHeight:
+            1.4,
+        }}
+      >
+        {description}
+      </div>
+
+    </div>
+
+  );
+
+}
+
+
+/*
+ * ============================================================
+ * APP HEADER
+ * ============================================================
+ */
+
 export default function AppHeader() {
 
   /*
@@ -126,9 +268,11 @@ export default function AppHeader() {
    */
 
   const [
-    menuOpen,
-    setMenuOpen,
-  ] = useState(false);
+    openMenu,
+    setOpenMenu,
+  ] = useState<OpenMenu>(
+    null
+  );
 
 
   /*
@@ -175,7 +319,7 @@ export default function AppHeader() {
 
   /*
    * ==========================================================
-   * CLOSE MENU ON OUTSIDE CLICK
+   * CLOSE MENUS ON OUTSIDE CLICK
    * ==========================================================
    */
 
@@ -206,8 +350,8 @@ export default function AppHeader() {
         )
       ) {
 
-        setMenuOpen(
-          false
+        setOpenMenu(
+          null
         );
 
       }
@@ -235,7 +379,7 @@ export default function AppHeader() {
 
   /*
    * ==========================================================
-   * CLOSE MENU WITH ESCAPE
+   * CLOSE MENUS WITH ESCAPE
    * ==========================================================
    */
 
@@ -250,8 +394,8 @@ export default function AppHeader() {
         "Escape"
       ) {
 
-        setMenuOpen(
-          false
+        setOpenMenu(
+          null
         );
 
       }
@@ -306,8 +450,8 @@ export default function AppHeader() {
       );
 
 
-      setMenuOpen(
-        false
+      setOpenMenu(
+        null
       );
 
 
@@ -335,7 +479,52 @@ export default function AppHeader() {
 
   /*
    * ==========================================================
-   * BRAND
+   * MENU HELPERS
+   * ==========================================================
+   */
+
+  function closeMenus() {
+
+    setOpenMenu(
+      null
+    );
+
+  }
+
+
+  function toggleSupportMenu() {
+
+    setOpenMenu(
+      (
+        current
+      ) =>
+        current ===
+          "support"
+          ? null
+          : "support"
+    );
+
+  }
+
+
+  function toggleAccountMenu() {
+
+    setOpenMenu(
+      (
+        current
+      ) =>
+        current ===
+          "account"
+          ? null
+          : "account"
+    );
+
+  }
+
+
+  /*
+   * ==========================================================
+   * HEADER
    * ==========================================================
    */
 
@@ -401,10 +590,8 @@ export default function AppHeader() {
         <Link
           href="/"
 
-          onClick={() =>
-            setMenuOpen(
-              false
-            )
+          onClick={
+            closeMenus
           }
 
           style={{
@@ -546,22 +733,363 @@ export default function AppHeader() {
             href="/journey"
             label="My Journey"
 
-            onClick={() =>
-              setMenuOpen(
-                false
-              )
+            onClick={
+              closeMenus
             }
           />
+
+
+          {/* ==================================================
+              SUPPORT TOOLS DROPDOWN
+          =================================================== */}
+
+          <div
+            data-header-menu
+
+            style={{
+              position:
+                "relative",
+            }}
+          >
+
+            <button
+              type="button"
+
+              aria-expanded={
+                openMenu ===
+                "support"
+              }
+
+              aria-haspopup="menu"
+
+              onClick={
+                toggleSupportMenu
+              }
+
+              style={{
+                display:
+                  "flex",
+
+                alignItems:
+                  "center",
+
+                gap:
+                  "6px",
+
+                border:
+                  "none",
+
+                background:
+                  openMenu ===
+                    "support"
+                    ? "#EFF6FF"
+                    : "transparent",
+
+                color:
+                  "#334155",
+
+                padding:
+                  "8px 10px",
+
+                borderRadius:
+                  "8px",
+
+                fontSize:
+                  "14px",
+
+                fontWeight:
+                  700,
+
+                cursor:
+                  "pointer",
+
+                whiteSpace:
+                  "nowrap",
+              }}
+            >
+
+              <span>
+                Support Tools
+              </span>
+
+
+              <span
+                aria-hidden="true"
+
+                style={{
+                  fontSize:
+                    "9px",
+                }}
+              >
+                {openMenu ===
+                  "support"
+                  ? "▲"
+                  : "▼"}
+              </span>
+
+            </button>
+
+
+            {openMenu ===
+              "support" && (
+
+              <div
+                role="menu"
+
+                style={{
+                  position:
+                    "absolute",
+
+                  right:
+                    0,
+
+                  top:
+                    "calc(100% + 8px)",
+
+                  width:
+                    "340px",
+
+                  maxWidth:
+                    "calc(100vw - 32px)",
+
+                  background:
+                    "#FFFFFF",
+
+                  border:
+                    "1px solid #E2E8F0",
+
+                  borderRadius:
+                    "14px",
+
+                  boxShadow:
+                    "0 12px 30px rgba(15, 23, 42, 0.12)",
+
+                  padding:
+                    "8px",
+
+                  overflow:
+                    "hidden",
+                }}
+              >
+
+                <div
+                  style={{
+                    padding:
+                      "10px 11px 12px",
+
+                    borderBottom:
+                      "1px solid #F1F5F9",
+
+                    marginBottom:
+                      "4px",
+                  }}
+                >
+
+                  <div
+                    style={{
+                      color:
+                        "#0F172A",
+
+                      fontSize:
+                        "13px",
+
+                      fontWeight:
+                        800,
+                    }}
+                  >
+                    Support Tools
+                  </div>
+
+
+                  <div
+                    style={{
+                      marginTop:
+                        "4px",
+
+                      color:
+                        "#64748B",
+
+                      fontSize:
+                        "10px",
+
+                      lineHeight:
+                        1.45,
+                    }}
+                  >
+                    Personalized tools to support your family's journey.
+                  </div>
+
+                </div>
+
+
+                {/* ==========================================
+                    ASK YOUR NAVIGATOR
+                =========================================== */}
+
+                <Link
+                  href="/navigator"
+
+                  role="menuitem"
+
+                  onClick={
+                    closeMenus
+                  }
+
+                  style={{
+                    display:
+                      "block",
+
+                    padding:
+                      "11px",
+
+                    borderRadius:
+                      "9px",
+
+                    background:
+                      "#EFF6FF",
+
+                    textDecoration:
+                      "none",
+                  }}
+                >
+
+                  <div
+                    style={{
+                      display:
+                        "flex",
+
+                      alignItems:
+                        "center",
+
+                      justifyContent:
+                        "space-between",
+
+                      gap:
+                        "10px",
+                    }}
+                  >
+
+                    <span
+                      style={{
+                        color:
+                          "#1D4ED8",
+
+                        fontSize:
+                          "13px",
+
+                        fontWeight:
+                          800,
+                      }}
+                    >
+                      Ask Your Navigator
+                    </span>
+
+
+                    <span
+                      style={{
+                        flexShrink:
+                          0,
+
+                        padding:
+                          "3px 7px",
+
+                        borderRadius:
+                          "999px",
+
+                        background:
+                          "#DBEAFE",
+
+                        color:
+                          "#1D4ED8",
+
+                        fontSize:
+                          "9px",
+
+                        fontWeight:
+                          800,
+
+                        textTransform:
+                          "uppercase",
+
+                        letterSpacing:
+                          "0.04em",
+                      }}
+                    >
+                      Premium
+                    </span>
+
+                  </div>
+
+
+                  <div
+                    style={{
+                      marginTop:
+                        "4px",
+
+                      color:
+                        "#475569",
+
+                      fontSize:
+                        "10px",
+
+                      lineHeight:
+                        1.45,
+                    }}
+                  >
+                    Get personalized guidance based on your family's journey.
+                  </div>
+
+                </Link>
+
+
+                {/* ==========================================
+                    FUTURE PREMIUM TOOLS
+                =========================================== */}
+
+                <ComingSoonTool
+                  title="Advanced Personalized Resources"
+                  description="More tailored resources based on your family's needs."
+                />
+
+
+                <ComingSoonTool
+                  title="Meeting Preparation"
+                  description="Prepare questions, priorities, and talking points."
+                />
+
+
+                <ComingSoonTool
+                  title="Document Vault"
+                  description="Organize important family, medical, and school documents."
+                />
+
+
+                <ComingSoonTool
+                  title="AI Progress Insights"
+                  description="See patterns and progress across your family's journey."
+                />
+
+
+                <ComingSoonTool
+                  title="Family Organizer"
+                  description="Keep important tasks, information, and next steps together."
+                />
+
+
+
+              </div>
+
+            )}
+
+          </div>
 
 
           <NavigationLink
             href="/community"
             label="Community"
 
-            onClick={() =>
-              setMenuOpen(
-                false
-              )
+            onClick={
+              closeMenus
             }
           />
 
@@ -588,18 +1116,14 @@ export default function AppHeader() {
                 type="button"
 
                 aria-expanded={
-                  menuOpen
+                  openMenu ===
+                  "account"
                 }
 
                 aria-haspopup="menu"
 
-                onClick={() =>
-                  setMenuOpen(
-                    (
-                      current
-                    ) =>
-                      !current
-                  )
+                onClick={
+                  toggleAccountMenu
                 }
 
                 style={{
@@ -654,7 +1178,8 @@ export default function AppHeader() {
                       "10px",
                   }}
                 >
-                  {menuOpen
+                  {openMenu ===
+                    "account"
                     ? "▲"
                     : "▼"}
                 </span>
@@ -662,7 +1187,8 @@ export default function AppHeader() {
               </button>
 
 
-              {menuOpen && (
+              {openMenu ===
+                "account" && (
 
                 <div
                   role="menu"
@@ -772,10 +1298,8 @@ export default function AppHeader() {
 
                     role="menuitem"
 
-                    onClick={() =>
-                      setMenuOpen(
-                        false
-                      )
+                    onClick={
+                      closeMenus
                     }
 
                     style={{
@@ -810,10 +1334,8 @@ export default function AppHeader() {
 
                     role="menuitem"
 
-                    onClick={() =>
-                      setMenuOpen(
-                        false
-                      )
+                    onClick={
+                      closeMenus
                     }
 
                     style={{
@@ -930,18 +1452,14 @@ export default function AppHeader() {
                 type="button"
 
                 aria-expanded={
-                  menuOpen
+                  openMenu ===
+                  "account"
                 }
 
                 aria-haspopup="menu"
 
-                onClick={() =>
-                  setMenuOpen(
-                    (
-                      current
-                    ) =>
-                      !current
-                  )
+                onClick={
+                  toggleAccountMenu
                 }
 
                 style={{
@@ -996,7 +1514,8 @@ export default function AppHeader() {
                       "10px",
                   }}
                 >
-                  {menuOpen
+                  {openMenu ===
+                    "account"
                     ? "▲"
                     : "▼"}
                 </span>
@@ -1004,7 +1523,8 @@ export default function AppHeader() {
               </button>
 
 
-              {menuOpen && (
+              {openMenu ===
+                "account" && (
 
                 <div
                   role="menu"
@@ -1044,10 +1564,8 @@ export default function AppHeader() {
 
                     role="menuitem"
 
-                    onClick={() =>
-                      setMenuOpen(
-                        false
-                      )
+                    onClick={
+                      closeMenus
                     }
 
                     style={{
@@ -1082,10 +1600,8 @@ export default function AppHeader() {
 
                     role="menuitem"
 
-                    onClick={() =>
-                      setMenuOpen(
-                        false
-                      )
+                    onClick={
+                      closeMenus
                     }
 
                     style={{
@@ -1120,10 +1636,8 @@ export default function AppHeader() {
 
                     role="menuitem"
 
-                    onClick={() =>
-                      setMenuOpen(
-                        false
-                      )
+                    onClick={
+                      closeMenus
                     }
 
                     style={{
