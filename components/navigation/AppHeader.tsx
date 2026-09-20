@@ -1042,14 +1042,126 @@ export default function AppHeader() {
                 </Link>
 
 
+                                {/* ==========================================
+                    ADVANCED PERSONALIZED RESOURCES
+                =========================================== */}
+
+<Link
+                  href="/resources"
+
+                  role="menuitem"
+
+                  onClick={
+                    closeMenus
+                  }
+
+                  style={{
+                    display:
+                      "block",
+
+                    padding:
+                      "11px",
+
+                    borderRadius:
+                      "9px",
+
+                    textDecoration:
+                      "none",
+                  }}
+                >
+
+                  <div
+                    style={{
+                      display:
+                        "flex",
+
+                      alignItems:
+                        "center",
+
+                      justifyContent:
+                        "space-between",
+
+                      gap:
+                        "10px",
+                    }}
+                  >
+
+                    <span
+                      style={{
+                        color:
+                          "#334155",
+
+                        fontSize:
+                          "13px",
+
+                        fontWeight:
+                          750,
+                      }}
+                    >
+                      Advanced Personalized Resources
+                    </span>
+
+
+                    <span
+                      style={{
+                        flexShrink:
+                          0,
+
+                        padding:
+                          "3px 7px",
+
+                        borderRadius:
+                          "999px",
+
+                        background:
+                          "#DBEAFE",
+
+                        color:
+                          "#1D4ED8",
+
+                        fontSize:
+                          "9px",
+
+                        fontWeight:
+                          800,
+
+                        textTransform:
+                          "uppercase",
+
+                        letterSpacing:
+                          "0.04em",
+                      }}
+                    >
+                      Premium
+                    </span>
+
+                  </div>
+
+
+                  <div
+                    style={{
+                      marginTop:
+                        "4px",
+
+                      color:
+                        "#64748B",
+
+                      fontSize:
+                        "10px",
+
+                      lineHeight:
+                        1.45,
+                    }}
+                  >
+                    More tailored resources based on your family's needs.
+                  </div>
+
+                </Link>
+
+
                 {/* ==========================================
                     FUTURE PREMIUM TOOLS
                 =========================================== */}
-
-                <ComingSoonTool
-                  title="Advanced Personalized Resources"
-                  description="More tailored resources based on your family's needs."
-                />
 
 
                 <ComingSoonTool
