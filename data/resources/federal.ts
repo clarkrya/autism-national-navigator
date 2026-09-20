@@ -218,55 +218,59 @@ export const federalResources: TrustedResource[] = [
 
   /*
    * ----------------------------------------------------------
-   * AUTISM.GOV
+   * HHS — AUTISM INFORMATION
    * ----------------------------------------------------------
    */
 
   {
     id:
-      "usa-autism-support",
+      "hhs-autism-information",
 
     title:
-      "Autism Resources and Information",
+      "Autism Information and Resources",
 
     type:
       "government",
 
     description:
-      "Federal information and resources related to autism, including information about services, research, and support.",
+      "Federal autism information and resources from the U.S. Department of Health and Human Services, including information about signs, screening and diagnosis, services, research, and support.",
 
     whyItMayHelp:
-      "This can help families understand available autism-related resources and identify additional areas of support.",
+      "This resource can help families understand autism-related information, find additional federal resources, and identify areas of support that may be relevant to their family's needs.",
 
     eligibility: [
-      "Resource information is publicly available.",
-      "Specific programs may have their own eligibility requirements."
+      "Information is publicly available.",
+      "No program enrollment is required to review this resource."
     ],
 
     whatItMayCover: [
-      "Information about autism-related services and programs.",
-      "Connections to additional government resources."
+      "General autism information.",
+      "Signs and early detection.",
+      "Screening and diagnosis.",
+      "Resources for parents and families.",
+      "Treatment and services information.",
+      "Federal autism programs and research resources."
     ],
 
     applicationSteps: [
-      "Review the available autism resources.",
-      "Identify programs that may match your family's needs.",
-      "Review the individual program's eligibility and application requirements."
+      "Review the autism information and resources available through HHS.",
+      "Identify information or programs that may match your family's current needs.",
+      "Follow links to the appropriate federal agency or program for additional information."
     ],
 
     documentsNeeded: [],
 
     url:
-      "https://www.autism.gov/",
+      "https://www.hhs.gov/programs/topic-sites/autism/index.html",
 
     sourceName:
-      "Autism.gov",
+      "U.S. Department of Health and Human Services",
 
     sourceType:
       "government",
 
     lastVerified:
-      "2026-08-10",
+      "2026-09-19",
 
     topics: [
       "autism_information",
