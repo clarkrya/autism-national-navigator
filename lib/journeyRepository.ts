@@ -1607,3 +1607,166 @@ export async function getPastJourney(
         : userId,
   };
 }
+/*
+ * ============================================================
+ * DELETE CHILD JOURNEY DATA
+ * ============================================================
+ *
+ * Permanently removes the Firestore data currently managed by
+ * this repository for one child.
+ *
+ * IMPORTANT:
+ *
+ * Firestore does not automatically delete subcollections when
+ * a parent document is deleted.
+ *
+ * Therefore deletion happens from the inside out:
+ *
+ * 1. Delete every Past Journey.
+ * 2. Delete the active Journey.
+ * 3. Delete the child record.
+ *
+ * This implementation intentionally uses the normal Firebase
+ * client SDK instead of Firebase Admin.
+ *
+ * Firestore Security Rules remain responsible for ensuring that
+ * the signed-in user can delete only data belonging to their
+ * own account.
+ *
+ * This function deletes only child-scoped data whose Firestore
+ * location is currently defined by this repository.
+ * ============================================================
+ */
+
+export async function deleteChildJourneyData(
+  userId: string,
+  childId: string
+):
+  Promise<void> {
+
+  /*
+   * ----------------------------------------------------------
+   * VALIDATE REQUIRED IDS
+   * ----------------------------------------------------------
+   */
+
+  requireUserId(
+    userId
+  );
+
+  requireChildId(
+    childId
+  );
+
+
+  /*
+   * ----------------------------------------------------------
+   * CONFIRM CHILD EXISTS
+   * ----------------------------------------------------------
+   *
+   * This prevents the UI from reporting a successful deletion
+   * when the selected child no longer exists.
+   */
+
+  const childRef =
+    getChildRef(
+      userId,
+      childId
+    );
+
+
+  const childSnapshot =
+    await getDoc(
+      childRef
+    );
+
+
+  if (
+    !childSnapshot.exists()
+  ) {
+    throw new Error(
+      "This child could not be found."
+    );
+  }
+
+
+  /*
+   * ----------------------------------------------------------
+   * DELETE PAST JOURNEYS
+   * ----------------------------------------------------------
+   *
+   * Path:
+   *
+   * users/{userId}/children/{childId}/pastJourneys/{journeyId}
+   *
+   * Deleting the child parent document would NOT automatically
+   * remove these documents, so they must be removed first.
+   */
+
+  const pastJourneysSnapshot =
+    await getDocs(
+      getPastJourneysCollection(
+        userId,
+        childId
+      )
+    );
+
+
+  if (
+    !pastJourneysSnapshot.empty
+  ) {
+    await Promise.all(
+      pastJourneysSnapshot.docs.map(
+        (
+          journeyDocument
+        ) =>
+          deleteDoc(
+            journeyDocument.ref
+          )
+      )
+    );
+  }
+
+
+  /*
+   * ----------------------------------------------------------
+   * DELETE ACTIVE JOURNEY
+   * ----------------------------------------------------------
+   *
+   * Path:
+   *
+   * users/{userId}/children/{childId}/journeys/current
+   *
+   * deleteDoc() is safe when the document does not exist, so
+   * this also works for an unfinished child that never received
+   * a generated Journey.
+   */
+
+  await deleteDoc(
+    getChildCurrentJourneyRef(
+      userId,
+      childId
+    )
+  );
+
+
+  /*
+   * ----------------------------------------------------------
+   * DELETE CHILD RECORD
+   * ----------------------------------------------------------
+   *
+   * This is deliberately last.
+   *
+   * getSavedChildren() reads the documents directly beneath:
+   *
+   * users/{userId}/children
+   *
+   * Once this document is removed, the child will disappear
+   * from the Child Journey dropdown after the UI refreshes its
+   * saved-child list.
+   */
+
+  await deleteDoc(
+    childRef
+  );
+}

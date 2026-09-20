@@ -23,6 +23,7 @@ import {
 
 import {
   archiveCurrentJourney,
+  deleteChildJourneyData,
   getCurrentJourney,
   getLegacyCurrentJourney,
   getSavedChildren,
@@ -764,104 +765,183 @@ export default function JourneyBuilder() {
   ) {
     const user =
       auth.currentUser;
-
-
+  
+  
     if (
       !user
     ) {
       return;
     }
-
-
+  
+  
     setCheckingSavedJourney(
       true
     );
-
-
+  
+  
     setError(
       null
     );
-
-
+  
+  
     setJourneyActionError(
       null
     );
-
-
+  
+  
+    setRemoveChildError(
+      null
+    );
+  
+  
     setShowStartNewJourneyConfirm(
       false
     );
-
-
+  
+  
     setShowRemoveChildConfirm(
       false
     );
-
-
+  
+  
     try {
+      /*
+       * --------------------------------------------------------
+       * FIND THE CHILD RECORD
+       * --------------------------------------------------------
+       *
+       * A saved child can exist even when that child does not
+       * currently have an active Journey.
+       *
+       * The child record is therefore the source of truth for
+       * selecting the child.
+       * --------------------------------------------------------
+       */
+  
+      const savedChild =
+        savedChildren.find(
+          (
+            child
+          ) =>
+            child.childId ===
+            childId
+        );
+  
+  
+      if (
+        !savedChild
+      ) {
+        throw new Error(
+          "We couldn't find this child's saved profile."
+        );
+      }
+  
+  
+      /*
+       * --------------------------------------------------------
+       * SELECT THE CHILD FIRST
+       * --------------------------------------------------------
+       */
+  
+      setSelectedChildId(
+        childId
+      );
+  
+  
+      setFamilyProfile({
+        ...savedChild
+          .familyProfile,
+  
+        childId,
+      });
+  
+  
+      setAddingChildDraft(
+        false
+      );
+  
+  
+      setPreviousChildSnapshot(
+        null
+      );
+  
+  
+      setStep(
+        0
+      );
+  
+  
+      /*
+       * --------------------------------------------------------
+       * LOAD ACTIVE JOURNEY IF ONE EXISTS
+       * --------------------------------------------------------
+       */
+  
       const savedJourney =
         await getCurrentJourney(
           user.uid,
           childId
         );
-
-
+  
+  
       if (
-        !savedJourney
+        savedJourney
       ) {
-        throw new Error(
-          "This child does not currently have an active journey."
+        setFamilyProfile({
+          ...savedJourney
+            .familyProfile,
+  
+          childId,
+        });
+  
+  
+        setPersonalizedJourney(
+          savedJourney
+            .journey
+        );
+  
+  
+        setSavedJourneyLoaded(
+          true
+        );
+  
+      } else {
+        /*
+         * ------------------------------------------------------
+         * CHILD EXISTS, BUT HAS NO ACTIVE JOURNEY
+         * ------------------------------------------------------
+         *
+         * This is valid.
+         *
+         * Keep the child selected using the child-level profile.
+         * This allows the family to:
+         *
+         * - see/select the child
+         * - begin a Journey for the child
+         * - remove the child
+         *
+         * ------------------------------------------------------
+         */
+  
+        setPersonalizedJourney(
+          null
+        );
+  
+  
+        setSavedJourneyLoaded(
+          false
         );
       }
-
-
-      setSelectedChildId(
-        childId
-      );
-
-
-      setFamilyProfile({
-        ...savedJourney
-          .familyProfile,
-
-        childId,
-      });
-
-
-      setPersonalizedJourney(
-        savedJourney
-          .journey
-      );
-
-
-      setSavedJourneyLoaded(
-        true
-      );
-
-
-      setAddingChildDraft(
-        false
-      );
-
-
-      setPreviousChildSnapshot(
-        null
-      );
-
-
-      setStep(
-        0
-      );
-
-
+  
+  
       window.scrollTo({
         top:
           0,
-
+  
         behavior:
           "smooth",
       });
-
+  
     } catch (
       loadError
     ) {
@@ -869,14 +949,14 @@ export default function JourneyBuilder() {
         "Unable to switch child journeys:",
         loadError
       );
-
-
+  
+  
       setJourneyActionError(
         loadError instanceof Error
           ? loadError.message
-          : "We couldn't load this child's saved journey."
+          : "We couldn't load this child's saved information."
       );
-
+  
     } finally {
       setCheckingSavedJourney(
         false
@@ -1329,324 +1409,379 @@ export default function JourneyBuilder() {
    * ==========================================================
    */
 
-  async function confirmRemoveChild() {
-    if (
-      removingChild
-    ) {
-      return;
-    }
+    /*
+   * ==========================================================
+   * REMOVE CHILD
+   * ==========================================================
+   *
+   * Child deletion intentionally uses the normal authenticated
+   * Firebase client instead of the Firebase Admin delete API.
+   *
+   * deleteChildJourneyData() removes:
+   *
+   * - Past Journeys
+   * - active Journey
+   * - child record
+   *
+   * After deletion, the saved-child list is refreshed and the
+   * app automatically loads another remaining child.
+   * ==========================================================
+   */
 
-
-    const user =
-      auth.currentUser;
-
-
-    const childId =
-      familyProfile
-        .childId ||
-      selectedChildId;
-
-
-    if (
-      !user ||
-      !childId
-    ) {
+    async function confirmRemoveChild() {
+      if (
+        removingChild
+      ) {
+        return;
+      }
+  
+  
+      const user =
+        auth.currentUser;
+  
+  
+      const childId =
+        familyProfile
+          .childId ||
+        selectedChildId;
+  
+  
+      if (
+        !user ||
+        !childId
+      ) {
+        setRemoveChildError(
+          "We couldn't determine which child to remove."
+        );
+  
+        return;
+      }
+  
+  
+      setRemovingChild(
+        true
+      );
+  
+  
       setRemoveChildError(
-        "We couldn't determine which child to remove."
+        null
       );
-
-      return;
-    }
-
-
-    setRemovingChild(
-      true
-    );
-
-
-    setRemoveChildError(
-      null
-    );
-
-
-    try {
-      const idToken =
-        await user
-          .getIdToken();
-
-
-      const response =
-        await fetch(
-          "/api/children/delete",
-          {
-            method:
-              "POST",
-
-            headers: {
-              "Content-Type":
-                "application/json",
-
-              Authorization:
-                `Bearer ${idToken}`,
-            },
-
-            body:
-              JSON.stringify({
-                childId,
-              }),
-          }
+  
+  
+      setJourneyActionError(
+        null
+      );
+  
+  
+      try {
+  
+        /*
+         * --------------------------------------------------------
+         * DELETE CHILD DATA
+         * --------------------------------------------------------
+         *
+         * This now uses the normal authenticated Firestore client.
+         *
+         * Firebase Admin and /api/children/delete are intentionally
+         * NOT used here.
+         */
+  
+        await deleteChildJourneyData(
+          user.uid,
+          childId
         );
-
-
-      /*
-       * --------------------------------------------------------
-       * SAFE DELETE API RESPONSE PARSING
-       * --------------------------------------------------------
-       */
-
-      const responseText =
-        await response.text();
-
-
-      let data:
-        any =
-        null;
-
-
-      if (
-        responseText
-      ) {
-        try {
-          data =
-            JSON.parse(
-              responseText
-            );
-
-        } catch (
-          parseError
+  
+  
+        /*
+         * --------------------------------------------------------
+         * REFRESH SAVED CHILDREN
+         * --------------------------------------------------------
+         */
+  
+        const remainingChildren =
+          await getSavedChildren(
+            user.uid
+          );
+  
+  
+        setSavedChildren(
+          remainingChildren
+        );
+  
+  
+        setShowRemoveChildConfirm(
+          false
+        );
+  
+  
+        setRemoveChildError(
+          null
+        );
+  
+  
+        /*
+         * --------------------------------------------------------
+         * LOAD ANOTHER REMAINING CHILD
+         * --------------------------------------------------------
+         *
+         * Prefer a child that already has an active Journey.
+         */
+  
+        if (
+          remainingChildren.length >
+          0
         ) {
-          console.error(
-            "Delete child API returned a non-JSON response:",
-            {
-              status:
-                response.status,
-
-              statusText:
-                response.statusText,
-
-              responsePreview:
-                responseText.slice(
-                  0,
-                  300
-                ),
-
-              parseError,
+          for (
+            const child
+            of remainingChildren
+          ) {
+            const currentJourney =
+              await getCurrentJourney(
+                user.uid,
+                child.childId
+              );
+  
+  
+            if (
+              !currentJourney
+            ) {
+              continue;
             }
-          );
-
-
-          throw new Error(
-            response.ok
-              ? "The child removal service returned an invalid response."
-              : `Unable to remove child (${response.status}).`
-          );
-        }
-      }
-
-
-      if (
-        !response.ok
-      ) {
-        throw new Error(
-          data?.error ||
-          "Unable to remove child."
-        );
-      }
-
-
-      const remainingChildren =
-        await getSavedChildren(
-          user.uid
-        );
-
-
-      setSavedChildren(
-        remainingChildren
-      );
-
-
-      setShowRemoveChildConfirm(
-        false
-      );
-
-
-      /*
-       * --------------------------------------------------------
-       * LOAD ANOTHER CHILD WITH AN ACTIVE CURRENT JOURNEY
-       * --------------------------------------------------------
-       */
-
-      if (
-        remainingChildren.length >
-        0
-      ) {
-        let nextChildLoaded =
-          false;
-
-
-        for (
-          const child
-          of remainingChildren
-        ) {
-          const currentJourney =
-            await getCurrentJourney(
-              user.uid,
+  
+  
+            setSelectedChildId(
               child.childId
             );
-
-
-          if (
-            !currentJourney
-          ) {
-            continue;
+  
+  
+            setFamilyProfile({
+              ...currentJourney
+                .familyProfile,
+  
+              childId:
+                child.childId,
+            });
+  
+  
+            setPersonalizedJourney(
+              currentJourney
+                .journey
+            );
+  
+  
+            setSavedJourneyLoaded(
+              true
+            );
+  
+  
+            setAddingChildDraft(
+              false
+            );
+  
+  
+            setPreviousChildSnapshot(
+              null
+            );
+  
+  
+            setStep(
+              0
+            );
+  
+  
+            setError(
+              null
+            );
+  
+  
+            setJourneyActionError(
+              null
+            );
+  
+  
+            setJourneyHistoryRefreshKey(
+              (
+                current
+              ) =>
+                current + 1
+            );
+  
+  
+            window.scrollTo({
+              top:
+                0,
+  
+              behavior:
+                "smooth",
+            });
+  
+  
+            return;
           }
-
-
+  
+  
+          /*
+           * ------------------------------------------------------
+           * REMAINING CHILDREN HAVE NO ACTIVE JOURNEY
+           * ------------------------------------------------------
+           *
+           * A child can legitimately exist without an active
+           * Journey.
+           *
+           * In that situation, select the first remaining child
+           * using the child-level profile so the family can start
+           * a Journey or remove that child.
+           */
+  
+          const nextChild =
+            remainingChildren[0];
+  
+  
           setSelectedChildId(
-            child.childId
+            nextChild.childId
           );
-
-
+  
+  
           setFamilyProfile({
-            ...currentJourney
+            ...nextChild
               .familyProfile,
-
+  
             childId:
-              child.childId,
+              nextChild.childId,
           });
-
-
+  
+  
           setPersonalizedJourney(
-            currentJourney
-              .journey
+            null
           );
-
-
+  
+  
           setSavedJourneyLoaded(
-            true
+            false
           );
-
-
+  
+  
           setAddingChildDraft(
             false
           );
-
-
+  
+  
           setPreviousChildSnapshot(
             null
           );
-
-
+  
+  
           setStep(
             0
           );
-
-
-          nextChildLoaded =
-            true;
-
-
-          break;
-        }
-
-
-        if (
-          nextChildLoaded
-        ) {
+  
+  
+          setError(
+            null
+          );
+  
+  
+          setJourneyActionError(
+            null
+          );
+  
+  
           window.scrollTo({
             top:
               0,
-
+  
             behavior:
               "smooth",
           });
-
-
+  
+  
           return;
         }
-      }
-
-
-      /*
-       * --------------------------------------------------------
-       * NO REMAINING ACTIVE JOURNEY
-       * --------------------------------------------------------
-       */
-
-      setSelectedChildId(
-        ""
-      );
-
-
-      setFamilyProfile(
-        createBlankProfile()
-      );
-
-
-      setPersonalizedJourney(
-        null
-      );
-
-
-      setSavedJourneyLoaded(
-        false
-      );
-
-
-      setAddingChildDraft(
-        false
-      );
-
-
-      setPreviousChildSnapshot(
-        null
-      );
-
-
-      setStep(
-        0
-      );
-
-
-      window.scrollTo({
-        top:
-          0,
-
-        behavior:
-          "smooth",
-      });
-
-    } catch (
-      removalError
-    ) {
-      console.error(
-        "Unable to remove child:",
+  
+  
+        /*
+         * --------------------------------------------------------
+         * NO CHILDREN REMAIN
+         * --------------------------------------------------------
+         *
+         * Return the account to the normal Welcome / Begin My
+         * Journey state.
+         */
+  
+        setSelectedChildId(
+          ""
+        );
+  
+  
+        setFamilyProfile(
+          createBlankProfile()
+        );
+  
+  
+        setPersonalizedJourney(
+          null
+        );
+  
+  
+        setSavedJourneyLoaded(
+          false
+        );
+  
+  
+        setAddingChildDraft(
+          false
+        );
+  
+  
+        setPreviousChildSnapshot(
+          null
+        );
+  
+  
+        setStep(
+          0
+        );
+  
+  
+        setError(
+          null
+        );
+  
+  
+        setJourneyActionError(
+          null
+        );
+  
+  
+        window.scrollTo({
+          top:
+            0,
+  
+          behavior:
+            "smooth",
+        });
+  
+      } catch (
         removalError
-      );
-
-
-      setRemoveChildError(
-        removalError instanceof Error
-          ? removalError.message
-          : "We couldn't remove this child right now."
-      );
-
-    } finally {
-      setRemovingChild(
-        false
-      );
+      ) {
+        console.error(
+          "Unable to remove child:",
+          removalError
+        );
+  
+  
+        setRemoveChildError(
+          removalError instanceof Error
+            ? removalError.message
+            : "We couldn't remove this child right now."
+        );
+  
+      } finally {
+        setRemovingChild(
+          false
+        );
+      }
     }
-  }
 
 
   /*
@@ -2605,37 +2740,87 @@ export default function JourneyBuilder() {
 
   return (
     <>
+      {
+        renderChildJourneyControls()
+      }
+  
+  
       <AddingChildBanner
         visible={
           addingChildDraft
         }
-
+  
         previousChildName={
           previousChildSnapshot
             ?.familyProfile
             .childName
         }
-
+  
         canCancel={
           Boolean(
             previousChildSnapshot
           )
         }
-
+  
         onCancel={
           cancelAddingChild
         }
       />
-
-
+  
+  
+      {
+        journeyActionError && (
+          <div
+            style={{
+              maxWidth:
+                "900px",
+  
+              margin:
+                "20px auto 0",
+  
+              padding:
+                "0 20px",
+            }}
+          >
+            <div
+              style={{
+                padding:
+                  "12px 16px",
+  
+                border:
+                  "1px solid #FCA5A5",
+  
+                background:
+                  "#FEF2F2",
+  
+                borderRadius:
+                  "10px",
+  
+                color:
+                  "#991B1B",
+  
+                fontSize:
+                  "14px",
+  
+                lineHeight:
+                  1.5,
+              }}
+            >
+              {journeyActionError}
+            </div>
+          </div>
+        )
+      }
+  
+  
       <div
         style={{
           maxWidth:
             "900px",
-
+  
           margin:
             "0 auto",
-
+  
           padding:
             "40px 20px",
         }}
@@ -2650,8 +2835,8 @@ export default function JourneyBuilder() {
             />
           )
         }
-
-
+  
+  
         {
           step >
           0 && (
@@ -2659,27 +2844,27 @@ export default function JourneyBuilder() {
               step={
                 step
               }
-
+  
               totalQuestions={
                 totalQuestions
               }
-
+  
               familyProfile={
                 familyProfile
               }
-
+  
               onUpdateProfile={
                 updateProfile
               }
-
+  
               onPrevious={
                 previousStep
               }
-
+  
               onNext={
                 nextStep
               }
-
+  
               canContinue={
                 canContinue()
               }
@@ -2687,6 +2872,36 @@ export default function JourneyBuilder() {
           )
         }
       </div>
+  
+  
+      <RemoveChildModal
+        visible={
+          showRemoveChildConfirm
+        }
+  
+        childName={
+          familyProfile
+            .childName
+        }
+  
+        removing={
+          removingChild
+        }
+  
+        error={
+          removeChildError
+        }
+  
+        onCancel={() =>
+          setShowRemoveChildConfirm(
+            false
+          )
+        }
+  
+        onConfirm={
+          confirmRemoveChild
+        }
+      />
     </>
   );
 }
