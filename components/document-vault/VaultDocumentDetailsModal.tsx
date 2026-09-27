@@ -177,7 +177,7 @@ export default function VaultDocumentDetailsModal({
   }
 
   const fileSize =
-    formatFileSize(document.fileSize);
+  formatFileSize(document.size);
 
   const categoryLabel =
     getCategoryLabel(document.category);
@@ -199,6 +199,10 @@ export default function VaultDocumentDetailsModal({
 
     setIsSaving(true);
     setError(null);
+    
+    if (!document) {
+      return;
+    }
 
     try {
       await onSave(document, {
@@ -225,6 +229,11 @@ export default function VaultDocumentDetailsModal({
   }
 
   async function handleDelete() {
+    
+    if (!document) {
+      return;
+    }
+
     const confirmed =
       window.confirm(
         `Delete "${document.title}" from the Document Vault? This cannot be undone.`
@@ -257,6 +266,10 @@ export default function VaultDocumentDetailsModal({
   }
 
   function handleCancelEdit() {
+    if (!document) {
+      return;
+    }
+    
     setTitle(document.title ?? "");
     setCategory(document.category);
     setNotes(document.notes ?? "");
@@ -405,10 +418,10 @@ export default function VaultDocumentDetailsModal({
                       fontWeight: 800,
                     }}
                   >
-                    {document.fileExtension
-                      ?.replace(".", "")
-                      .toUpperCase() ||
-                      "FILE"}
+                    {document.fileName
+  .split(".")
+  .pop()
+  ?.toUpperCase() || "FILE"}
                   </div>
 
                   <div

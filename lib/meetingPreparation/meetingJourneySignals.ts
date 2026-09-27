@@ -421,10 +421,8 @@ export function scoreJourneyConcepts(
         concepts
       );
 
-    for (
-      const concept of uniqueConcepts
-    ) {
-      scores.set(
+      for (const concept of Array.from(uniqueConcepts)) {
+        scores.set(
         concept,
         (
           scores.get(concept) ??
