@@ -1225,10 +1225,67 @@ export default function AppHeader() {
     FUTURE PREMIUM TOOLS
 =========================================== */}
 
-<ComingSoonTool
-  title="Document Vault"
-  description="Organize important family, medical, and school documents."
-/>
+{/* ==========================================
+    DOCUMENT VAULT
+=========================================== */}
+
+<Link
+  href="/document-vault"
+  role="menuitem"
+  onClick={closeMenus}
+  style={{
+    display: "block",
+    padding: "11px",
+    borderRadius: "9px",
+    textDecoration: "none",
+  }}
+>
+  <div
+    style={{
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: "10px",
+    }}
+  >
+    <span
+      style={{
+        color: "#334155",
+        fontSize: "13px",
+        fontWeight: 750,
+      }}
+    >
+      Document Vault
+    </span>
+
+    <span
+      style={{
+        flexShrink: 0,
+        padding: "3px 7px",
+        borderRadius: "999px",
+        background: "#DBEAFE",
+        color: "#1D4ED8",
+        fontSize: "9px",
+        fontWeight: 800,
+        textTransform: "uppercase",
+        letterSpacing: "0.04em",
+      }}
+    >
+      Premium
+    </span>
+  </div>
+
+  <div
+    style={{
+      marginTop: "4px",
+      color: "#64748B",
+      fontSize: "10px",
+      lineHeight: 1.45,
+    }}
+  >
+    Securely organize important family, medical, school, and support documents.
+  </div>
+</Link>
 
 <ComingSoonTool
   title="AI Progress Insights"
