@@ -32,6 +32,7 @@ import {
   deleteVaultDocument,
   getVaultDocumentDownloadUrl,
   getVaultDocuments,
+  updateVaultDocumentMetadata,
 } from "../../lib/vaultRepository";
 
 import {
@@ -50,6 +51,8 @@ import {
 import VaultDocumentCard from "../../components/vault/VaultDocumentCard";
 
 import VaultUploadModal from "../../components/vault/VaultUploadModal";
+
+import VaultDocumentDetailsModal from "../../components/document-vault/VaultDocumentDetailsModal";
 
 /*
  * ============================================================
@@ -200,6 +203,14 @@ export default function DocumentVaultPage() {
     uploadOpen,
     setUploadOpen,
   ] = useState(false);
+
+  const [
+    selectedDocument,
+    setSelectedDocument,
+  ] =
+    useState<VaultDocument | null>(
+      null
+    );
 
   const [
     searchTerm,
@@ -440,6 +451,7 @@ export default function DocumentVaultPage() {
     setSearchTerm("");
     setCategoryFilter("all");
     setUploadOpen(false);
+    setSelectedDocument(null);
   }, [selectedChildId]);
 
   /*
@@ -518,6 +530,100 @@ export default function DocumentVaultPage() {
     }
   }
 
+  function handleDocumentDetails(
+    document: VaultDocument
+  ) {
+    if (!isPremium) {
+      return;
+    }
+
+    setDocumentError("");
+    setSelectedDocument(document);
+  }
+
+  async function handleDownloadDocument(
+    document: VaultDocument
+  ) {
+    if (!isPremium) {
+      return;
+    }
+
+    setDocumentError("");
+
+    try {
+      const url =
+        await getVaultDocumentDownloadUrl(
+          document
+        );
+
+      const anchor =
+        window.document.createElement(
+          "a"
+        );
+
+      anchor.href = url;
+
+      anchor.download =
+        document.fileName ||
+        document.title ||
+        "document";
+
+      anchor.target = "_blank";
+      anchor.rel =
+        "noopener noreferrer";
+
+      window.document.body.appendChild(
+        anchor
+      );
+
+      anchor.click();
+      anchor.remove();
+    } catch (error) {
+      console.error(
+        "Unable to download Vault document:",
+        error
+      );
+
+      setDocumentError(
+        "We couldn't download this document. Please try again."
+      );
+    }
+  }
+
+  async function handleSaveDocumentDetails(
+    document: VaultDocument,
+    updates: {
+      title: string;
+      category: VaultDocumentCategory;
+      notes: string;
+    }
+  ) {
+    if (!isPremium) {
+      return;
+    }
+
+    setDocumentError("");
+
+    const updatedDocument =
+      await updateVaultDocumentMetadata(
+        document,
+        updates
+      );
+
+    setDocuments((current) =>
+      current.map((item) =>
+        item.id ===
+        updatedDocument.id
+          ? updatedDocument
+          : item
+      )
+    );
+
+    setSelectedDocument(
+      updatedDocument
+    );
+  }
+
   async function handleDeleteDocument(
     document: VaultDocument
   ) {
@@ -540,6 +646,14 @@ export default function DocumentVaultPage() {
               document.id
           )
       );
+
+      setSelectedDocument(
+        (current) =>
+          current?.id ===
+          document.id
+            ? null
+            : current
+      );
     } catch (error) {
       console.error(
         "Unable to delete Vault document:",
@@ -549,6 +663,8 @@ export default function DocumentVaultPage() {
       setDocumentError(
         "We couldn't delete this document. Please try again."
       );
+
+      throw error;
     }
   }
 
@@ -712,9 +828,6 @@ export default function DocumentVaultPage() {
    * ==========================================================
    * ENTITLEMENT ERROR
    * ==========================================================
-   *
-   * The hook fails closed. We therefore do not render Vault
-   * contents if subscription status could not be verified.
    */
 
   if (entitlementError) {
@@ -1400,37 +1513,35 @@ export default function DocumentVaultPage() {
                     fontSize: 25,
                   }}
                 >
-                  ▤
+                  📄
                 </div>
 
                 <h2
                   style={{
                     margin: 0,
-                    color: "#3a3041",
-                    fontSize: 20,
-                    fontWeight: 800,
+                    color: "#3d3444",
+                    fontSize: 19,
                   }}
                 >
-                  Start{" "}
-                  {selectedChild.name}
-                  's Vault
+                  No documents yet
                 </h2>
 
                 <p
                   style={{
-                    maxWidth: 520,
-                    margin: "9px auto 0",
-                    color: "#7a7180",
-                    fontSize: 14,
-                    lineHeight: 1.6,
+                    maxWidth: 460,
+                    margin:
+                      "8px auto 0",
+                    color: "#817887",
+                    fontSize: 13,
+                    lineHeight: 1.55,
                   }}
                 >
                   Add evaluations, school
                   documents, therapy
                   records, insurance
-                  information, and other
-                  important family
-                  documents.
+                  information, or other
+                  important documents for{" "}
+                  {selectedChild.name}.
                 </p>
 
                 <button
@@ -1439,9 +1550,9 @@ export default function DocumentVaultPage() {
                     setUploadOpen(true)
                   }
                   style={{
-                    marginTop: 20,
-                    minHeight: 44,
-                    padding: "10px 17px",
+                    marginTop: 18,
+                    minHeight: 42,
+                    padding: "9px 16px",
                     border: 0,
                     borderRadius: 12,
                     background: "#654c91",
@@ -1451,14 +1562,14 @@ export default function DocumentVaultPage() {
                     cursor: "pointer",
                   }}
                 >
-                  + Add First Document
+                  Add First Document
                 </button>
               </section>
             ) : visibleDocuments.length ===
               0 ? (
               <section
                 style={{
-                  padding: "38px 20px",
+                  padding: "42px 20px",
                   textAlign: "center",
                   border:
                     "1px solid rgba(91, 72, 128, 0.10)",
@@ -1469,7 +1580,7 @@ export default function DocumentVaultPage() {
                 <h2
                   style={{
                     margin: 0,
-                    color: "#3a3041",
+                    color: "#3d3444",
                     fontSize: 18,
                   }}
                 >
@@ -1526,6 +1637,9 @@ export default function DocumentVaultPage() {
                     <VaultDocumentCard
                       key={document.id}
                       document={document}
+                      onDetails={
+                        handleDocumentDetails
+                      }
                       onView={
                         handleViewDocument
                       }
@@ -1559,6 +1673,30 @@ export default function DocumentVaultPage() {
           }
         />
       ) : null}
+
+      {/* DOCUMENT DETAILS MODAL */}
+
+      <VaultDocumentDetailsModal
+        document={selectedDocument}
+        isOpen={Boolean(
+          selectedDocument
+        )}
+        onClose={() =>
+          setSelectedDocument(null)
+        }
+        onView={
+          handleViewDocument
+        }
+        onDownload={
+          handleDownloadDocument
+        }
+        onSave={
+          handleSaveDocumentDetails
+        }
+        onDelete={
+          handleDeleteDocument
+        }
+      />
     </main>
   );
 }

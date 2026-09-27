@@ -19,6 +19,10 @@ import {
 type VaultDocumentCardProps = {
   document: VaultDocument;
 
+  onDetails: (
+    document: VaultDocument
+  ) => void;
+
   onView: (
     document: VaultDocument
   ) => Promise<void> | void;
@@ -32,6 +36,7 @@ type VaultDocumentCardProps = {
 
 export default function VaultDocumentCard({
   document,
+  onDetails,
   onView,
   onDelete,
   disabled = false,
@@ -75,6 +80,19 @@ export default function VaultDocumentCard({
     getVaultFileTypeLabel(
       document
     );
+
+  function handleDetails() {
+    if (
+      disabled ||
+      deleting ||
+      viewing
+    ) {
+      return;
+    }
+
+    setMenuOpen(false);
+    onDetails(document);
+  }
 
   async function handleView() {
     if (
@@ -319,7 +337,7 @@ export default function VaultDocumentCard({
                 right: 0,
                 top: 44,
                 zIndex: 20,
-                width: 150,
+                width: 170,
                 padding: 6,
                 border:
                   "1px solid rgba(91, 72, 128, 0.14)",
@@ -330,6 +348,40 @@ export default function VaultDocumentCard({
                   "0 12px 30px rgba(46, 35, 67, 0.14)",
               }}
             >
+              <button
+                type="button"
+                onClick={
+                  handleDetails
+                }
+                disabled={
+                  viewing ||
+                  deleting
+                }
+                style={{
+                  width:
+                    "100%",
+                  border: 0,
+                  borderRadius:
+                    8,
+                  background:
+                    "transparent",
+                  padding:
+                    "9px 10px",
+                  textAlign:
+                    "left",
+                  color:
+                    "#3d3444",
+                  fontSize:
+                    13,
+                  fontWeight:
+                    650,
+                  cursor:
+                    "pointer",
+                }}
+              >
+                Document details
+              </button>
+
               <button
                 type="button"
                 onClick={
