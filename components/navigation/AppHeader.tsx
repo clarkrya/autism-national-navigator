@@ -1158,34 +1158,87 @@ export default function AppHeader() {
 
                 </Link>
 
+{/* ==========================================
+    MEETING PREPARATION
+=========================================== */}
 
-                {/* ==========================================
-                    FUTURE PREMIUM TOOLS
-                =========================================== */}
+<Link
+  href="/meeting-preparation"
+  role="menuitem"
+  onClick={closeMenus}
+  style={{
+    display: "block",
+    padding: "11px",
+    borderRadius: "9px",
+    textDecoration: "none",
+  }}
+>
+  <div
+    style={{
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: "10px",
+    }}
+  >
+    <span
+      style={{
+        color: "#334155",
+        fontSize: "13px",
+        fontWeight: 750,
+      }}
+    >
+      Meeting Preparation
+    </span>
 
+    <span
+      style={{
+        flexShrink: 0,
+        padding: "3px 7px",
+        borderRadius: "999px",
+        background: "#DBEAFE",
+        color: "#1D4ED8",
+        fontSize: "9px",
+        fontWeight: 800,
+        textTransform: "uppercase",
+        letterSpacing: "0.04em",
+      }}
+    >
+      Premium
+    </span>
+  </div>
 
-                <ComingSoonTool
-                  title="Meeting Preparation"
-                  description="Prepare questions, priorities, and talking points."
-                />
+  <div
+    style={{
+      marginTop: "4px",
+      color: "#64748B",
+      fontSize: "10px",
+      lineHeight: 1.45,
+    }}
+  >
+    Prepare questions, priorities, and talking points based on
+    your family's Current Journey.
+  </div>
+</Link>
 
+{/* ==========================================
+    FUTURE PREMIUM TOOLS
+=========================================== */}
 
-                <ComingSoonTool
-                  title="Document Vault"
-                  description="Organize important family, medical, and school documents."
-                />
+<ComingSoonTool
+  title="Document Vault"
+  description="Organize important family, medical, and school documents."
+/>
 
+<ComingSoonTool
+  title="AI Progress Insights"
+  description="See patterns and progress across your family's journey."
+/>
 
-                <ComingSoonTool
-                  title="AI Progress Insights"
-                  description="See patterns and progress across your family's journey."
-                />
-
-
-                <ComingSoonTool
-                  title="Family Organizer"
-                  description="Keep important tasks, information, and next steps together."
-                />
+<ComingSoonTool
+  title="Family Organizer"
+  description="Keep important tasks, information, and next steps together."
+/>
 
 
 
