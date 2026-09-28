@@ -945,6 +945,33 @@ export default function JourneyDashboard({
         }
       );
 
+/*
+ * --------------------------------------------------------
+ * RECORD COMPLETED JOURNEY STAGE
+ * --------------------------------------------------------
+ *
+ * Record the analytics event only after the completed
+ * stage has successfully been saved to Journey History.
+ */
+
+await safelyRecordJourneyAnalyticsEvent({
+  eventType:
+    "stage_completed",
+
+  userId:
+    currentUser.uid,
+
+  childId:
+    familyProfile.childId,
+
+  context: {
+    journeyId,
+
+    stageNumber:
+      completedStageNumber,
+  },
+});
+
       /*
        * --------------------------------------------------------
        * GENERATE NEXT STAGE
