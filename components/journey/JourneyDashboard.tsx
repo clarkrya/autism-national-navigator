@@ -40,8 +40,12 @@ import {
 } from "../../lib/journeyHistory";
 
 import {
-  safelyRecordJourneyAnalyticsEvent,
-} from "../../lib/journeyInsights/journeyAnalyticsRepository";
+  recordJourneyStarted,
+  recordStageStarted,
+  recordStageCompleted,
+  recordTaskCompleted,
+  recordTaskUncompleted,
+} from "../../lib/journeyInsights/journeyAnalyticsService";
 
 import FamilySnapshot from "../journey-dashboard/FamilySnapshot";
 import CurrentFocusCard from "../journey-dashboard/CurrentFocusCard";
@@ -416,9 +420,9 @@ export default function JourneyDashboard({
       : null;
 
   /*
-   * ==========================================================
+   * ============================================================
    * JOURNEY START ANALYTICS
-   * ==========================================================
+   * ============================================================
    */
 
   async function recordJourneyStartAnalytics(
@@ -426,189 +430,206 @@ export default function JourneyDashboard({
     journeyId: string,
     stageNumber: number
   ) {
-    await safelyRecordJourneyAnalyticsEvent({
-      eventType:
-        "journey_started",
-
+    await recordJourneyStarted({
       userId,
 
       childId:
         familyProfile.childId,
 
-      context: {
-        journeyId,
-        stageNumber,
-      },
+      journeyId,
+
+      stageNumber,
+
+      familyProfile,
     });
 
-    await safelyRecordJourneyAnalyticsEvent({
-      eventType:
-        "stage_started",
-
+    await recordStageStarted({
       userId,
 
       childId:
         familyProfile.childId,
 
-      context: {
-        journeyId,
-        stageNumber,
-      },
+      journeyId,
+
+      stageNumber,
+
+      familyProfile,
     });
   }
 
-  /*
+    /*
    * ==========================================================
    * TOGGLE TASK
    * ==========================================================
    */
 
-  function toggleTask(
-    taskId: string
-  ) {
-    const currentUser =
-      getCurrentUser();
-
-    setTasks((currentTasks) => {
-      const nextTasks =
-        currentTasks.map(
-          (task) =>
-            task.id === taskId
-              ? {
-                  ...task,
-                  completed:
-                    !task.completed,
-                }
-              : task
-        );
-
-      const changedTask =
-        nextTasks.find(
-          (task) =>
-            task.id === taskId
-        );
-
-      const wasCompleted =
-        currentTasks.find(
-          (task) =>
-            task.id === taskId
-        )?.completed ?? false;
-
-      setNextJourneyError("");
-
-      /*
-       * --------------------------------------------------------
-       * GUEST
-       * --------------------------------------------------------
-       */
-
-      if (!currentUser) {
-        setTaskSaveStatus("idle");
-        return nextTasks;
-      }
-
-      /*
-       * --------------------------------------------------------
-       * SAVE PROGRESS
-       * --------------------------------------------------------
-       */
-
-      setTaskSaveStatus("saving");
-
-      taskSaveQueueRef.current =
-        taskSaveQueueRef.current
-          .catch(
-            () => undefined
-          )
-          .then(async () => {
-            try {
-              await saveTaskProgress(
-                currentUser.uid,
-                familyProfile,
-                {
-                  ...personalizedJourney,
-                  tasks: nextTasks,
-                },
-                {
-                  stageNumber:
-                    journeyStageNumber,
-
-                  journeyReason:
-                    journeyStageNumber ===
-                    1
-                      ? "initial"
-                      : "tasks_completed",
-                }
-              );
-
-              /*
-               * --------------------------------------------------------
-               * RECORD REAL JOURNEY ACTIVITY
-               * --------------------------------------------------------
-               */
-
-              if (
-                changedTask &&
-                activeJourneyId
-              ) {
-                const isNowCompleted =
-                  changedTask.completed;
-
+    function toggleTask(
+      taskId: string
+    ) {
+      const currentUser =
+        getCurrentUser();
+  
+      setTasks((currentTasks) => {
+        const nextTasks =
+          currentTasks.map(
+            (task) =>
+              task.id === taskId
+                ? {
+                    ...task,
+                    completed:
+                      !task.completed,
+                  }
+                : task
+          );
+  
+        const changedTask =
+          nextTasks.find(
+            (task) =>
+              task.id === taskId
+          );
+  
+        const wasCompleted =
+          currentTasks.find(
+            (task) =>
+              task.id === taskId
+          )?.completed ?? false;
+  
+        setNextJourneyError("");
+  
+        /*
+         * --------------------------------------------------------
+         * GUEST
+         * --------------------------------------------------------
+         */
+  
+        if (!currentUser) {
+          setTaskSaveStatus("idle");
+  
+          return nextTasks;
+        }
+  
+        /*
+         * --------------------------------------------------------
+         * SAVE PROGRESS
+         * --------------------------------------------------------
+         */
+  
+        setTaskSaveStatus("saving");
+  
+        taskSaveQueueRef.current =
+          taskSaveQueueRef.current
+            .catch(
+              () => undefined
+            )
+            .then(async () => {
+              try {
+                await saveTaskProgress(
+                  currentUser.uid,
+                  familyProfile,
+                  {
+                    ...personalizedJourney,
+                    tasks:
+                      nextTasks,
+                  },
+                  {
+                    stageNumber:
+                      journeyStageNumber,
+  
+                    journeyReason:
+                      journeyStageNumber ===
+                      1
+                        ? "initial"
+                        : "tasks_completed",
+                  }
+                );
+  
+                /*
+                 * --------------------------------------------------------
+                 * RECORD REAL JOURNEY ACTIVITY
+                 * --------------------------------------------------------
+                 *
+                 * Analytics event construction now belongs to
+                 * journeyAnalyticsService.
+                 *
+                 * JourneyDashboard only reports what changed.
+                 * --------------------------------------------------------
+                 */
+  
                 if (
-                  isNowCompleted !==
-                  wasCompleted
+                  changedTask &&
+                  activeJourneyId
                 ) {
-                  await safelyRecordJourneyAnalyticsEvent(
-                    {
-                      eventType:
-                        isNowCompleted
-                          ? "task_completed"
-                          : "task_uncompleted",
-
-                      userId:
-                        currentUser.uid,
-
-                      childId:
-                        familyProfile.childId,
-
-                      context: {
+                  const isNowCompleted =
+                    changedTask.completed;
+  
+                  if (
+                    isNowCompleted !==
+                    wasCompleted
+                  ) {
+                    if (isNowCompleted) {
+                      await recordTaskCompleted({
+                        userId:
+                          currentUser.uid,
+  
+                        childId:
+                          familyProfile.childId,
+  
                         journeyId:
                           activeJourneyId,
-
+  
                         stageNumber:
                           journeyStageNumber,
-                      },
-
-                      taskId:
-                        changedTask.id,
+  
+                        familyProfile,
+  
+                        taskId:
+                          changedTask.id,
+                      });
+                    } else {
+                      await recordTaskUncompleted({
+                        userId:
+                          currentUser.uid,
+  
+                        childId:
+                          familyProfile.childId,
+  
+                        journeyId:
+                          activeJourneyId,
+  
+                        stageNumber:
+                          journeyStageNumber,
+  
+                        familyProfile,
+  
+                        taskId:
+                          changedTask.id,
+                      });
                     }
-                  );
+                  }
                 }
+  
+                setTaskSaveStatus(
+                  "idle"
+                );
+              } catch (error) {
+                console.error(
+                  "Unable to save task progress:",
+                  error
+                );
+  
+                setTaskSaveStatus(
+                  "error"
+                );
+  
+                setSaveError(
+                  "Your task change is visible, but we couldn't save it right now. Please try again."
+                );
               }
-
-              setTaskSaveStatus(
-                "idle"
-              );
-            } catch (error) {
-              console.error(
-                "Unable to save task progress:",
-                error
-              );
-
-              setTaskSaveStatus(
-                "error"
-              );
-
-              setSaveError(
-                "Your task change is visible, but we couldn't save it right now. Please try again."
-              );
-            }
-          });
-
-      return nextTasks;
-    });
-  }
-
+            });
+  
+        return nextTasks;
+      });
+    }
   /*
    * ==========================================================
    * ENSURE ACTIVE JOURNEY
@@ -1040,22 +1061,19 @@ export default function JourneyDashboard({
        * --------------------------------------------------------
        */
 
-      await safelyRecordJourneyAnalyticsEvent({
-        eventType:
-          "stage_completed",
-
+      await recordStageCompleted({
         userId:
           currentUser.uid,
-
+      
         childId:
           familyProfile.childId,
-
-        context: {
-          journeyId,
-
-          stageNumber:
-            completedStageNumber,
-        },
+      
+        journeyId,
+      
+        stageNumber:
+          completedStageNumber,
+      
+        familyProfile,
       });
 
       /*
@@ -1222,23 +1240,20 @@ export default function JourneyDashboard({
        * successfully saved.
        */
 
-      await safelyRecordJourneyAnalyticsEvent({
-        eventType:
-          "stage_started",
-
+      await recordStageStarted({
         userId:
           currentUser.uid,
 
         childId:
           familyProfile.childId,
 
-        context: {
-          journeyId:
-            savedJourney.journeyId,
+        journeyId:
+          savedJourney.journeyId,
 
-          stageNumber:
-            nextStageNumber,
-        },
+        stageNumber:
+          nextStageNumber,
+
+        familyProfile,
       });
 
       /*
