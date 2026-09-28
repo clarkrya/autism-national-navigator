@@ -8,35 +8,25 @@ import {
   type CSSProperties,
 } from "react";
 
-import {
-  signOut,
-} from "firebase/auth";
+import { signOut } from "firebase/auth";
 
-import type {
-  FamilyProfile,
-} from "../../types/familyProfile";
+import type { FamilyProfile } from "../../types/familyProfile";
 
 import type {
   AITask,
   PersonalizedJourney,
 } from "../../lib/ai/journeyTypes";
 
-import {
-  auth,
-} from "../../lib/firebase";
+import { auth } from "../../lib/firebase";
 
 import {
   getCurrentUser,
   watchAuthState,
 } from "../../lib/auth";
 
-import {
-  savePendingJourney,
-} from "../../lib/pendingJourney";
+import { savePendingJourney } from "../../lib/pendingJourney";
 
-import {
-  useAccountEntitlements,
-} from "../../lib/useAccountEntitlements";
+import { useAccountEntitlements } from "../../lib/useAccountEntitlements";
 
 import {
   getCurrentJourney,
@@ -49,6 +39,10 @@ import {
   saveJourneyStage,
 } from "../../lib/journeyHistory";
 
+import {
+  safelyRecordJourneyAnalyticsEvent,
+} from "../../lib/journeyInsights/journeyAnalyticsRepository";
+
 import FamilySnapshot from "../journey-dashboard/FamilySnapshot";
 import CurrentFocusCard from "../journey-dashboard/CurrentFocusCard";
 import ActionGuidanceSection from "../journey-dashboard/ActionGuidanceSection";
@@ -57,7 +51,6 @@ import SaveJourneyCard from "../journey-dashboard/SaveJourneyCard";
 import AccountCard from "../journey-dashboard/AccountCard";
 import JourneyProgressSection from "../journey-dashboard/JourneyProgressSection";
 
-
 /*
  * ============================================================
  * PROPS
@@ -65,17 +58,13 @@ import JourneyProgressSection from "../journey-dashboard/JourneyProgressSection"
  */
 
 interface JourneyDashboardProps {
-  personalizedJourney:
-    PersonalizedJourney;
-
-  familyProfile:
-    FamilyProfile;
+  personalizedJourney: PersonalizedJourney;
+  familyProfile: FamilyProfile;
 
   onJourneySaved?: (
     childId: string
   ) => void | Promise<void>;
 }
-
 
 /*
  * ============================================================
@@ -83,51 +72,26 @@ interface JourneyDashboardProps {
  * ============================================================
  */
 
-const styles: Record<
-  string,
-  CSSProperties
-> = {
-
+const styles: Record<string, CSSProperties> = {
   main: {
-    maxWidth:
-      "1050px",
-
-    margin:
-      "0 auto",
-
-    padding:
-      "56px 24px 90px",
+    maxWidth: "1050px",
+    margin: "0 auto",
+    padding: "56px 24px 90px",
   },
-
 
   eyebrow: {
-    color:
-      "#2563EB",
-
-    fontSize:
-      "12px",
-
-    fontWeight:
-      800,
-
-    letterSpacing:
-      "0.08em",
-
-    textTransform:
-      "uppercase",
+    color: "#2563EB",
+    fontSize: "12px",
+    fontWeight: 800,
+    letterSpacing: "0.08em",
+    textTransform: "uppercase",
   },
-
 
   muted: {
-    color:
-      "#64748B",
-
-    lineHeight:
-      1.6,
+    color: "#64748B",
+    lineHeight: 1.6,
   },
-
 };
-
 
 /*
  * ============================================================
@@ -136,14 +100,10 @@ const styles: Record<
  */
 
 export default function JourneyDashboard({
-  personalizedJourney:
-    initialJourney,
-
+  personalizedJourney: initialJourney,
   familyProfile,
-
   onJourneySaved,
 }: JourneyDashboardProps) {
-
   /*
    * ----------------------------------------------------------
    * ENTITLEMENTS
@@ -152,12 +112,8 @@ export default function JourneyDashboard({
 
   const {
     canUse,
-
-    loading:
-      entitlementsLoading,
-  } =
-    useAccountEntitlements();
-
+    loading: entitlementsLoading,
+  } = useAccountEntitlements();
 
   /*
    * ----------------------------------------------------------
@@ -168,21 +124,14 @@ export default function JourneyDashboard({
   const [
     personalizedJourney,
     setPersonalizedJourney,
-  ] =
-    useState<PersonalizedJourney>(
-      initialJourney
-    );
+  ] = useState<PersonalizedJourney>(
+    initialJourney
+  );
 
-
-  const [
-    tasks,
-    setTasks,
-  ] =
+  const [tasks, setTasks] =
     useState<AITask[]>(
-      initialJourney.tasks ||
-      []
+      initialJourney.tasks || []
     );
-
 
   /*
    * ----------------------------------------------------------
@@ -193,13 +142,7 @@ export default function JourneyDashboard({
   const [
     activeJourneyId,
     setActiveJourneyId,
-  ] =
-    useState<
-      string | null
-    >(
-      null
-    );
-
+  ] = useState<string | null>(null);
 
   /*
    * ----------------------------------------------------------
@@ -210,20 +153,12 @@ export default function JourneyDashboard({
   const [
     journeyStageNumber,
     setJourneyStageNumber,
-  ] =
-    useState(
-      1
-    );
-
+  ] = useState(1);
 
   const [
     loadingStageNumber,
     setLoadingStageNumber,
-  ] =
-    useState(
-      true
-    );
-
+  ] = useState(true);
 
   /*
    * ----------------------------------------------------------
@@ -234,38 +169,22 @@ export default function JourneyDashboard({
   const [
     savingJourney,
     setSavingJourney,
-  ] =
-    useState(
-      false
-    );
-
+  ] = useState(false);
 
   const [
     saveMessage,
     setSaveMessage,
-  ] =
-    useState(
-      ""
-    );
-
+  ] = useState("");
 
   const [
     saveError,
     setSaveError,
-  ] =
-    useState(
-      ""
-    );
-
+  ] = useState("");
 
   const [
     showSaveAccountPrompt,
     setShowSaveAccountPrompt,
-  ] =
-    useState(
-      false
-    );
-
+  ] = useState(false);
 
   /*
    * ----------------------------------------------------------
@@ -276,29 +195,17 @@ export default function JourneyDashboard({
   const [
     showNextAccountPrompt,
     setShowNextAccountPrompt,
-  ] =
-    useState(
-      false
-    );
-
+  ] = useState(false);
 
   const [
     generatingNextJourney,
     setGeneratingNextJourney,
-  ] =
-    useState(
-      false
-    );
-
+  ] = useState(false);
 
   const [
     nextJourneyError,
     setNextJourneyError,
-  ] =
-    useState(
-      ""
-    );
-
+  ] = useState("");
 
   /*
    * ----------------------------------------------------------
@@ -309,22 +216,12 @@ export default function JourneyDashboard({
   const [
     currentUserEmail,
     setCurrentUserEmail,
-  ] =
-    useState<
-      string | null
-    >(
-      null
-    );
-
+  ] = useState<string | null>(null);
 
   const [
     loggingOut,
     setLoggingOut,
-  ] =
-    useState(
-      false
-    );
-
+  ] = useState(false);
 
   /*
    * ----------------------------------------------------------
@@ -335,23 +232,14 @@ export default function JourneyDashboard({
   const [
     taskSaveStatus,
     setTaskSaveStatus,
-  ] =
-    useState<
-      | "idle"
-      | "saving"
-      | "error"
-    >(
-      "idle"
-    );
-
+  ] = useState<
+    "idle" | "saving" | "error"
+  >("idle");
 
   const taskSaveQueueRef =
-    useRef<
-      Promise<void>
-    >(
+    useRef<Promise<void>>(
       Promise.resolve()
     );
-
 
   /*
    * ==========================================================
@@ -359,26 +247,15 @@ export default function JourneyDashboard({
    * ==========================================================
    */
 
-  useEffect(
-    () => {
+  useEffect(() => {
+    setPersonalizedJourney(
+      initialJourney
+    );
 
-      setPersonalizedJourney(
-        initialJourney
-      );
-
-
-      setTasks(
-        initialJourney.tasks ||
-        []
-      );
-
-    },
-
-    [
-      initialJourney,
-    ]
-  );
-
+    setTasks(
+      initialJourney.tasks || []
+    );
+  }, [initialJourney]);
 
   /*
    * ==========================================================
@@ -386,203 +263,113 @@ export default function JourneyDashboard({
    * ==========================================================
    */
 
-  useEffect(
-    () => {
+  useEffect(() => {
+    let active = true;
 
-      let active =
-        true;
+    const unsubscribe =
+      watchAuthState(
+        async (user) => {
+          if (!active) {
+            return;
+          }
 
+          setCurrentUserEmail(
+            user?.email ?? null
+          );
 
-      const unsubscribe =
-        watchAuthState(
-          async (
-            user
-          ) => {
+          /*
+           * ----------------------------------------------------
+           * GUEST
+           * ----------------------------------------------------
+           */
 
-            if (
-              !active
-            ) {
+          if (!user) {
+            setActiveJourneyId(null);
+            setJourneyStageNumber(1);
+            setLoadingStageNumber(false);
+            return;
+          }
 
-              return;
+          setLoadingStageNumber(true);
 
-            }
-
-
-            setCurrentUserEmail(
-              user?.email ??
-              null
-            );
-
-
+          try {
             /*
-             * ----------------------------------------------------
-             * GUEST
-             * ----------------------------------------------------
+             * --------------------------------------------------
+             * IMPORTANT
+             *
+             * Current Journey is CHILD-SPECIFIC.
+             * --------------------------------------------------
              */
 
-            if (
-              !user
-            ) {
-
-              setActiveJourneyId(
-                null
+            const savedJourney =
+              await getCurrentJourney(
+                user.uid,
+                familyProfile.childId
               );
 
+            if (!active) {
+              return;
+            }
+
+            /*
+             * --------------------------------------------------
+             * EXISTING ACTIVE JOURNEY
+             * --------------------------------------------------
+             */
+
+            if (savedJourney) {
+              setActiveJourneyId(
+                savedJourney.journeyId
+              );
 
               setJourneyStageNumber(
-                1
+                Math.max(
+                  1,
+                  savedJourney.stageNumber
+                )
               );
 
+              return;
+            }
 
+            /*
+             * --------------------------------------------------
+             * NO CURRENT JOURNEY
+             *
+             * This is a NEW Journey.
+             *
+             * It must start at Stage 1 regardless of old
+             * Journey History or archived Journeys.
+             * --------------------------------------------------
+             */
+
+            setActiveJourneyId(null);
+            setJourneyStageNumber(1);
+          } catch (error) {
+            console.error(
+              "Unable to determine active journey:",
+              error
+            );
+
+            if (active) {
+              setActiveJourneyId(null);
+              setJourneyStageNumber(1);
+            }
+          } finally {
+            if (active) {
               setLoadingStageNumber(
                 false
               );
-
-
-              return;
-
             }
-
-
-            setLoadingStageNumber(
-              true
-            );
-
-
-            try {
-
-              /*
-               * --------------------------------------------------
-               * IMPORTANT
-               *
-               * Current Journey is CHILD-SPECIFIC.
-               * --------------------------------------------------
-               */
-
-              const savedJourney =
-                await getCurrentJourney(
-                  user.uid,
-                  familyProfile.childId
-                );
-
-
-              if (
-                !active
-              ) {
-
-                return;
-
-              }
-
-
-              /*
-               * --------------------------------------------------
-               * EXISTING ACTIVE JOURNEY
-               * --------------------------------------------------
-               */
-
-              if (
-                savedJourney
-              ) {
-
-                setActiveJourneyId(
-                  savedJourney.journeyId
-                );
-
-
-                setJourneyStageNumber(
-                  Math.max(
-                    1,
-                    savedJourney.stageNumber
-                  )
-                );
-
-
-                return;
-
-              }
-
-
-              /*
-               * --------------------------------------------------
-               * NO CURRENT JOURNEY
-               *
-               * This is a NEW Journey.
-               *
-               * It must start at Stage 1 regardless of old
-               * Journey History or archived Journeys.
-               * --------------------------------------------------
-               */
-
-              setActiveJourneyId(
-                null
-              );
-
-
-              setJourneyStageNumber(
-                1
-              );
-
-            } catch (
-              error
-            ) {
-
-              console.error(
-                "Unable to determine active journey:",
-                error
-              );
-
-
-              if (
-                active
-              ) {
-
-                setActiveJourneyId(
-                  null
-                );
-
-
-                setJourneyStageNumber(
-                  1
-                );
-
-              }
-
-            } finally {
-
-              if (
-                active
-              ) {
-
-                setLoadingStageNumber(
-                  false
-                );
-
-              }
-
-            }
-
           }
-        );
+        }
+      );
 
-
-      return () => {
-
-        active =
-          false;
-
-
-        unsubscribe();
-
-      };
-
-    },
-
-    [
-      familyProfile.childId,
-    ]
-  );
-
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [familyProfile.childId]);
 
   /*
    * ==========================================================
@@ -591,53 +378,28 @@ export default function JourneyDashboard({
    */
 
   const completedTasks =
-    useMemo(
-      () => {
+    useMemo(() => {
+      return tasks.filter(
+        (task) => task.completed
+      ).length;
+    }, [tasks]);
 
-        return tasks.filter(
-          (
-            task
-          ) =>
-            task.completed
-        ).length;
-
-      },
-
-      [
-        tasks,
-      ]
-    );
-
-
-  const totalTasks =
-    tasks.length;
-
+  const totalTasks = tasks.length;
 
   const taskPercent =
     totalTasks > 0
-
       ? Math.round(
-          (
-            completedTasks /
-            totalTasks
-          ) *
+          (completedTasks /
+            totalTasks) *
             100
         )
-
       : 0;
 
-
   const allTasksCompleted =
-    tasks.length >
-      0 &&
-
+    tasks.length > 0 &&
     tasks.every(
-      (
-        task
-      ) =>
-        task.completed
+      (task) => task.completed
     );
-
 
   /*
    * ==========================================================
@@ -646,18 +408,12 @@ export default function JourneyDashboard({
    */
 
   const actions =
-    personalizedJourney.actions ||
-    [];
-
+    personalizedJourney.actions || [];
 
   const primaryAction =
-    actions.length >
-      0
-
+    actions.length > 0
       ? actions[0]
-
       : null;
-
 
   /*
    * ==========================================================
@@ -666,152 +422,158 @@ export default function JourneyDashboard({
    */
 
   function toggleTask(
-    taskId:
-      string
+    taskId: string
   ) {
-
     const currentUser =
       getCurrentUser();
 
-
-    setTasks(
-      (
-        currentTasks
-      ) => {
-
-        const nextTasks =
-          currentTasks.map(
-            (
-              task
-            ) =>
-
-              task.id ===
-                taskId
-
-                ? {
-                    ...task,
-
-                    completed:
-                      !task.completed,
-                  }
-
-                : task
-          );
-
-
-        setNextJourneyError(
-          ""
+    setTasks((currentTasks) => {
+      const nextTasks =
+        currentTasks.map(
+          (task) =>
+            task.id === taskId
+              ? {
+                  ...task,
+                  completed:
+                    !task.completed,
+                }
+              : task
         );
 
-
-        /*
-         * --------------------------------------------------------
-         * GUEST
-         * --------------------------------------------------------
-         */
-
-        if (
-          !currentUser
-        ) {
-
-          setTaskSaveStatus(
-            "idle"
-          );
-
-
-          return nextTasks;
-
-        }
-
-
-        /*
-         * --------------------------------------------------------
-         * SAVE PROGRESS
-         * --------------------------------------------------------
-         */
-
-        setTaskSaveStatus(
-          "saving"
+      const changedTask =
+        nextTasks.find(
+          (task) =>
+            task.id === taskId
         );
 
+      const wasCompleted =
+        currentTasks.find(
+          (task) =>
+            task.id === taskId
+        )?.completed ?? false;
 
-        taskSaveQueueRef.current =
+      setNextJourneyError("");
 
-          taskSaveQueueRef.current
+      /*
+       * --------------------------------------------------------
+       * GUEST
+       * --------------------------------------------------------
+       */
 
-            .catch(
-              () =>
-                undefined
-            )
+      if (!currentUser) {
+        setTaskSaveStatus("idle");
+        return nextTasks;
+      }
 
-            .then(
-              async () => {
+      /*
+       * --------------------------------------------------------
+       * SAVE PROGRESS
+       * --------------------------------------------------------
+       */
 
-                try {
+      setTaskSaveStatus("saving");
 
-                  await saveTaskProgress(
-                    currentUser.uid,
+      taskSaveQueueRef.current =
+        taskSaveQueueRef.current
+          .catch(
+            () => undefined
+          )
+          .then(async () => {
+            try {
+              await saveTaskProgress(
+                currentUser.uid,
+                familyProfile,
+                {
+                  ...personalizedJourney,
+                  tasks: nextTasks,
+                },
+                {
+                  stageNumber:
+                    journeyStageNumber,
 
-                    familyProfile,
+                  journeyReason:
+                    journeyStageNumber ===
+                    1
+                      ? "initial"
+                      : "tasks_completed",
+                }
+              );
 
+              /*
+               * --------------------------------------------------------
+               * RECORD REAL JOURNEY ACTIVITY
+               * --------------------------------------------------------
+               *
+               * Analytics is recorded only after the Journey task
+               * progress has successfully saved.
+               */
+
+              if (
+                changedTask &&
+                activeJourneyId
+              ) {
+                const isNowCompleted =
+                  changedTask.completed;
+
+                /*
+                 * Only record an event when the completion state
+                 * actually changed.
+                 */
+
+                if (
+                  isNowCompleted !==
+                  wasCompleted
+                ) {
+                  await safelyRecordJourneyAnalyticsEvent(
                     {
-                      ...personalizedJourney,
+                      eventType:
+                        isNowCompleted
+                          ? "task_completed"
+                          : "task_uncompleted",
 
-                      tasks:
-                        nextTasks,
-                    },
+                      userId:
+                        currentUser.uid,
 
-                    {
-                      stageNumber:
-                        journeyStageNumber,
+                      childId:
+                        familyProfile.childId,
 
-                      journeyReason:
-                        journeyStageNumber ===
-                          1
+                      context: {
+                        journeyId:
+                          activeJourneyId,
 
-                          ? "initial"
+                        stageNumber:
+                          journeyStageNumber,
+                      },
 
-                          : "tasks_completed",
+                      taskId:
+                        changedTask.id,
                     }
                   );
-
-
-                  setTaskSaveStatus(
-                    "idle"
-                  );
-
-                } catch (
-                  error
-                ) {
-
-                  console.error(
-                    "Unable to save task progress:",
-                    error
-                  );
-
-
-                  setTaskSaveStatus(
-                    "error"
-                  );
-
-
-                  setSaveError(
-                    "Your task change is visible, but we couldn't save it right now. Please try again."
-                  );
-
                 }
-
               }
-            );
 
+              setTaskSaveStatus(
+                "idle"
+              );
+            } catch (error) {
+              console.error(
+                "Unable to save task progress:",
+                error
+              );
 
-        return nextTasks;
+              setTaskSaveStatus(
+                "error"
+              );
 
-      }
-    );
+              setSaveError(
+                "Your task change is visible, but we couldn't save it right now. Please try again."
+              );
+            }
+          });
 
+      return nextTasks;
+    });
   }
-
 
   /*
    * ==========================================================
@@ -820,22 +582,13 @@ export default function JourneyDashboard({
    */
 
   async function ensureActiveJourney():
-    Promise<
-      string | null
-    > {
-
+    Promise<string | null> {
     const currentUser =
       getCurrentUser();
 
-
-    if (
-      !currentUser
-    ) {
-
+    if (!currentUser) {
       return null;
-
     }
-
 
     /*
      * ----------------------------------------------------------
@@ -843,14 +596,9 @@ export default function JourneyDashboard({
      * ----------------------------------------------------------
      */
 
-    if (
-      activeJourneyId
-    ) {
-
+    if (activeJourneyId) {
       return activeJourneyId;
-
     }
-
 
     /*
      * ----------------------------------------------------------
@@ -864,20 +612,13 @@ export default function JourneyDashboard({
         familyProfile.childId
       );
 
-
-    if (
-      existingJourney
-    ) {
-
+    if (existingJourney) {
       setActiveJourneyId(
         existingJourney.journeyId
       );
 
-
       return existingJourney.journeyId;
-
     }
-
 
     /*
      * ----------------------------------------------------------
@@ -888,39 +629,28 @@ export default function JourneyDashboard({
     const savedJourney =
       await saveCurrentJourney(
         currentUser.uid,
-
         familyProfile,
-
         {
           ...personalizedJourney,
-
           tasks,
         },
-
         {
           stageNumber:
             journeyStageNumber,
 
           journeyReason:
-            journeyStageNumber ===
-              1
-
+            journeyStageNumber === 1
               ? "initial"
-
               : "tasks_completed",
         }
       );
-
 
     setActiveJourneyId(
       savedJourney.journeyId
     );
 
-
     return savedJourney.journeyId;
-
   }
-
 
   /*
    * ==========================================================
@@ -929,20 +659,11 @@ export default function JourneyDashboard({
    */
 
   async function handleSaveJourney() {
-
-    setSaveMessage(
-      ""
-    );
-
-
-    setSaveError(
-      ""
-    );
-
+    setSaveMessage("");
+    setSaveError("");
 
     const currentUser =
       getCurrentUser();
-
 
     /*
      * ----------------------------------------------------------
@@ -950,75 +671,51 @@ export default function JourneyDashboard({
      * ----------------------------------------------------------
      */
 
-    if (
-      !currentUser
-    ) {
-
+    if (!currentUser) {
       savePendingJourney(
         familyProfile,
-
         {
           ...personalizedJourney,
-
           tasks,
         }
       );
-
 
       setShowSaveAccountPrompt(
         true
       );
 
-
       return;
-
     }
 
-
-    setSavingJourney(
-      true
-    );
-
+    setSavingJourney(true);
 
     try {
-
       const savedJourney =
         await saveCurrentJourney(
           currentUser.uid,
-
           familyProfile,
-
           {
             ...personalizedJourney,
-
             tasks,
           },
-
           {
             stageNumber:
               journeyStageNumber,
 
             journeyReason:
               journeyStageNumber ===
-                1
-
+              1
                 ? "initial"
-
                 : "tasks_completed",
 
-            ...(
-              activeJourneyId
-
-                ? {
-                    journeyId:
-                      activeJourneyId,
-                  }
-
-                : {}
-            ),
+            ...(activeJourneyId
+              ? {
+                  journeyId:
+                    activeJourneyId,
+                }
+              : {}),
           }
         );
-
 
       /*
        * --------------------------------------------------------
@@ -1032,16 +729,13 @@ export default function JourneyDashboard({
         savedJourney.journeyId
       );
 
-
       setSaveMessage(
         "Your journey has been saved."
       );
 
-
       setShowSaveAccountPrompt(
         false
       );
-
 
       /*
        * --------------------------------------------------------
@@ -1049,40 +743,24 @@ export default function JourneyDashboard({
        * --------------------------------------------------------
        */
 
-      if (
-        onJourneySaved
-      ) {
-
+      if (onJourneySaved) {
         await onJourneySaved(
           familyProfile.childId
         );
-
       }
-
-    } catch (
-      error
-    ) {
-
+    } catch (error) {
       console.error(
         "Unable to save journey:",
         error
       );
 
-
       setSaveError(
         "We couldn't save your journey right now. Please try again."
       );
-
     } finally {
-
-      setSavingJourney(
-        false
-      );
-
+      setSavingJourney(false);
     }
-
   }
-
 
   /*
    * ==========================================================
@@ -1091,20 +769,15 @@ export default function JourneyDashboard({
    */
 
   async function handleShowNextJourney() {
-
     if (
       !allTasksCompleted ||
       generatingNextJourney
     ) {
-
       return;
-
     }
-
 
     const currentUser =
       getCurrentUser();
-
 
     /*
      * ----------------------------------------------------------
@@ -1112,30 +785,21 @@ export default function JourneyDashboard({
      * ----------------------------------------------------------
      */
 
-    if (
-      !currentUser
-    ) {
-
+    if (!currentUser) {
       savePendingJourney(
         familyProfile,
-
         {
           ...personalizedJourney,
-
           tasks,
         }
       );
-
 
       setShowNextAccountPrompt(
         true
       );
 
-
       return;
-
     }
-
 
     /*
      * ----------------------------------------------------------
@@ -1143,53 +807,31 @@ export default function JourneyDashboard({
      * ----------------------------------------------------------
      */
 
-    if (
-      entitlementsLoading
-    ) {
-
+    if (entitlementsLoading) {
       return;
-
     }
 
-
     if (
-      !canUse(
-        "next_journey"
-      )
+      !canUse("next_journey")
     ) {
-
       setNextJourneyError(
         "Your account does not currently have access to create the next Journey stage."
       );
 
-
       return;
-
     }
-
 
     setShowNextAccountPrompt(
       false
     );
 
-
-    setNextJourneyError(
-      ""
-    );
-
-
-    setSaveMessage(
-      ""
-    );
-
-
+    setNextJourneyError("");
+    setSaveMessage("");
     setGeneratingNextJourney(
       true
     );
 
-
     try {
-
       /*
        * --------------------------------------------------------
        * AUTH TOKEN
@@ -1198,7 +840,6 @@ export default function JourneyDashboard({
 
       const idToken =
         await currentUser.getIdToken();
-
 
       /*
        * --------------------------------------------------------
@@ -1209,17 +850,11 @@ export default function JourneyDashboard({
       const journeyId =
         await ensureActiveJourney();
 
-
-      if (
-        !journeyId
-      ) {
-
+      if (!journeyId) {
         throw new Error(
           "We couldn't identify the active Journey. Please save your Journey and try again."
         );
-
       }
-
 
       /*
        * --------------------------------------------------------
@@ -1229,30 +864,19 @@ export default function JourneyDashboard({
 
       const completedTaskIds =
         tasks
-
           .filter(
-            (
-              task
-            ) =>
+            (task) =>
               task.completed
           )
-
           .map(
-            (
-              task
-            ) =>
-              task.id
+            (task) => task.id
           );
-
 
       const completedTaskDetails =
         tasks.filter(
-          (
-            task
-          ) =>
+          (task) =>
             task.completed
         );
-
 
       /*
        * --------------------------------------------------------
@@ -1262,13 +886,9 @@ export default function JourneyDashboard({
 
       const currentJourney:
         PersonalizedJourney = {
-
         ...personalizedJourney,
-
         tasks,
-
       };
-
 
       /*
        * --------------------------------------------------------
@@ -1283,13 +903,11 @@ export default function JourneyDashboard({
           journeyId
         );
 
-
       let completedStageNumber =
         Math.max(
           1,
           journeyStageNumber
         );
-
 
       /*
        * --------------------------------------------------------
@@ -1301,13 +919,9 @@ export default function JourneyDashboard({
         lastCompletedStageNumber >=
         completedStageNumber
       ) {
-
         completedStageNumber =
-          lastCompletedStageNumber +
-          1;
-
+          lastCompletedStageNumber + 1;
       }
-
 
       /*
        * --------------------------------------------------------
@@ -1317,28 +931,19 @@ export default function JourneyDashboard({
 
       await saveJourneyStage(
         currentUser.uid,
-
         completedStageNumber,
-
         familyProfile,
-
         currentJourney,
-
         completedTaskIds,
-
         {
           journeyId,
 
           reason:
-            completedStageNumber ===
-              1
-
+            completedStageNumber === 1
               ? "initial"
-
               : "tasks_completed",
         }
       );
-
 
       /*
        * --------------------------------------------------------
@@ -1349,39 +954,29 @@ export default function JourneyDashboard({
       const response =
         await fetch(
           "/api/journey/next",
-
           {
-            method:
-              "POST",
+            method: "POST",
 
             headers: {
-
               "Content-Type":
                 "application/json",
 
               Authorization:
                 `Bearer ${idToken}`,
-
             },
 
-            body:
-              JSON.stringify(
-                {
-                  familyProfile,
+            body: JSON.stringify({
+              familyProfile,
+              currentJourney,
+              completedTaskIds,
 
-                  currentJourney,
+              completedTasks:
+                completedTaskDetails,
 
-                  completedTaskIds,
-
-                  completedTasks:
-                    completedTaskDetails,
-
-                  journeyId,
-                }
-              ),
+              journeyId,
+            }),
           }
         );
-
 
       /*
        * --------------------------------------------------------
@@ -1396,37 +991,22 @@ export default function JourneyDashboard({
       const responseText =
         await response.text();
 
+      let data: any = null;
 
-      let data:
-        any =
-        null;
-
-
-      if (
-        responseText
-      ) {
-
+      if (responseText) {
         try {
-
           data =
             JSON.parse(
               responseText
             );
-
         } catch {
-
           throw new Error(
             response.ok
-
               ? "The server returned an unexpected response."
-
               : "We couldn't create the next stage because the server returned an unexpected response."
           );
-
         }
-
       }
-
 
       /*
        * --------------------------------------------------------
@@ -1435,32 +1015,24 @@ export default function JourneyDashboard({
        */
 
       if (
-        response.status ===
-        401
+        response.status === 401
       ) {
-
         savePendingJourney(
           familyProfile,
-
           {
             ...personalizedJourney,
-
             tasks,
           }
         );
-
 
         setShowNextAccountPrompt(
           true
         );
 
-
         throw new Error(
           "Your login session has expired. Please log in again to continue your journey."
         );
-
       }
-
 
       /*
        * --------------------------------------------------------
@@ -1468,28 +1040,18 @@ export default function JourneyDashboard({
        * --------------------------------------------------------
        */
 
-      if (
-        !response.ok
-      ) {
-
+      if (!response.ok) {
         throw new Error(
           data?.error ||
-          "Unable to create the next stage of your journey."
+            "Unable to create the next stage of your journey."
         );
-
       }
 
-
-      if (
-        !data?.journey
-      ) {
-
+      if (!data?.journey) {
         throw new Error(
           "The next stage of your journey was not returned."
         );
-
       }
-
 
       /*
        * --------------------------------------------------------
@@ -1501,11 +1063,8 @@ export default function JourneyDashboard({
         data.journey as
           PersonalizedJourney;
 
-
       const nextStageNumber =
-        completedStageNumber +
-        1;
-
+        completedStageNumber + 1;
 
       /*
        * --------------------------------------------------------
@@ -1522,17 +1081,13 @@ export default function JourneyDashboard({
       const savedJourney =
         await saveCurrentJourney(
           currentUser.uid,
-
           familyProfile,
-
           {
             ...nextJourney,
 
             tasks:
-              nextJourney.tasks ||
-              [],
+              nextJourney.tasks || [],
           },
-
           {
             journeyId,
 
@@ -1547,11 +1102,9 @@ export default function JourneyDashboard({
           }
         );
 
-
       setActiveJourneyId(
         savedJourney.journeyId
       );
-
 
       /*
        * --------------------------------------------------------
@@ -1563,22 +1116,17 @@ export default function JourneyDashboard({
         nextJourney
       );
 
-
       setTasks(
-        nextJourney.tasks ||
-        []
+        nextJourney.tasks || []
       );
-
 
       setJourneyStageNumber(
         nextStageNumber
       );
 
-
       setSaveMessage(
         `Journey Stage ${nextStageNumber} has been created and saved.`
       );
-
 
       /*
        * --------------------------------------------------------
@@ -1586,16 +1134,11 @@ export default function JourneyDashboard({
        * --------------------------------------------------------
        */
 
-      if (
-        onJourneySaved
-      ) {
-
+      if (onJourneySaved) {
         await onJourneySaved(
           familyProfile.childId
         );
-
       }
-
 
       /*
        * --------------------------------------------------------
@@ -1605,55 +1148,33 @@ export default function JourneyDashboard({
 
       window.requestAnimationFrame(
         () => {
-
           window.requestAnimationFrame(
             () => {
-
-              window.scrollTo(
-                {
-                  top:
-                    0,
-
-                  behavior:
-                    "smooth",
-                }
-              );
-
+              window.scrollTo({
+                top: 0,
+                behavior: "smooth",
+              });
             }
           );
-
         }
       );
-
-    } catch (
-      error
-    ) {
-
+    } catch (error) {
       console.error(
         "Unable to generate next journey:",
         error
       );
 
-
       setNextJourneyError(
-
         error instanceof Error
-
           ? error.message
-
           : "We couldn't create the next stage of your journey. Please try again."
       );
-
     } finally {
-
       setGeneratingNextJourney(
         false
       );
-
     }
-
   }
-
 
   /*
    * ==========================================================
@@ -1662,127 +1183,75 @@ export default function JourneyDashboard({
    */
 
   async function handleLogout() {
-
-    setLoggingOut(
-      true
-    );
-
+    setLoggingOut(true);
 
     try {
+      await signOut(auth);
 
-      await signOut(
-        auth
-      );
-
-
-      window.location.href =
-        "/";
-
-    } catch (
-      error
-    ) {
-
+      window.location.href = "/";
+    } catch (error) {
       console.error(
         "Logout error:",
         error
       );
 
-
-      setLoggingOut(
-        false
-      );
-
+      setLoggingOut(false);
     }
-
   }
 
-
   /*
- * ==========================================================
- * RENDER
- * ==========================================================
- */
+   * ==========================================================
+   * RENDER
+   * ==========================================================
+   */
 
-
-
-return (
-
-    <main
-      style={
-        styles.main
-      }
-    >
-
+  return (
+    <main style={styles.main}>
       {/* =====================================================
           HEADER
       ====================================================== */}
 
       <section
         style={{
-          marginBottom:
-            "34px",
+          marginBottom: "34px",
         }}
       >
-
         <div
           style={{
-            display:
-              "flex",
-
+            display: "flex",
             justifyContent:
               "space-between",
-
-            alignItems:
-              "center",
-
-            gap:
-              "20px",
-
-            flexWrap:
-              "wrap",
-
-            marginBottom:
-              "14px",
+            alignItems: "center",
+            gap: "20px",
+            flexWrap: "wrap",
+            marginBottom: "14px",
           }}
         >
-
           <div
-            style={
-              styles.eyebrow
-            }
+            style={styles.eyebrow}
           >
             Your Personalized Journey
           </div>
 
-
           {!loadingStageNumber && (
-
             <div
               style={{
                 display:
                   "inline-flex",
-
                 alignItems:
                   "center",
-
                 padding:
                   "8px 13px",
-
                 borderRadius:
                   "999px",
-
                 background:
                   "#EFF6FF",
-
                 border:
                   "1px solid #BFDBFE",
-
                 color:
                   "#2563EB",
-
                 fontSize:
                   "12px",
-
                 fontWeight:
                   800,
               }}
@@ -1790,141 +1259,146 @@ return (
               Journey Stage{" "}
               {journeyStageNumber}
             </div>
-
           )}
-
         </div>
-
 
         <h1
           style={{
-            margin:
-              0,
-
-            maxWidth:
-              "850px",
-
-            fontSize:
-              "46px",
-
-            lineHeight:
-              1.1,
-
-            fontWeight:
-              800,
-
-            color:
-              "#0F172A",
+            margin: 0,
+            maxWidth: "850px",
+            fontSize: "46px",
+            lineHeight: 1.1,
+            fontWeight: 800,
+            color: "#0F172A",
           }}
         >
-
-          {
-            familyProfile.childName
-
-              ? `${familyProfile.childName}'s Personalized Journey`
-
-              : "Your Personalized Journey"
-          }
-
+          {familyProfile.childName
+            ? `${familyProfile.childName}'s Personalized Journey`
+            : "Your Personalized Journey"}
         </h1>
-
 
         <p
           style={{
             ...styles.muted,
-
-            marginTop:
-              "16px",
-
-            marginBottom:
-              0,
-
-            maxWidth:
-              "760px",
-
-            fontSize:
-              "18px",
+            marginTop: "16px",
+            marginBottom: 0,
+            maxWidth: "760px",
+            fontSize: "18px",
           }}
         >
           Based on what you shared,
           we've identified where we'd
           recommend starting.
         </p>
-
       </section>
 
-
       <FamilySnapshot
-        familyProfile={familyProfile}
+        familyProfile={
+          familyProfile
+        }
       />
-
 
       <CurrentFocusCard
-        personalizedJourney={personalizedJourney}
-        journeyStageNumber={journeyStageNumber}
+        personalizedJourney={
+          personalizedJourney
+        }
+        journeyStageNumber={
+          journeyStageNumber
+        }
       />
-
 
       <ActionGuidanceSection
-        primaryAction={primaryAction}
-        familyProfile={familyProfile}
+        primaryAction={
+          primaryAction
+        }
+        familyProfile={
+          familyProfile
+        }
       />
-
 
       <JourneyResourcesSection
-        resources={personalizedJourney.resources}
+        resources={
+          personalizedJourney.resources
+        }
       />
-
 
       <SaveJourneyCard
-        savingJourney={savingJourney}
-        saveMessage={saveMessage}
-        saveError={saveError}
-        showSaveAccountPrompt={showSaveAccountPrompt}
-        onSave={handleSaveJourney}
+        savingJourney={
+          savingJourney
+        }
+        saveMessage={
+          saveMessage
+        }
+        saveError={
+          saveError
+        }
+        showSaveAccountPrompt={
+          showSaveAccountPrompt
+        }
+        onSave={
+          handleSaveJourney
+        }
       />
-
 
       <AccountCard
-        currentUserEmail={currentUserEmail}
-        loggingOut={loggingOut}
-        onLogout={handleLogout}
+        currentUserEmail={
+          currentUserEmail
+        }
+        loggingOut={
+          loggingOut
+        }
+        onLogout={
+          handleLogout
+        }
       />
-
 
       <JourneyProgressSection
-        journeyStageNumber={journeyStageNumber}
+        journeyStageNumber={
+          journeyStageNumber
+        }
         tasks={tasks}
-        completedTasks={completedTasks}
-        totalTasks={totalTasks}
-        taskPercent={taskPercent}
-        taskSaveStatus={taskSaveStatus}
-        allTasksCompleted={allTasksCompleted}
-        nextJourneyError={nextJourneyError}
-        showNextAccountPrompt={showNextAccountPrompt}
-        generatingNextJourney={generatingNextJourney}
-        entitlementsLoading={entitlementsLoading}
-        onToggleTask={toggleTask}
-        onShowNextJourney={handleShowNextJourney}
+        completedTasks={
+          completedTasks
+        }
+        totalTasks={
+          totalTasks
+        }
+        taskPercent={
+          taskPercent
+        }
+        taskSaveStatus={
+          taskSaveStatus
+        }
+        allTasksCompleted={
+          allTasksCompleted
+        }
+        nextJourneyError={
+          nextJourneyError
+        }
+        showNextAccountPrompt={
+          showNextAccountPrompt
+        }
+        generatingNextJourney={
+          generatingNextJourney
+        }
+        entitlementsLoading={
+          entitlementsLoading
+        }
+        onToggleTask={
+          toggleTask
+        }
+        onShowNextJourney={
+          handleShowNextJourney
+        }
       />
-
 
       <p
         style={{
-          textAlign:
-            "center",
-
-          color:
-            "#94A3B8",
-
-          fontSize:
-            "12px",
-
-          lineHeight:
-            1.5,
-
-          marginTop:
-            "50px",
+          textAlign: "center",
+          color: "#94A3B8",
+          fontSize: "12px",
+          lineHeight: 1.5,
+          marginTop: "50px",
         }}
       >
         Your recommendations are based on
@@ -1932,9 +1406,6 @@ return (
         intended to help you identify possible
         next steps.
       </p>
-
     </main>
-
   );
-
 }
