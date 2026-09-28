@@ -11,17 +11,40 @@ export default function TaskChecklist({
   tasks,
   onToggleTask,
 }: TaskChecklistProps) {
-  function priorityColor(priority: Task["priority"]) {
+  function priorityColor(
+    priority: Task["priority"]
+  ) {
     switch (priority) {
       case "High":
         return "#DC2626";
+
       case "Medium":
         return "#D97706";
+
       case "Low":
         return "#059669";
+
       default:
         return "#64748B";
     }
+  }
+
+  if (tasks.length === 0) {
+    return (
+      <div
+        style={{
+          marginTop: "30px",
+          border: "1px solid #E2E8F0",
+          borderRadius: "18px",
+          padding: "22px",
+          background: "#FFFFFF",
+          color: "#64748B",
+          lineHeight: 1.7,
+        }}
+      >
+        No tasks are available for this stage yet.
+      </div>
+    );
   }
 
   return (
@@ -44,14 +67,17 @@ export default function TaskChecklist({
               ? "#ECFDF5"
               : "#FFFFFF",
             transition: "all .25s ease",
-            boxShadow: "0 6px 20px rgba(15,23,42,.05)",
+            boxShadow:
+              "0 6px 20px rgba(15,23,42,.05)",
           }}
         >
           <div
             style={{
               display: "flex",
-              justifyContent: "space-between",
-              alignItems: "flex-start",
+              justifyContent:
+                "space-between",
+              alignItems:
+                "flex-start",
             }}
           >
             <div style={{ flex: 1 }}>
@@ -86,7 +112,10 @@ export default function TaskChecklist({
               >
                 <span
                   style={{
-                    color: priorityColor(task.priority),
+                    color:
+                      priorityColor(
+                        task.priority
+                      ),
                     fontWeight: 700,
                   }}
                 >
@@ -104,16 +133,32 @@ export default function TaskChecklist({
             </div>
 
             <button
-              onClick={() => onToggleTask(task.id)}
+              type="button"
+              onClick={() =>
+                onToggleTask(task.id)
+              }
+              aria-label={
+                task.completed
+                  ? `Mark ${task.title} as incomplete`
+                  : `Mark ${task.title} as complete`
+              }
+              aria-pressed={
+                task.completed
+              }
               style={{
                 marginLeft: "24px",
                 border: "none",
-                background: "transparent",
+                background:
+                  "transparent",
                 cursor: "pointer",
                 fontSize: "30px",
+                padding: "4px",
+                lineHeight: 1,
               }}
             >
-              {task.completed ? "✅" : "⬜"}
+              {task.completed
+                ? "✅"
+                : "⬜"}
             </button>
           </div>
         </div>
