@@ -417,6 +417,48 @@ export default function JourneyDashboard({
 
   /*
    * ==========================================================
+   * JOURNEY START ANALYTICS
+   * ==========================================================
+   */
+
+  async function recordJourneyStartAnalytics(
+    userId: string,
+    journeyId: string,
+    stageNumber: number
+  ) {
+    await safelyRecordJourneyAnalyticsEvent({
+      eventType:
+        "journey_started",
+
+      userId,
+
+      childId:
+        familyProfile.childId,
+
+      context: {
+        journeyId,
+        stageNumber,
+      },
+    });
+
+    await safelyRecordJourneyAnalyticsEvent({
+      eventType:
+        "stage_started",
+
+      userId,
+
+      childId:
+        familyProfile.childId,
+
+      context: {
+        journeyId,
+        stageNumber,
+      },
+    });
+  }
+
+  /*
+   * ==========================================================
    * TOGGLE TASK
    * ==========================================================
    */
@@ -503,9 +545,6 @@ export default function JourneyDashboard({
                * --------------------------------------------------------
                * RECORD REAL JOURNEY ACTIVITY
                * --------------------------------------------------------
-               *
-               * Analytics is recorded only after the Journey task
-               * progress has successfully saved.
                */
 
               if (
@@ -514,11 +553,6 @@ export default function JourneyDashboard({
               ) {
                 const isNowCompleted =
                   changedTask.completed;
-
-                /*
-                 * Only record an event when the completion state
-                 * actually changed.
-                 */
 
                 if (
                   isNowCompleted !==
@@ -649,6 +683,17 @@ export default function JourneyDashboard({
       savedJourney.journeyId
     );
 
+    /*
+     * This is the first successful save of this Journey.
+     * Record both the Journey start and Stage 1 start.
+     */
+
+    await recordJourneyStartAnalytics(
+      currentUser.uid,
+      savedJourney.journeyId,
+      journeyStageNumber
+    );
+
     return savedJourney.journeyId;
   }
 
@@ -690,6 +735,32 @@ export default function JourneyDashboard({
     setSavingJourney(true);
 
     try {
+      /*
+       * --------------------------------------------------------
+       * RESOLVE EXISTING JOURNEY
+       * --------------------------------------------------------
+       *
+       * activeJourneyId may still be null while authentication
+       * or Firestore state is resolving. Check Firestore before
+       * deciding that this is a brand-new Journey.
+       */
+
+      const existingJourney =
+        activeJourneyId
+          ? null
+          : await getCurrentJourney(
+              currentUser.uid,
+              familyProfile.childId
+            );
+
+      const existingJourneyId =
+        activeJourneyId ??
+        existingJourney?.journeyId ??
+        null;
+
+      const isNewJourney =
+        !existingJourneyId;
+
       const savedJourney =
         await saveCurrentJourney(
           currentUser.uid,
@@ -708,10 +779,10 @@ export default function JourneyDashboard({
                 ? "initial"
                 : "tasks_completed",
 
-            ...(activeJourneyId
+            ...(existingJourneyId
               ? {
                   journeyId:
-                    activeJourneyId,
+                    existingJourneyId,
                 }
               : {}),
           }
@@ -728,6 +799,23 @@ export default function JourneyDashboard({
       setActiveJourneyId(
         savedJourney.journeyId
       );
+
+      /*
+       * --------------------------------------------------------
+       * RECORD NEW JOURNEY
+       * --------------------------------------------------------
+       *
+       * Only record these events when no existing Journey
+       * existed before this save.
+       */
+
+      if (isNewJourney) {
+        await recordJourneyStartAnalytics(
+          currentUser.uid,
+          savedJourney.journeyId,
+          journeyStageNumber
+        );
+      }
 
       setSaveMessage(
         "Your journey has been saved."
@@ -827,6 +915,7 @@ export default function JourneyDashboard({
 
     setNextJourneyError("");
     setSaveMessage("");
+
     setGeneratingNextJourney(
       true
     );
@@ -945,32 +1034,29 @@ export default function JourneyDashboard({
         }
       );
 
-/*
- * --------------------------------------------------------
- * RECORD COMPLETED JOURNEY STAGE
- * --------------------------------------------------------
- *
- * Record the analytics event only after the completed
- * stage has successfully been saved to Journey History.
- */
+      /*
+       * --------------------------------------------------------
+       * RECORD COMPLETED JOURNEY STAGE
+       * --------------------------------------------------------
+       */
 
-await safelyRecordJourneyAnalyticsEvent({
-  eventType:
-    "stage_completed",
+      await safelyRecordJourneyAnalyticsEvent({
+        eventType:
+          "stage_completed",
 
-  userId:
-    currentUser.uid,
+        userId:
+          currentUser.uid,
 
-  childId:
-    familyProfile.childId,
+        childId:
+          familyProfile.childId,
 
-  context: {
-    journeyId,
+        context: {
+          journeyId,
 
-    stageNumber:
-      completedStageNumber,
-  },
-});
+          stageNumber:
+            completedStageNumber,
+        },
+      });
 
       /*
        * --------------------------------------------------------
@@ -1008,10 +1094,6 @@ await safelyRecordJourneyAnalyticsEvent({
       /*
        * --------------------------------------------------------
        * SAFE RESPONSE PARSING
-       *
-       * Prevent:
-       *
-       * Unexpected token '<'
        * --------------------------------------------------------
        */
 
@@ -1097,8 +1179,6 @@ await safelyRecordJourneyAnalyticsEvent({
        * --------------------------------------------------------
        * SAVE NEW ACTIVE STAGE
        *
-       * IMPORTANT:
-       *
        * Same journeyId.
        *
        * A new Stage is NOT a new Journey.
@@ -1132,6 +1212,34 @@ await safelyRecordJourneyAnalyticsEvent({
       setActiveJourneyId(
         savedJourney.journeyId
       );
+
+      /*
+       * --------------------------------------------------------
+       * RECORD NEW STAGE START
+       * --------------------------------------------------------
+       *
+       * This happens only after the new active stage has been
+       * successfully saved.
+       */
+
+      await safelyRecordJourneyAnalyticsEvent({
+        eventType:
+          "stage_started",
+
+        userId:
+          currentUser.uid,
+
+        childId:
+          familyProfile.childId,
+
+        context: {
+          journeyId:
+            savedJourney.journeyId,
+
+          stageNumber:
+            nextStageNumber,
+        },
+      });
 
       /*
        * --------------------------------------------------------
