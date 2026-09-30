@@ -54,6 +54,7 @@ import JourneyResourcesSection from "../journey-dashboard/JourneyResourcesSectio
 import SaveJourneyCard from "../journey-dashboard/SaveJourneyCard";
 import AccountCard from "../journey-dashboard/AccountCard";
 import JourneyProgressSection from "../journey-dashboard/JourneyProgressSection";
+import JourneyInsightsCard from "../journey-dashboard/JourneyInsightsCard";
 
 /*
  * ============================================================
@@ -1448,16 +1449,27 @@ export default function JourneyDashboard({
         }
       />
 
-      <CurrentFocusCard
-        personalizedJourney={
-          personalizedJourney
-        }
-        journeyStageNumber={
-          journeyStageNumber
-        }
-      />
+<CurrentFocusCard
+  personalizedJourney={
+    personalizedJourney
+  }
+  journeyStageNumber={
+    journeyStageNumber
+  }
+/>
 
-      <ActionGuidanceSection
+{!loadingStageNumber && (
+  <JourneyInsightsCard
+    familyProfile={
+      familyProfile
+    }
+    journeyStageNumber={
+      journeyStageNumber
+    }
+  />
+)}
+
+<ActionGuidanceSection
         primaryAction={
           primaryAction
         }
