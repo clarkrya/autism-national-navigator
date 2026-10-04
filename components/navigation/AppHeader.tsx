@@ -1287,10 +1287,67 @@ export default function AppHeader() {
   </div>
 </Link>
 
-<ComingSoonTool
-  title="AI Progress Insights"
-  description="See patterns and progress across your family's journey."
-/>
+{/* ==========================================
+    AI PROGRESS INSIGHTS
+=========================================== */}
+
+<Link
+  href="/progress-insights"
+  role="menuitem"
+  onClick={closeMenus}
+  style={{
+    display: "block",
+    padding: "11px",
+    borderRadius: "9px",
+    textDecoration: "none",
+  }}
+>
+  <div
+    style={{
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: "10px",
+    }}
+  >
+    <span
+      style={{
+        color: "#334155",
+        fontSize: "13px",
+        fontWeight: 750,
+      }}
+    >
+      AI Progress Insights
+    </span>
+
+    <span
+      style={{
+        flexShrink: 0,
+        padding: "3px 7px",
+        borderRadius: "999px",
+        background: "#DBEAFE",
+        color: "#1D4ED8",
+        fontSize: "9px",
+        fontWeight: 800,
+        textTransform: "uppercase",
+        letterSpacing: "0.04em",
+      }}
+    >
+      Premium
+    </span>
+  </div>
+
+  <div
+    style={{
+      marginTop: "4px",
+      color: "#64748B",
+      fontSize: "10px",
+      lineHeight: 1.45,
+    }}
+  >
+    See patterns and progress across your family's journey.
+  </div>
+</Link>
 
 <ComingSoonTool
   title="Family Organizer"
