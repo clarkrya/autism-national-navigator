@@ -1,632 +1,582 @@
 import {
-    addDoc,
-    collection,
-    deleteDoc,
-    doc,
-    getDocs,
-    orderBy,
-    query,
-    updateDoc,
-  } from "firebase/firestore";
-  
-  import { db } from "../firebase";
-  
-  import {
-    canAccessFamilyOrganizerChild,
-  } from "./familyOrganizerAccess";
-  
-  import type {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  orderBy,
+  query,
+  updateDoc,
+  type UpdateData,
+} from "firebase/firestore";
+
+import { db } from "../firebase";
+
+import {
+  canAccessFamilyOrganizerChild,
+} from "./familyOrganizerAccess";
+
+import type {
+  FamilyOrganizerCalendarEvent,
+  FamilyOrganizerCalendarEventType,
+  FamilyOrganizerMembership,
+} from "./familyOrganizerTypes";
+
+/*
+ * ============================================================
+ * FAMILY ORGANIZER CALENDAR REPOSITORY
+ * ============================================================
+ *
+ * Shared calendar path:
+ *
+ * users/{ownerUserId}/children/{childId}/calendarEvents/{eventId}
+ *
+ * The canonical child remains under the owner's UID.
+ * ============================================================
+ */
+
+/*
+ * ============================================================
+ * HELPERS
+ * ============================================================
+ */
+
+function normalizeRequiredString(
+  value: string,
+  fieldName: string
+): string {
+  const normalized =
+    value.trim();
+
+  if (!normalized) {
+    throw new Error(
+      `${fieldName} is required.`
+    );
+  }
+
+  return normalized;
+}
+
+function normalizeOptionalString(
+  value:
+    | string
+    | undefined
+): string | undefined {
+  if (
+    typeof value !== "string"
+  ) {
+    return undefined;
+  }
+
+  const normalized =
+    value.trim();
+
+  return normalized ||
+    undefined;
+}
+
+function getCalendarCollection(
+  ownerUserId: string,
+  childId: string
+) {
+  return collection(
+    db,
+    "users",
+    ownerUserId,
+    "children",
+    childId,
+    "calendarEvents"
+  );
+}
+
+function getCalendarEventDocument(
+  ownerUserId: string,
+  childId: string,
+  eventId: string
+) {
+  return doc(
+    db,
+    "users",
+    ownerUserId,
+    "children",
+    childId,
+    "calendarEvents",
+    eventId
+  );
+}
+
+/*
+ * ============================================================
+ * ACCESS
+ * ============================================================
+ */
+
+function requireCalendarAccess(
+  currentUserId: string,
+  ownerUserId: string,
+  childId: string,
+  memberships:
+    FamilyOrganizerMembership[]
+): void {
+  const allowed =
+    canAccessFamilyOrganizerChild(
+      currentUserId,
+      ownerUserId,
+      childId,
+      memberships
+    );
+
+  if (!allowed) {
+    throw new Error(
+      "You do not have access to this child's Family Organizer."
+    );
+  }
+}
+
+/*
+ * ============================================================
+ * GET CALENDAR EVENTS
+ * ============================================================
+ */
+
+export async function getFamilyOrganizerCalendarEvents(
+  currentUserId: string,
+  ownerUserId: string,
+  childId: string,
+  memberships:
+    FamilyOrganizerMembership[] = []
+): Promise<
+  FamilyOrganizerCalendarEvent[]
+> {
+  const normalizedCurrentUserId =
+    normalizeRequiredString(
+      currentUserId,
+      "currentUserId"
+    );
+
+  const normalizedOwnerUserId =
+    normalizeRequiredString(
+      ownerUserId,
+      "ownerUserId"
+    );
+
+  const normalizedChildId =
+    normalizeRequiredString(
+      childId,
+      "childId"
+    );
+
+  requireCalendarAccess(
+    normalizedCurrentUserId,
+    normalizedOwnerUserId,
+    normalizedChildId,
+    memberships
+  );
+
+  const eventsQuery =
+    query(
+      getCalendarCollection(
+        normalizedOwnerUserId,
+        normalizedChildId
+      ),
+      orderBy(
+        "startAt",
+        "asc"
+      )
+    );
+
+  const snapshot =
+    await getDocs(
+      eventsQuery
+    );
+
+  return snapshot.docs.map(
+    (snapshotDoc) => ({
+      id:
+        snapshotDoc.id,
+
+      ...(snapshotDoc.data() as Omit<
+        FamilyOrganizerCalendarEvent,
+        "id"
+      >),
+    })
+  );
+}
+
+/*
+ * ============================================================
+ * CREATE CALENDAR EVENT
+ * ============================================================
+ */
+
+export interface CreateFamilyOrganizerCalendarEventInput {
+  currentUserId: string;
+
+  ownerUserId: string;
+
+  childId: string;
+
+  memberships?:
+    FamilyOrganizerMembership[];
+
+  title: string;
+
+  eventType:
+    FamilyOrganizerCalendarEventType;
+
+  startAt: number;
+
+  endAt?: number;
+
+  allDay?: boolean;
+
+  location?: string;
+
+  notes?: string;
+}
+
+export async function createFamilyOrganizerCalendarEvent(
+  input:
+    CreateFamilyOrganizerCalendarEventInput
+): Promise<
+  FamilyOrganizerCalendarEvent
+> {
+  const currentUserId =
+    normalizeRequiredString(
+      input.currentUserId,
+      "currentUserId"
+    );
+
+  const ownerUserId =
+    normalizeRequiredString(
+      input.ownerUserId,
+      "ownerUserId"
+    );
+
+  const childId =
+    normalizeRequiredString(
+      input.childId,
+      "childId"
+    );
+
+  const title =
+    normalizeRequiredString(
+      input.title,
+      "title"
+    );
+
+  requireCalendarAccess(
+    currentUserId,
+    ownerUserId,
+    childId,
+    input.memberships ?? []
+  );
+
+  if (
+    !Number.isFinite(
+      input.startAt
+    )
+  ) {
+    throw new Error(
+      "startAt is required."
+    );
+  }
+
+  if (
+    typeof input.endAt ===
+      "number" &&
+    input.endAt <
+      input.startAt
+  ) {
+    throw new Error(
+      "Event end time cannot be before the start time."
+    );
+  }
+
+  const createdAt =
+    Date.now();
+
+  const location =
+    normalizeOptionalString(
+      input.location
+    );
+
+  const notes =
+    normalizeOptionalString(
+      input.notes
+    );
+
+  const payload: Omit<
     FamilyOrganizerCalendarEvent,
-    FamilyOrganizerCalendarEventType,
-  } from "./familyOrganizerTypes";
-  
-  /*
-   * ============================================================
-   * FAMILY ORGANIZER CALENDAR REPOSITORY
-   * ============================================================
-   *
-   * Shared calendar events belong to the canonical child
-   * workspace.
-   *
-   * Canonical location:
-   *
-   * users/{ownerUserId}/children/{childId}/calendarEvents/{eventId}
-   *
-   * This means:
-   *
-   * - the owner sees the calendar
-   * - authorized Family Team members see the SAME calendar
-   * - events are never duplicated into another user's account
-   * ============================================================
-   */
-  
-  /*
-   * ============================================================
-   * CREATE INPUT
-   * ============================================================
-   */
-  
-  export interface CreateFamilyOrganizerCalendarEventInput {
-    currentUserId: string;
-  
-    ownerUserId: string;
-  
-    childId: string;
-  
-    title: string;
-  
+    "id"
+  > = {
+    ownerUserId,
+
+    childId,
+
+    title,
+
     eventType:
-      FamilyOrganizerCalendarEventType;
-  
-    startAt: number;
-  
-    endAt?: number;
-  
-    allDay?: boolean;
-  
-    location?: string;
-  
-    notes?: string;
-  }
-  
-  /*
-   * ============================================================
-   * UPDATE INPUT
-   * ============================================================
-   */
-  
-  export interface UpdateFamilyOrganizerCalendarEventInput {
-    currentUserId: string;
-  
-    ownerUserId: string;
-  
-    childId: string;
-  
-    eventId: string;
-  
-    title: string;
-  
-    eventType:
-      FamilyOrganizerCalendarEventType;
-  
-    startAt: number;
-  
-    endAt?: number;
-  
-    allDay?: boolean;
-  
-    location?: string;
-  
-    notes?: string;
-  }
-  
-  /*
-   * ============================================================
-   * DELETE INPUT
-   * ============================================================
-   */
-  
-  export interface DeleteFamilyOrganizerCalendarEventInput {
-    currentUserId: string;
-  
-    ownerUserId: string;
-  
-    childId: string;
-  
-    eventId: string;
-  }
-  
-  /*
-   * ============================================================
-   * NORMALIZE OPTIONAL STRING
-   * ============================================================
-   */
-  
-  function normalizeOptionalString(
-    value: string | undefined
-  ): string | undefined {
-    if (
-      typeof value !== "string"
-    ) {
-      return undefined;
-    }
-  
-    const normalized =
-      value.trim();
-  
-    return normalized
-      ? normalized
-      : undefined;
-  }
-  
-  /*
-   * ============================================================
-   * VERIFY ACCESS
-   * ============================================================
-   */
-  
-  async function verifyCalendarAccess(
-    currentUserId: string,
-    ownerUserId: string,
-    childId: string
-  ): Promise<void> {
-    const access =
-      await canAccessFamilyOrganizerChild(
-        currentUserId,
+      input.eventType,
+
+    startAt:
+      input.startAt,
+
+    createdAt,
+
+    createdByUserId:
+      currentUserId,
+
+    ...(typeof input.endAt ===
+    "number"
+      ? {
+          endAt:
+            input.endAt,
+        }
+      : {}),
+
+    ...(typeof input.allDay ===
+    "boolean"
+      ? {
+          allDay:
+            input.allDay,
+        }
+      : {}),
+
+    ...(location
+      ? {
+          location,
+        }
+      : {}),
+
+    ...(notes
+      ? {
+          notes,
+        }
+      : {}),
+  };
+
+  const reference =
+    await addDoc(
+      getCalendarCollection(
         ownerUserId,
         childId
-      );
-  
-    if (!access.allowed) {
-      throw new Error(
-        "You do not have access to this child's Family Organizer."
-      );
-    }
-  }
-  
-  /*
-   * ============================================================
-   * GET CALENDAR EVENTS
-   * ============================================================
-   */
-  
-  export async function getFamilyOrganizerCalendarEvents(
-    currentUserId: string,
-    ownerUserId: string,
-    childId: string
-  ): Promise<
-    FamilyOrganizerCalendarEvent[]
-  > {
-    const normalizedCurrentUserId =
-      currentUserId.trim();
-  
-    const normalizedOwnerUserId =
-      ownerUserId.trim();
-  
-    const normalizedChildId =
-      childId.trim();
-  
-    if (
-      !normalizedCurrentUserId ||
-      !normalizedOwnerUserId ||
-      !normalizedChildId
-    ) {
-      return [];
-    }
-  
-    await verifyCalendarAccess(
-      normalizedCurrentUserId,
-      normalizedOwnerUserId,
-      normalizedChildId
+      ),
+      payload
     );
-  
-    const calendarReference =
-      collection(
-        db,
-        "users",
-        normalizedOwnerUserId,
-        "children",
-        normalizedChildId,
-        "calendarEvents"
-      );
-  
-    const calendarQuery =
-      query(
-        calendarReference,
-        orderBy(
-          "startAt",
-          "asc"
-        )
-      );
-  
-    const snapshot =
-      await getDocs(
-        calendarQuery
-      );
-  
-    return snapshot.docs.map(
-      (calendarDocument) => {
-        const data =
-          calendarDocument.data();
-  
-        return {
-          id:
-            calendarDocument.id,
-  
-          ownerUserId:
-            normalizedOwnerUserId,
-  
-          childId:
-            normalizedChildId,
-  
-          title:
-            typeof data.title ===
-              "string"
-              ? data.title
-              : "",
-  
-          eventType:
-            data.eventType as
-              FamilyOrganizerCalendarEventType,
-  
-          startAt:
-            typeof data.startAt ===
-              "number"
-              ? data.startAt
-              : 0,
-  
-          ...(typeof data.endAt ===
-          "number"
-            ? {
-                endAt:
-                  data.endAt,
-              }
-            : {}),
-  
-          ...(typeof data.allDay ===
-          "boolean"
-            ? {
-                allDay:
-                  data.allDay,
-              }
-            : {}),
-  
-          ...(typeof data.location ===
-          "string"
-            ? {
-                location:
-                  data.location,
-              }
-            : {}),
-  
-          ...(typeof data.notes ===
-          "string"
-            ? {
-                notes:
-                  data.notes,
-              }
-            : {}),
-  
-          createdAt:
-            typeof data.createdAt ===
-              "number"
-              ? data.createdAt
-              : 0,
-  
-          createdByUserId:
-            typeof data.createdByUserId ===
-              "string"
-              ? data.createdByUserId
-              : "",
-  
-          ...(typeof data.updatedAt ===
-          "number"
-            ? {
-                updatedAt:
-                  data.updatedAt,
-              }
-            : {}),
-        };
-      }
+
+  return {
+    id:
+      reference.id,
+
+    ...payload,
+  };
+}
+
+/*
+ * ============================================================
+ * UPDATE CALENDAR EVENT
+ * ============================================================
+ */
+
+export interface UpdateFamilyOrganizerCalendarEventInput {
+  currentUserId: string;
+
+  ownerUserId: string;
+
+  childId: string;
+
+  eventId: string;
+
+  memberships?:
+    FamilyOrganizerMembership[];
+
+  title?: string;
+
+  eventType?:
+    FamilyOrganizerCalendarEventType;
+
+  startAt?: number;
+
+  endAt?: number;
+
+  allDay?: boolean;
+
+  location?: string;
+
+  notes?: string;
+}
+
+export async function updateFamilyOrganizerCalendarEvent(
+  input:
+    UpdateFamilyOrganizerCalendarEventInput
+): Promise<void> {
+  const currentUserId =
+    normalizeRequiredString(
+      input.currentUserId,
+      "currentUserId"
     );
+
+  const ownerUserId =
+    normalizeRequiredString(
+      input.ownerUserId,
+      "ownerUserId"
+    );
+
+  const childId =
+    normalizeRequiredString(
+      input.childId,
+      "childId"
+    );
+
+  const eventId =
+    normalizeRequiredString(
+      input.eventId,
+      "eventId"
+    );
+
+  requireCalendarAccess(
+    currentUserId,
+    ownerUserId,
+    childId,
+    input.memberships ?? []
+  );
+
+  const updates: UpdateData<
+    Omit<
+      FamilyOrganizerCalendarEvent,
+      "id"
+    >
+  > = {
+    updatedAt:
+      Date.now(),
+  };
+
+  if (
+    typeof input.title ===
+    "string"
+  ) {
+    updates.title =
+      normalizeRequiredString(
+        input.title,
+        "title"
+      );
   }
-  
-  /*
-   * ============================================================
-   * CREATE CALENDAR EVENT
-   * ============================================================
-   */
-  
-  export async function createFamilyOrganizerCalendarEvent(
-    input:
-      CreateFamilyOrganizerCalendarEventInput
-  ): Promise<string> {
-    const currentUserId =
-      input.currentUserId.trim();
-  
-    const ownerUserId =
-      input.ownerUserId.trim();
-  
-    const childId =
-      input.childId.trim();
-  
-    const title =
-      input.title.trim();
-  
-    if (
-      !currentUserId ||
-      !ownerUserId ||
-      !childId
-    ) {
-      throw new Error(
-        "A valid Family Organizer workspace is required."
-      );
-    }
-  
-    if (!title) {
-      throw new Error(
-        "Event title is required."
-      );
-    }
-  
-    if (
-      !Number.isFinite(
-        input.startAt
-      )
-    ) {
-      throw new Error(
-        "A valid event date is required."
-      );
-    }
-  
-    if (
-      input.endAt !== undefined &&
-      (!Number.isFinite(
-        input.endAt
-      ) ||
-        input.endAt <
-          input.startAt)
-    ) {
-      throw new Error(
-        "Event end time cannot be before the start time."
-      );
-    }
-  
-    await verifyCalendarAccess(
-      currentUserId,
+
+  if (input.eventType) {
+    updates.eventType =
+      input.eventType;
+  }
+
+  if (
+    typeof input.startAt ===
+    "number"
+  ) {
+    updates.startAt =
+      input.startAt;
+  }
+
+  if (
+    typeof input.endAt ===
+    "number"
+  ) {
+    updates.endAt =
+      input.endAt;
+  }
+
+  if (
+    typeof input.allDay ===
+    "boolean"
+  ) {
+    updates.allDay =
+      input.allDay;
+  }
+
+  if (
+    typeof input.location ===
+    "string"
+  ) {
+    updates.location =
+      input.location.trim();
+  }
+
+  if (
+    typeof input.notes ===
+    "string"
+  ) {
+    updates.notes =
+      input.notes.trim();
+  }
+
+  await updateDoc(
+    getCalendarEventDocument(
       ownerUserId,
-      childId
+      childId,
+      eventId
+    ),
+    updates
+  );
+}
+
+/*
+ * ============================================================
+ * DELETE CALENDAR EVENT
+ * ============================================================
+ */
+
+export interface DeleteFamilyOrganizerCalendarEventInput {
+  currentUserId: string;
+
+  ownerUserId: string;
+
+  childId: string;
+
+  eventId: string;
+
+  memberships?:
+    FamilyOrganizerMembership[];
+}
+
+export async function deleteFamilyOrganizerCalendarEvent(
+  input:
+    DeleteFamilyOrganizerCalendarEventInput
+): Promise<void> {
+  const currentUserId =
+    normalizeRequiredString(
+      input.currentUserId,
+      "currentUserId"
     );
-  
-    const now =
-      Date.now();
-  
-    const calendarReference =
-      collection(
-        db,
-        "users",
-        ownerUserId,
-        "children",
-        childId,
-        "calendarEvents"
-      );
-  
-    const location =
-      normalizeOptionalString(
-        input.location
-      );
-  
-    const notes =
-      normalizeOptionalString(
-        input.notes
-      );
-  
-    const documentReference =
-      await addDoc(
-        calendarReference,
-        {
-          title,
-  
-          eventType:
-            input.eventType,
-  
-          startAt:
-            input.startAt,
-  
-          ...(input.endAt !==
-          undefined
-            ? {
-                endAt:
-                  input.endAt,
-              }
-            : {}),
-  
-          allDay:
-            input.allDay ===
-            true,
-  
-          ...(location
-            ? {
-                location,
-              }
-            : {}),
-  
-          ...(notes
-            ? {
-                notes,
-              }
-            : {}),
-  
-          createdAt:
-            now,
-  
-          createdByUserId:
-            currentUserId,
-  
-          updatedAt:
-            now,
-        }
-      );
-  
-    return documentReference.id;
-  }
-  
-  /*
-   * ============================================================
-   * UPDATE CALENDAR EVENT
-   * ============================================================
-   */
-  
-  export async function updateFamilyOrganizerCalendarEvent(
-    input:
-      UpdateFamilyOrganizerCalendarEventInput
-  ): Promise<void> {
-    const currentUserId =
-      input.currentUserId.trim();
-  
-    const ownerUserId =
-      input.ownerUserId.trim();
-  
-    const childId =
-      input.childId.trim();
-  
-    const eventId =
-      input.eventId.trim();
-  
-    const title =
-      input.title.trim();
-  
-    if (
-      !currentUserId ||
-      !ownerUserId ||
-      !childId ||
-      !eventId
-    ) {
-      throw new Error(
-        "A valid calendar event is required."
-      );
-    }
-  
-    if (!title) {
-      throw new Error(
-        "Event title is required."
-      );
-    }
-  
-    if (
-      !Number.isFinite(
-        input.startAt
-      )
-    ) {
-      throw new Error(
-        "A valid event date is required."
-      );
-    }
-  
-    if (
-      input.endAt !== undefined &&
-      (!Number.isFinite(
-        input.endAt
-      ) ||
-        input.endAt <
-          input.startAt)
-    ) {
-      throw new Error(
-        "Event end time cannot be before the start time."
-      );
-    }
-  
-    await verifyCalendarAccess(
-      currentUserId,
+
+  const ownerUserId =
+    normalizeRequiredString(
+      input.ownerUserId,
+      "ownerUserId"
+    );
+
+  const childId =
+    normalizeRequiredString(
+      input.childId,
+      "childId"
+    );
+
+  const eventId =
+    normalizeRequiredString(
+      input.eventId,
+      "eventId"
+    );
+
+  requireCalendarAccess(
+    currentUserId,
+    ownerUserId,
+    childId,
+    input.memberships ?? []
+  );
+
+  await deleteDoc(
+    getCalendarEventDocument(
       ownerUserId,
-      childId
-    );
-  
-    const eventReference =
-      doc(
-        db,
-        "users",
-        ownerUserId,
-        "children",
-        childId,
-        "calendarEvents",
-        eventId
-      );
-  
-    const location =
-      normalizeOptionalString(
-        input.location
-      );
-  
-    const notes =
-      normalizeOptionalString(
-        input.notes
-      );
-  
-    await updateDoc(
-      eventReference,
-      {
-        title,
-  
-        eventType:
-          input.eventType,
-  
-        startAt:
-          input.startAt,
-  
-        endAt:
-          input.endAt ??
-          null,
-  
-        allDay:
-          input.allDay ===
-          true,
-  
-        location:
-          location ??
-          null,
-  
-        notes:
-          notes ??
-          null,
-  
-        updatedAt:
-          Date.now(),
-      }
-    );
-  }
-  
-  /*
-   * ============================================================
-   * DELETE CALENDAR EVENT
-   * ============================================================
-   */
-  
-  export async function deleteFamilyOrganizerCalendarEvent(
-    input:
-      DeleteFamilyOrganizerCalendarEventInput
-  ): Promise<void> {
-    const currentUserId =
-      input.currentUserId.trim();
-  
-    const ownerUserId =
-      input.ownerUserId.trim();
-  
-    const childId =
-      input.childId.trim();
-  
-    const eventId =
-      input.eventId.trim();
-  
-    if (
-      !currentUserId ||
-      !ownerUserId ||
-      !childId ||
-      !eventId
-    ) {
-      throw new Error(
-        "A valid calendar event is required."
-      );
-    }
-  
-    await verifyCalendarAccess(
-      currentUserId,
-      ownerUserId,
-      childId
-    );
-  
-    const eventReference =
-      doc(
-        db,
-        "users",
-        ownerUserId,
-        "children",
-        childId,
-        "calendarEvents",
-        eventId
-      );
-  
-    await deleteDoc(
-      eventReference
-    );
-  }
+      childId,
+      eventId
+    )
+  );
+}

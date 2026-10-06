@@ -4,6 +4,8 @@ import Link from "next/link";
 
 import FamilyOrganizerWorkspaceSelector from "../../components/familyOrganizer/FamilyOrganizerWorkspaceSelector";
 
+import FamilyOrganizerPendingInvitations from "../../components/familyOrganizer/FamilyOrganizerPendingInvitations";
+
 import {
   useFamilyOrganizerWorkspace,
 } from "../../lib/familyOrganizer/useFamilyOrganizerWorkspace";
@@ -354,6 +356,22 @@ export default function FamilyOrganizerPage() {
             coordinate more easily.
           </p>
         </section>
+
+        {/* ==================================================
+            PENDING INVITATIONS
+        =================================================== */}
+
+        {authReady &&
+        currentUser ? (
+          <div
+            style={{
+              marginBottom:
+                "24px",
+            }}
+          >
+            <FamilyOrganizerPendingInvitations />
+          </div>
+        ) : null}
 
         {/* ==================================================
             AUTH / WORKSPACE
@@ -792,7 +810,7 @@ export default function FamilyOrganizerPage() {
                 >
                   Review invitations
                   to join another
-                  child's shared
+                  child&apos;s shared
                   Family Organizer.
                 </p>
               </div>
@@ -868,7 +886,7 @@ export default function FamilyOrganizerPage() {
             only and does not give
             that person access to
             your Myriad account or
-            your child's information.
+            your child&apos;s information.
           </p>
         </section>
 
