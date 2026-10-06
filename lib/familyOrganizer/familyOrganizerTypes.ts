@@ -15,6 +15,7 @@
  * - The existing owner + childId remain the canonical source.
  * - Invitations may use email for delivery/matching.
  * - Accepted access is tied to Firebase UID.
+ * - Memberships retain the invitationId that authorized access.
  * - Support Team contacts do NOT automatically receive
  *   Myriad account access.
  * ============================================================
@@ -39,16 +40,6 @@ export type FamilyOrganizerRelationship =
 /*
  * ============================================================
  * MEMBERSHIP ROLE
- * ============================================================
- *
- * owner:
- * Original account responsible for the canonical child record.
- *
- * family_member:
- * Invited Myriad user who has accepted access to the child.
- *
- * More granular permissions can be added later without
- * changing the core ownership model.
  * ============================================================
  */
 
@@ -85,14 +76,9 @@ export type FamilyOrganizerInvitationStatus =
  * CHILD REFERENCE
  * ============================================================
  *
- * This is the critical pointer to the existing canonical
- * Myriad child.
- *
- * Example:
+ * Canonical child:
  *
  * users/{ownerUserId}/children/{childId}
- *
- * We intentionally preserve the existing Journey architecture.
  * ============================================================
  */
 
@@ -106,10 +92,14 @@ export interface FamilyOrganizerChildReference {
  * FAMILY MEMBERSHIP
  * ============================================================
  *
- * Represents one Myriad account that is authorized to
- * collaborate around a specific child.
+ * Represents an authenticated Myriad account that has access
+ * to a specific canonical child.
  *
- * memberUserId must be a Firebase UID.
+ * IMPORTANT:
+ *
+ * invitationId provides the authorization trail connecting
+ * an invited family member to the invitation that originally
+ * granted access.
  * ============================================================
  */
 
@@ -117,6 +107,18 @@ export interface FamilyOrganizerMembership
   extends FamilyOrganizerChildReference {
   id: string;
 
+  /*
+   * Invitation that authorized this membership.
+   *
+   * Owner access does not require a membership document.
+   * Therefore stored memberships are expected to represent
+   * invited family members.
+   */
+  invitationId: string;
+
+  /*
+   * Firebase UID of the invited family member.
+   */
   memberUserId: string;
 
   role: FamilyOrganizerMembershipRole;
@@ -131,17 +133,17 @@ export interface FamilyOrganizerMembership
   createdAt: number;
 
   /*
-   * Firebase UID of the user who created/granted access.
+   * Firebase UID of the owner who originally granted access.
    */
   createdByUserId: string;
 
   /*
-   * When the membership became active.
+   * When invitation acceptance occurred.
    */
   acceptedAt?: number;
 
   /*
-   * When access ended.
+   * When membership access ended.
    */
   endedAt?: number;
 }
@@ -151,11 +153,12 @@ export interface FamilyOrganizerMembership
  * FAMILY INVITATION
  * ============================================================
  *
- * Email is used to deliver and match an invitation.
+ * Email is used for invitation delivery and matching.
  *
- * Email must NOT become the permanent authorization identity.
- * Once accepted, authorization is tied to Firebase UID through
- * FamilyOrganizerMembership.
+ * Email is NOT the permanent authorization identity.
+ *
+ * Once accepted, access is tied to Firebase UID through the
+ * corresponding FamilyOrganizerMembership.
  * ============================================================
  */
 
@@ -163,11 +166,6 @@ export interface FamilyOrganizerInvitation
   extends FamilyOrganizerChildReference {
   id: string;
 
-  /*
-   * Email address the owner invited.
-   *
-   * This should be normalized before storage.
-   */
   invitedEmail: string;
 
   relationship: FamilyOrganizerRelationship;
@@ -175,7 +173,7 @@ export interface FamilyOrganizerInvitation
   status: FamilyOrganizerInvitationStatus;
 
   /*
-   * Firebase UID of the person who sent the invitation.
+   * Firebase UID of the canonical owner who sent the invite.
    */
   invitedByUserId: string;
 
@@ -184,13 +182,10 @@ export interface FamilyOrganizerInvitation
    */
   createdAt: number;
 
-  /*
-   * Optional expiration timestamp.
-   */
   expiresAt?: number;
 
   /*
-   * Populated after the invitation is accepted.
+   * Populated after successful acceptance.
    */
   acceptedByUserId?: string;
 
@@ -206,18 +201,10 @@ export interface FamilyOrganizerInvitation
  * SUPPORT TEAM
  * ============================================================
  *
- * Support Team members are people involved in supporting the
- * child but do NOT automatically receive Myriad account access.
+ * Support Team members are contacts involved in supporting
+ * the child.
  *
- * Examples:
- *
- * - Pediatrician
- * - Developmental pediatrician
- * - Therapist
- * - Teacher
- * - IEP case manager
- * - Advocate
- * - Care coordinator
+ * They DO NOT automatically receive Myriad account access.
  * ============================================================
  */
 
@@ -261,8 +248,8 @@ export interface FamilyOrganizerSupportTeamMember
  * SHARED CALENDAR
  * ============================================================
  *
- * Calendar events belong to the CHILD workspace rather than
- * one individual user's account.
+ * Calendar events belong to the shared child workspace rather
+ * than one individual family member's account.
  * ============================================================
  */
 
@@ -308,10 +295,6 @@ export interface FamilyOrganizerCalendarEvent
 /*
  * ============================================================
  * ACCESS CHECK
- * ============================================================
- *
- * Common result shape we can use later when determining whether
- * a logged-in Firebase user may access a shared child.
  * ============================================================
  */
 
