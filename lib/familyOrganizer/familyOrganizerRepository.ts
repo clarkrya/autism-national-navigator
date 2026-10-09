@@ -25,11 +25,8 @@ import type {
  * ============================================================
  */
 
-const INVITATIONS_COLLECTION =
-  "familyOrganizerInvitations";
-
-const MEMBERSHIPS_COLLECTION =
-  "familyOrganizerMemberships";
+const INVITATIONS_COLLECTION = "familyOrganizerInvitations";
+const MEMBERSHIPS_COLLECTION = "familyOrganizerMemberships";
 
 /*
  * ============================================================
@@ -44,46 +41,34 @@ function normalizeRequiredString(
   const normalized = value.trim();
 
   if (!normalized) {
-    throw new Error(
-      `${fieldName} is required.`
-    );
+    throw new Error(`${fieldName} is required.`);
   }
 
   return normalized;
 }
 
-function normalizeEmail(
-  email: string
-): string {
-  const normalized = email
-    .trim()
-    .toLowerCase();
+function normalizeEmail(email: string): string {
+  const normalized = email.trim().toLowerCase();
 
   if (!normalized) {
-    throw new Error(
-      "Email is required."
-    );
+    throw new Error("Email is required.");
   }
 
   return normalized;
 }
 
 function validateChildReference(
-  reference:
-    FamilyOrganizerChildReference
+  reference: FamilyOrganizerChildReference
 ): FamilyOrganizerChildReference {
   return {
-    ownerUserId:
-      normalizeRequiredString(
-        reference.ownerUserId,
-        "ownerUserId"
-      ),
-
-    childId:
-      normalizeRequiredString(
-        reference.childId,
-        "childId"
-      ),
+    ownerUserId: normalizeRequiredString(
+      reference.ownerUserId,
+      "ownerUserId"
+    ),
+    childId: normalizeRequiredString(
+      reference.childId,
+      "childId"
+    ),
   };
 }
 
@@ -92,13 +77,12 @@ function validateChildReference(
  * MEMBERSHIP DOCUMENT ID
  * ============================================================
  *
- * Predictable document IDs allow Firestore Rules to verify
- * shared-child access with a direct get()/exists() lookup.
- *
- * Format:
+ * Canonical format:
  *
  * ownerUserId__childId__memberUserId
- * ============================================================
+ *
+ * Firestore security rules use this ID to verify access to
+ * a specific shared child.
  */
 
 export function buildFamilyOrganizerMembershipId(
@@ -106,28 +90,10 @@ export function buildFamilyOrganizerMembershipId(
   childId: string,
   memberUserId: string
 ): string {
-  const normalizedOwnerUserId =
-    normalizeRequiredString(
-      ownerUserId,
-      "ownerUserId"
-    );
-
-  const normalizedChildId =
-    normalizeRequiredString(
-      childId,
-      "childId"
-    );
-
-  const normalizedMemberUserId =
-    normalizeRequiredString(
-      memberUserId,
-      "memberUserId"
-    );
-
   return [
-    normalizedOwnerUserId,
-    normalizedChildId,
-    normalizedMemberUserId,
+    normalizeRequiredString(ownerUserId, "ownerUserId"),
+    normalizeRequiredString(childId, "childId"),
+    normalizeRequiredString(memberUserId, "memberUserId"),
   ].join("__");
 }
 
@@ -140,80 +106,75 @@ export function buildFamilyOrganizerMembershipId(
 export interface CreateFamilyOrganizerInvitationInput
   extends FamilyOrganizerChildReference {
   invitedEmail: string;
-
-  relationship:
-    FamilyOrganizerRelationship;
-
+  relationship: FamilyOrganizerRelationship;
   invitedByUserId: string;
-
   expiresAt?: number;
 }
 
 export async function createFamilyOrganizerInvitation(
-  input:
-    CreateFamilyOrganizerInvitationInput
+  input: CreateFamilyOrganizerInvitationInput
 ): Promise<FamilyOrganizerInvitation> {
-  const childReference =
-    validateChildReference(input);
+  const childReference = validateChildReference(input);
 
-  const invitedEmail =
-    normalizeEmail(
-      input.invitedEmail
-    );
+  const invitedEmail = normalizeEmail(input.invitedEmail);
 
-  const invitedByUserId =
-    normalizeRequiredString(
-      input.invitedByUserId,
-      "invitedByUserId"
-    );
+  const invitedByUserId = normalizeRequiredString(
+    input.invitedByUserId,
+    "invitedByUserId"
+  );
 
-  if (
-    invitedByUserId !==
-    childReference.ownerUserId
-  ) {
+  if (invitedByUserId !== childReference.ownerUserId) {
     throw new Error(
       "Only the child owner may create Family Organizer invitations."
     );
   }
 
-  const existingQuery =
-    query(
-      collection(
-        db,
-        INVITATIONS_COLLECTION
-      ),
+  /*
+   * SECURITY FIX:
+   *
+   * Firestore rules authorize owner-side invitation reads
+   * using invitedByUserId.
+   *
+   * The query must explicitly constrain that field.
+   */
 
-      where(
-        "ownerUserId",
-        "==",
-        childReference.ownerUserId
-      ),
+  const existingQuery = query(
+    collection(db, INVITATIONS_COLLECTION),
 
-      where(
-        "childId",
-        "==",
-        childReference.childId
-      ),
+    where(
+      "invitedByUserId",
+      "==",
+      childReference.ownerUserId
+    ),
 
-      where(
-        "invitedEmail",
-        "==",
-        invitedEmail
-      ),
+    where(
+      "ownerUserId",
+      "==",
+      childReference.ownerUserId
+    ),
 
-      where(
-        "status",
-        "==",
-        "pending"
-      ),
+    where(
+      "childId",
+      "==",
+      childReference.childId
+    ),
 
-      limit(1)
-    );
+    where(
+      "invitedEmail",
+      "==",
+      invitedEmail
+    ),
 
-  const existingSnapshot =
-    await getDocs(
-      existingQuery
-    );
+    where(
+      "status",
+      "==",
+      "pending"
+    ),
+
+    limit(1)
+  );
+
+  const existingSnapshot = await getDocs(existingQuery);
 
   if (!existingSnapshot.empty) {
     throw new Error(
@@ -221,50 +182,29 @@ export async function createFamilyOrganizerInvitation(
     );
   }
 
-  const createdAt =
-    Date.now();
+  const createdAt = Date.now();
 
   const payload = {
-    ownerUserId:
-      childReference.ownerUserId,
-
-    childId:
-      childReference.childId,
-
+    ownerUserId: childReference.ownerUserId,
+    childId: childReference.childId,
     invitedEmail,
-
-    relationship:
-      input.relationship,
-
-    status:
-      "pending" as const,
-
+    relationship: input.relationship,
+    status: "pending" as const,
     invitedByUserId,
-
     createdAt,
 
-    ...(typeof input.expiresAt ===
-    "number"
-      ? {
-          expiresAt:
-            input.expiresAt,
-        }
+    ...(typeof input.expiresAt === "number"
+      ? { expiresAt: input.expiresAt }
       : {}),
   };
 
-  const reference =
-    await addDoc(
-      collection(
-        db,
-        INVITATIONS_COLLECTION
-      ),
-      payload
-    );
+  const reference = await addDoc(
+    collection(db, INVITATIONS_COLLECTION),
+    payload
+  );
 
   return {
-    id:
-      reference.id,
-
+    id: reference.id,
     ...payload,
   };
 }
@@ -273,117 +213,99 @@ export async function createFamilyOrganizerInvitation(
  * ============================================================
  * GET CHILD INVITATIONS
  * ============================================================
+ *
+ * Owner-side query.
+ *
+ * The invitedByUserId filter is required to satisfy the
+ * invitation read rule.
  */
 
 export async function getFamilyOrganizerInvitationsForChild(
-  reference:
-    FamilyOrganizerChildReference
-): Promise<
-  FamilyOrganizerInvitation[]
-> {
-  const childReference =
-    validateChildReference(
-      reference
-    );
+  reference: FamilyOrganizerChildReference
+): Promise<FamilyOrganizerInvitation[]> {
+  const childReference = validateChildReference(reference);
 
-  const invitationsQuery =
-    query(
-      collection(
-        db,
-        INVITATIONS_COLLECTION
-      ),
+  const invitationsQuery = query(
+    collection(db, INVITATIONS_COLLECTION),
 
-      where(
-        "ownerUserId",
-        "==",
-        childReference.ownerUserId
-      ),
+    where(
+      "invitedByUserId",
+      "==",
+      childReference.ownerUserId
+    ),
 
-      where(
-        "childId",
-        "==",
-        childReference.childId
-      )
-    );
+    where(
+      "ownerUserId",
+      "==",
+      childReference.ownerUserId
+    ),
 
-  const snapshot =
-    await getDocs(
-      invitationsQuery
-    );
-
-  return snapshot.docs.map(
-    (snapshotDoc) => ({
-      id:
-        snapshotDoc.id,
-
-      ...(snapshotDoc.data() as Omit<
-        FamilyOrganizerInvitation,
-        "id"
-      >),
-    })
+    where(
+      "childId",
+      "==",
+      childReference.childId
+    )
   );
+
+  const snapshot = await getDocs(invitationsQuery);
+
+  return snapshot.docs.map((snapshotDoc) => ({
+    id: snapshotDoc.id,
+    ...(snapshotDoc.data() as Omit<
+      FamilyOrganizerInvitation,
+      "id"
+    >),
+  }));
 }
 
 /*
  * ============================================================
  * GET PENDING INVITATIONS FOR EMAIL
  * ============================================================
+ *
+ * Recipient-side query.
+ *
+ * Firestore rules authorize invitation recipients through
+ * their authenticated email address.
  */
 
 export async function getPendingFamilyOrganizerInvitationsForEmail(
   email: string
-): Promise<
-  FamilyOrganizerInvitation[]
-> {
-  const invitedEmail =
-    normalizeEmail(email);
+): Promise<FamilyOrganizerInvitation[]> {
+  const invitedEmail = normalizeEmail(email);
 
-  const invitationsQuery =
-    query(
-      collection(
-        db,
-        INVITATIONS_COLLECTION
-      ),
+  const invitationsQuery = query(
+    collection(db, INVITATIONS_COLLECTION),
 
-      where(
-        "invitedEmail",
-        "==",
-        invitedEmail
-      ),
+    where(
+      "invitedEmail",
+      "==",
+      invitedEmail
+    ),
 
-      where(
-        "status",
-        "==",
-        "pending"
-      )
-    );
+    where(
+      "status",
+      "==",
+      "pending"
+    )
+  );
 
-  const snapshot =
-    await getDocs(
-      invitationsQuery
-    );
+  const snapshot = await getDocs(invitationsQuery);
 
-  const now =
-    Date.now();
+  const now = Date.now();
 
   return snapshot.docs
-    .map(
-      (snapshotDoc) => ({
-        id:
-          snapshotDoc.id,
-
-        ...(snapshotDoc.data() as Omit<
-          FamilyOrganizerInvitation,
-          "id"
-        >),
-      })
-    )
+    .map((snapshotDoc) => ({
+      id: snapshotDoc.id,
+      ...(snapshotDoc.data() as Omit<
+        FamilyOrganizerInvitation,
+        "id"
+      >),
+    }))
     .filter(
       (invitation) =>
-        typeof invitation.expiresAt !==
-          "number" ||
-        invitation.expiresAt >
-          now
+        typeof invitation.expiresAt !== "number" ||
+        invitation.expiresAt > now
     );
 }
 
@@ -391,166 +313,134 @@ export async function getPendingFamilyOrganizerInvitationsForEmail(
  * ============================================================
  * GET CHILD MEMBERSHIPS
  * ============================================================
+ *
+ * Owner-side query.
+ *
+ * Firestore rules authorize the owner through ownerUserId.
+ *
+ * This function should only be called when the current
+ * authenticated user owns the child.
  */
 
 export async function getFamilyOrganizerMembershipsForChild(
-  reference:
-    FamilyOrganizerChildReference
-): Promise<
-  FamilyOrganizerMembership[]
-> {
-  const childReference =
-    validateChildReference(
-      reference
-    );
+  reference: FamilyOrganizerChildReference
+): Promise<FamilyOrganizerMembership[]> {
+  const childReference = validateChildReference(reference);
 
-  const membershipsQuery =
-    query(
-      collection(
-        db,
-        MEMBERSHIPS_COLLECTION
-      ),
+  const membershipsQuery = query(
+    collection(db, MEMBERSHIPS_COLLECTION),
 
-      where(
-        "ownerUserId",
-        "==",
-        childReference.ownerUserId
-      ),
+    where(
+      "ownerUserId",
+      "==",
+      childReference.ownerUserId
+    ),
 
-      where(
-        "childId",
-        "==",
-        childReference.childId
-      )
-    );
-
-  const snapshot =
-    await getDocs(
-      membershipsQuery
-    );
-
-  return snapshot.docs.map(
-    (snapshotDoc) => ({
-      id:
-        snapshotDoc.id,
-
-      ...(snapshotDoc.data() as Omit<
-        FamilyOrganizerMembership,
-        "id"
-      >),
-    })
+    where(
+      "childId",
+      "==",
+      childReference.childId
+    )
   );
+
+  const snapshot = await getDocs(membershipsQuery);
+
+  return snapshot.docs.map((snapshotDoc) => ({
+    id: snapshotDoc.id,
+    ...(snapshotDoc.data() as Omit<
+      FamilyOrganizerMembership,
+      "id"
+    >),
+  }));
 }
 
 /*
  * ============================================================
  * GET ACTIVE MEMBERSHIPS FOR USER
  * ============================================================
+ *
+ * Recipient-side query.
+ *
+ * Used to discover children shared with the signed-in user.
  */
 
 export async function getActiveFamilyOrganizerMembershipsForUser(
   memberUserId: string
-): Promise<
-  FamilyOrganizerMembership[]
-> {
-  const normalizedUserId =
-    normalizeRequiredString(
-      memberUserId,
-      "memberUserId"
-    );
-
-  const membershipsQuery =
-    query(
-      collection(
-        db,
-        MEMBERSHIPS_COLLECTION
-      ),
-
-      where(
-        "memberUserId",
-        "==",
-        normalizedUserId
-      ),
-
-      where(
-        "status",
-        "==",
-        "active"
-      )
-    );
-
-  const snapshot =
-    await getDocs(
-      membershipsQuery
-    );
-
-  return snapshot.docs.map(
-    (snapshotDoc) => ({
-      id:
-        snapshotDoc.id,
-
-      ...(snapshotDoc.data() as Omit<
-        FamilyOrganizerMembership,
-        "id"
-      >),
-    })
+): Promise<FamilyOrganizerMembership[]> {
+  const normalizedUserId = normalizeRequiredString(
+    memberUserId,
+    "memberUserId"
   );
+
+  const membershipsQuery = query(
+    collection(db, MEMBERSHIPS_COLLECTION),
+
+    where(
+      "memberUserId",
+      "==",
+      normalizedUserId
+    ),
+
+    where(
+      "status",
+      "==",
+      "active"
+    )
+  );
+
+  const snapshot = await getDocs(membershipsQuery);
+
+  return snapshot.docs.map((snapshotDoc) => ({
+    id: snapshotDoc.id,
+    ...(snapshotDoc.data() as Omit<
+      FamilyOrganizerMembership,
+      "id"
+    >),
+  }));
 }
 
 /*
  * ============================================================
  * ACCEPT INVITATION
  * ============================================================
+ *
+ * Creates a canonical membership and marks the invitation
+ * accepted in the same Firestore transaction.
  */
 
 export interface AcceptFamilyOrganizerInvitationInput {
-  invitation:
-    FamilyOrganizerInvitation;
-
+  invitation: FamilyOrganizerInvitation;
   acceptingUserId: string;
-
   acceptingUserEmail: string;
 }
 
 export async function acceptFamilyOrganizerInvitation(
-  input:
-    AcceptFamilyOrganizerInvitationInput
-): Promise<
-  FamilyOrganizerMembership
-> {
-  const invitation =
-    input.invitation;
+  input: AcceptFamilyOrganizerInvitationInput
+): Promise<FamilyOrganizerMembership> {
+  const invitation = input.invitation;
 
-  const invitationId =
-    normalizeRequiredString(
-      invitation.id,
-      "invitationId"
-    );
+  const invitationId = normalizeRequiredString(
+    invitation.id,
+    "invitationId"
+  );
 
-  const acceptingUserId =
-    normalizeRequiredString(
-      input.acceptingUserId,
-      "acceptingUserId"
-    );
+  const acceptingUserId = normalizeRequiredString(
+    input.acceptingUserId,
+    "acceptingUserId"
+  );
 
-  const acceptingUserEmail =
-    normalizeEmail(
-      input.acceptingUserEmail
-    );
+  const acceptingUserEmail = normalizeEmail(
+    input.acceptingUserEmail
+  );
 
-  if (
-    invitation.status !==
-    "pending"
-  ) {
+  if (invitation.status !== "pending") {
     throw new Error(
       "This invitation is no longer pending."
     );
   }
 
   if (
-    normalizeEmail(
-      invitation.invitedEmail
-    ) !==
+    normalizeEmail(invitation.invitedEmail) !==
     acceptingUserEmail
   ) {
     throw new Error(
@@ -559,182 +449,128 @@ export async function acceptFamilyOrganizerInvitation(
   }
 
   if (
-    typeof invitation.expiresAt ===
-      "number" &&
-    invitation.expiresAt <=
-      Date.now()
+    typeof invitation.expiresAt === "number" &&
+    invitation.expiresAt <= Date.now()
   ) {
     throw new Error(
       "This invitation has expired."
     );
   }
 
-  const membershipId =
-    buildFamilyOrganizerMembershipId(
-      invitation.ownerUserId,
-      invitation.childId,
-      acceptingUserId
-    );
+  const membershipId = buildFamilyOrganizerMembershipId(
+    invitation.ownerUserId,
+    invitation.childId,
+    acceptingUserId
+  );
 
-  const membershipReference =
-    doc(
-      db,
-      MEMBERSHIPS_COLLECTION,
-      membershipId
-    );
+  const membershipReference = doc(
+    db,
+    MEMBERSHIPS_COLLECTION,
+    membershipId
+  );
 
-  const invitationReference =
-    doc(
-      db,
-      INVITATIONS_COLLECTION,
-      invitationId
-    );
+  const invitationReference = doc(
+    db,
+    INVITATIONS_COLLECTION,
+    invitationId
+  );
 
-  const acceptedAt =
-    Date.now();
+  const acceptedAt = Date.now();
 
   const membershipPayload = {
     invitationId,
-
-    ownerUserId:
-      invitation.ownerUserId,
-
-    childId:
-      invitation.childId,
-
-    memberUserId:
-      acceptingUserId,
-
-    role:
-      "family_member" as const,
-
-    relationship:
-      invitation.relationship,
-
-    status:
-      "active" as const,
-
-    createdAt:
-      acceptedAt,
-
-    createdByUserId:
-      invitation.invitedByUserId,
-
+    ownerUserId: invitation.ownerUserId,
+    childId: invitation.childId,
+    memberUserId: acceptingUserId,
+    role: "family_member" as const,
+    relationship: invitation.relationship,
+    status: "active" as const,
+    createdAt: acceptedAt,
+    createdByUserId: invitation.invitedByUserId,
     acceptedAt,
   };
 
-  await runTransaction(
-    db,
-    async (transaction) => {
-      const invitationSnapshot =
-        await transaction.get(
-          invitationReference
-        );
+  await runTransaction(db, async (transaction) => {
+    const invitationSnapshot = await transaction.get(
+      invitationReference
+    );
 
-      if (
-        !invitationSnapshot.exists()
-      ) {
-        throw new Error(
-          "This invitation no longer exists."
-        );
-      }
-
-      const storedInvitation =
-        invitationSnapshot.data();
-
-      if (
-        storedInvitation.ownerUserId !==
-          invitation.ownerUserId ||
-        storedInvitation.childId !==
-          invitation.childId ||
-        storedInvitation.invitedByUserId !==
-          invitation.invitedByUserId ||
-        storedInvitation.relationship !==
-          invitation.relationship
-      ) {
-        throw new Error(
-          "Invitation information no longer matches."
-        );
-      }
-
-      if (
-        storedInvitation.status !==
-        "pending"
-      ) {
-        throw new Error(
-          "This invitation is no longer pending."
-        );
-      }
-
-      if (
-        typeof storedInvitation.invitedEmail !==
-          "string" ||
-        normalizeEmail(
-          storedInvitation.invitedEmail
-        ) !==
-          acceptingUserEmail
-      ) {
-        throw new Error(
-          "This invitation does not belong to the signed-in account."
-        );
-      }
-
-      if (
-        typeof storedInvitation.expiresAt ===
-          "number" &&
-        storedInvitation.expiresAt <=
-          Date.now()
-      ) {
-        throw new Error(
-          "This invitation has expired."
-        );
-      }
-
-      const existingMembershipSnapshot =
-        await transaction.get(
-          membershipReference
-        );
-
-      if (
-        existingMembershipSnapshot.exists()
-      ) {
-        const existingMembership =
-          existingMembershipSnapshot.data();
-
-        if (
-          existingMembership.status ===
-          "active"
-        ) {
-          throw new Error(
-            "This account already has access to this child."
-          );
-        }
-      }
-
-      transaction.set(
-        membershipReference,
-        membershipPayload
-      );
-
-      transaction.update(
-        invitationReference,
-        {
-          status:
-            "accepted",
-
-          acceptedByUserId:
-            acceptingUserId,
-
-          acceptedAt,
-        }
+    if (!invitationSnapshot.exists()) {
+      throw new Error(
+        "This invitation no longer exists."
       );
     }
-  );
+
+    const storedInvitation = invitationSnapshot.data();
+
+    if (
+      storedInvitation.ownerUserId !==
+        invitation.ownerUserId ||
+      storedInvitation.childId !==
+        invitation.childId ||
+      storedInvitation.invitedByUserId !==
+        invitation.invitedByUserId ||
+      storedInvitation.relationship !==
+        invitation.relationship
+    ) {
+      throw new Error(
+        "Invitation information no longer matches."
+      );
+    }
+
+    if (storedInvitation.status !== "pending") {
+      throw new Error(
+        "This invitation is no longer pending."
+      );
+    }
+
+    if (
+      typeof storedInvitation.invitedEmail !== "string" ||
+      normalizeEmail(storedInvitation.invitedEmail) !==
+        acceptingUserEmail
+    ) {
+      throw new Error(
+        "This invitation does not belong to the signed-in account."
+      );
+    }
+
+    if (
+      typeof storedInvitation.expiresAt === "number" &&
+      storedInvitation.expiresAt <= Date.now()
+    ) {
+      throw new Error(
+        "This invitation has expired."
+      );
+    }
+
+    const existingMembershipSnapshot =
+      await transaction.get(membershipReference);
+
+    if (existingMembershipSnapshot.exists()) {
+      const existingMembership =
+        existingMembershipSnapshot.data();
+
+      if (existingMembership.status === "active") {
+        throw new Error(
+          "This account already has access to this child."
+        );
+      }
+    }
+
+    transaction.set(
+      membershipReference,
+      membershipPayload
+    );
+
+    transaction.update(invitationReference, {
+      status: "accepted",
+      acceptedByUserId: acceptingUserId,
+      acceptedAt,
+    });
+  });
 
   return {
-    id:
-      membershipId,
-
+    id: membershipId,
     ...membershipPayload,
   };
 }
@@ -748,11 +584,10 @@ export async function acceptFamilyOrganizerInvitation(
 export async function declineFamilyOrganizerInvitation(
   invitationId: string
 ): Promise<void> {
-  const normalizedId =
-    normalizeRequiredString(
-      invitationId,
-      "invitationId"
-    );
+  const normalizedId = normalizeRequiredString(
+    invitationId,
+    "invitationId"
+  );
 
   await updateDoc(
     doc(
@@ -761,11 +596,8 @@ export async function declineFamilyOrganizerInvitation(
       normalizedId
     ),
     {
-      status:
-        "declined",
-
-      declinedAt:
-        Date.now(),
+      status: "declined",
+      declinedAt: Date.now(),
     }
   );
 }
@@ -779,11 +611,10 @@ export async function declineFamilyOrganizerInvitation(
 export async function revokeFamilyOrganizerInvitation(
   invitationId: string
 ): Promise<void> {
-  const normalizedId =
-    normalizeRequiredString(
-      invitationId,
-      "invitationId"
-    );
+  const normalizedId = normalizeRequiredString(
+    invitationId,
+    "invitationId"
+  );
 
   await updateDoc(
     doc(
@@ -792,11 +623,8 @@ export async function revokeFamilyOrganizerInvitation(
       normalizedId
     ),
     {
-      status:
-        "revoked",
-
-      revokedAt:
-        Date.now(),
+      status: "revoked",
+      revokedAt: Date.now(),
     }
   );
 }
@@ -810,11 +638,10 @@ export async function revokeFamilyOrganizerInvitation(
 export async function revokeFamilyOrganizerMembership(
   membershipId: string
 ): Promise<void> {
-  const normalizedId =
-    normalizeRequiredString(
-      membershipId,
-      "membershipId"
-    );
+  const normalizedId = normalizeRequiredString(
+    membershipId,
+    "membershipId"
+  );
 
   await updateDoc(
     doc(
@@ -823,11 +650,8 @@ export async function revokeFamilyOrganizerMembership(
       normalizedId
     ),
     {
-      status:
-        "revoked",
-
-      endedAt:
-        Date.now(),
+      status: "revoked",
+      endedAt: Date.now(),
     }
   );
 }
@@ -841,11 +665,10 @@ export async function revokeFamilyOrganizerMembership(
 export async function leaveFamilyOrganizerMembership(
   membershipId: string
 ): Promise<void> {
-  const normalizedId =
-    normalizeRequiredString(
-      membershipId,
-      "membershipId"
-    );
+  const normalizedId = normalizeRequiredString(
+    membershipId,
+    "membershipId"
+  );
 
   await updateDoc(
     doc(
@@ -854,11 +677,8 @@ export async function leaveFamilyOrganizerMembership(
       normalizedId
     ),
     {
-      status:
-        "left",
-
-      endedAt:
-        Date.now(),
+      status: "left",
+      endedAt: Date.now(),
     }
   );
 }
