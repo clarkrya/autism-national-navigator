@@ -1,0 +1,40 @@
+
+name: Deploy Firebase Functions
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to Firebase
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+
+      - name: Verify deployment configuration
+        run: |
+          test -f firebase.json
+          test -d functions
+          test -f functions/package.json
+
+      - name: Install function dependencies
+        run: npm ci
+        working-directory: functions
+
+      - name: Deploy Firebase Functions
+        run: firebase deploy --only functions --project autism-journey-navigator --non-interactive
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.FIREBASE_CREDENTIALS_PATH }}
