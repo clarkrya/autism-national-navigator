@@ -1,23 +1,35 @@
+
 import styles from "./styles/HowItWorks.module.css";
+
+/*
+ * ============================================================
+ * AUTIVOYA — HOW IT WORKS
+ * ============================================================
+ *
+ * Three-step introduction to the family journey.
+ *
+ * Preserves existing layout and CSS class names.
+ * ============================================================
+ */
 
 const steps = [
   {
     number: "1",
     title: "Tell Us About Your Family",
     description:
-      "Answer a few simple questions about your child, current journey stage, and your family's priorities.",
+      "Share a little about your child, where you are in your autism journey, and what matters most to your family.",
   },
   {
     number: "2",
-    title: "Receive Your Personalized Roadmap",
+    title: "Discover Your Personalized Roadmap",
     description:
-      "We'll create a customized roadmap with practical next steps designed specifically for your family's journey.",
+      "Autivoya helps you create a personalized roadmap with trusted guidance, helpful resources, and practical next steps tailored to your family's needs.",
   },
   {
     number: "3",
-    title: "Move Forward With Confidence",
+    title: "Take the Next Step With Confidence",
     description:
-      "Review your roadmap, focus on one step at a time, and save your journey when you're ready.",
+      "Explore your roadmap, take one step at a time, and save your journey when you're ready. Your family's path is unique, and Autivoya is here to help you navigate it.",
   },
 ];
 
@@ -27,13 +39,14 @@ export default function HowItWorks() {
       <div className={styles.wrapper}>
         <div className={styles.header}>
           <h2 className={styles.title}>
-            How It Works
+            How Autivoya Works
           </h2>
 
           <p className={styles.subtitle}>
-            Three simple steps to help your family
-            navigate the autism journey with clarity
-            and confidence.
+            Every journey is unique. Every step matters.
+            Discover how Autivoya helps your family move
+            forward with personalized guidance, trusted
+            resources, and a clear path ahead.
           </p>
         </div>
 
@@ -66,7 +79,8 @@ export default function HowItWorks() {
             fontSize: "15px",
           }}
         >
-          Start exploring your journey today — no account required.
+          Start exploring your family's journey today —
+          no account required.
         </p>
       </div>
     </section>

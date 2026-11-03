@@ -1,5 +1,20 @@
-.section {
-  background: #ffffff;
+
+/*
+ * ============================================================
+ * AUTIVOYA — OUR MISSION
+ * ============================================================
+ *
+ * Brand colors:
+ * Navy: #204D6A
+ * Teal: #58AAA7
+ * Gold: #F7AD3F
+ *
+ * Preserves existing layout and responsive breakpoints.
+ * ============================================================
+ */
+
+ .section {
+  background: #f7faf9;
   padding: 100px 24px;
 }
 
@@ -13,8 +28,22 @@
   font-size: 48px;
   font-weight: 800;
   line-height: 1.15;
-  color: #0f172a;
+  color: #204d6a;
   margin: 0 0 28px;
+}
+
+/*
+ * Small gold accent beneath the heading.
+ */
+
+.title::after {
+  content: "";
+  display: block;
+  width: 64px;
+  height: 4px;
+  margin: 20px auto 0;
+  border-radius: 999px;
+  background: #f7ad3f;
 }
 
 .text {
@@ -25,9 +54,15 @@
 }
 
 .highlight {
-  color: #2563eb;
+  color: #217d7a;
   font-weight: 700;
 }
+
+/*
+ * ============================================================
+ * TABLET
+ * ============================================================
+ */
 
 @media (max-width: 900px) {
   .section {
@@ -44,6 +79,12 @@
   }
 }
 
+/*
+ * ============================================================
+ * MOBILE
+ * ============================================================
+ */
+
 @media (max-width: 600px) {
   .section {
     padding: 65px 18px;
@@ -51,6 +92,11 @@
 
   .title {
     font-size: 34px;
+  }
+
+  .title::after {
+    width: 52px;
+    margin-top: 16px;
   }
 
   .text {

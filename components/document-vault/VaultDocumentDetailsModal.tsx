@@ -1,3 +1,4 @@
+
 "use client";
 
 import {
@@ -10,15 +11,29 @@ import type {
   VaultDocumentCategory,
 } from "../../types/vault";
 
+/*
+ * AUTIVOYA BRAND COLORS
+ */
+
+const BRAND = {
+  navy: "#204D6A",
+  darkNavy: "#173B52",
+  teal: "#58AAA7",
+  darkTeal: "#317E7B",
+  gold: "#F7AD3F",
+  lightTeal: "#EAF6F5",
+  background: "#F7FAFB",
+  white: "#FFFFFF",
+  muted: "#647B8B",
+  border: "#DCE7EC",
+};
+
 type VaultDocumentDetailsModalProps = {
   document: VaultDocument | null;
   isOpen: boolean;
   onClose: () => void;
-
   onView: (document: VaultDocument) => void;
-
   onDownload: (document: VaultDocument) => void;
-
   onSave: (
     document: VaultDocument,
     updates: {
@@ -27,8 +42,9 @@ type VaultDocumentDetailsModalProps = {
       notes: string;
     }
   ) => Promise<void>;
-
-  onDelete: (document: VaultDocument) => Promise<void>;
+  onDelete: (
+    document: VaultDocument
+  ) => Promise<void>;
 };
 
 const CATEGORY_OPTIONS: {
@@ -57,7 +73,13 @@ const CATEGORY_OPTIONS: {
   },
 ];
 
-function formatFileSize(bytes?: number): string {
+/*
+ * HELPERS
+ */
+
+function formatFileSize(
+  bytes?: number
+): string {
   if (!bytes || bytes <= 0) {
     return "";
   }
@@ -82,10 +104,83 @@ function getCategoryLabel(
 ): string {
   return (
     CATEGORY_OPTIONS.find(
-      (option) => option.value === category
+      (option) =>
+        option.value === category
     )?.label ?? "Other"
   );
 }
+
+/*
+ * SHARED STYLES
+ */
+
+const labelStyle: React.CSSProperties = {
+  display: "block",
+  marginBottom: 7,
+  fontSize: 13,
+  fontWeight: 800,
+  color: BRAND.darkNavy,
+};
+
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  boxSizing: "border-box",
+  padding: "12px 13px",
+  border: `1px solid ${BRAND.border}`,
+  borderRadius: 11,
+  background: BRAND.white,
+  color: BRAND.darkNavy,
+  fontSize: 14,
+  fontFamily: "inherit",
+  outlineColor: BRAND.teal,
+};
+
+const counterStyle: React.CSSProperties = {
+  marginTop: 5,
+  textAlign: "right",
+  fontSize: 11,
+  color: BRAND.muted,
+};
+
+const primaryButtonStyle: React.CSSProperties = {
+  minHeight: 42,
+  padding: "10px 18px",
+  border: 0,
+  borderRadius: 11,
+  background: BRAND.darkTeal,
+  color: BRAND.white,
+  fontSize: 14,
+  fontWeight: 800,
+  cursor: "pointer",
+};
+
+const secondaryButtonStyle: React.CSSProperties = {
+  minHeight: 42,
+  padding: "10px 16px",
+  border: `1px solid ${BRAND.border}`,
+  borderRadius: 11,
+  background: BRAND.white,
+  color: BRAND.navy,
+  fontSize: 14,
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+const dangerButtonStyle: React.CSSProperties = {
+  minHeight: 42,
+  padding: "10px 16px",
+  border: "1px solid #F3C9C9",
+  borderRadius: 11,
+  background: "#FFF7F7",
+  color: "#B42318",
+  fontSize: 14,
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+/*
+ * DOCUMENT DETAILS MODAL
+ */
 
 export default function VaultDocumentDetailsModal({
   document,
@@ -103,7 +198,9 @@ export default function VaultDocumentDetailsModal({
     useState("");
 
   const [category, setCategory] =
-    useState<VaultDocumentCategory>("other");
+    useState<VaultDocumentCategory>(
+      "other"
+    );
 
   const [notes, setNotes] =
     useState("");
@@ -116,6 +213,10 @@ export default function VaultDocumentDetailsModal({
 
   const [error, setError] =
     useState<string | null>(null);
+
+  /*
+   * RESET WHEN DOCUMENT CHANGES
+   */
 
   useEffect(() => {
     if (!document) {
@@ -131,6 +232,10 @@ export default function VaultDocumentDetailsModal({
     setError(null);
   }, [document]);
 
+  /*
+   * ESCAPE KEY SUPPORT
+   */
+
   useEffect(() => {
     if (!isOpen) {
       return;
@@ -140,10 +245,7 @@ export default function VaultDocumentDetailsModal({
       event: KeyboardEvent
     ) {
       if (event.key === "Escape") {
-        if (
-          isSaving ||
-          isDeleting
-        ) {
+        if (isSaving || isDeleting) {
           return;
         }
 
@@ -169,18 +271,17 @@ export default function VaultDocumentDetailsModal({
     onClose,
   ]);
 
-  if (
-    !isOpen ||
-    !document
-  ) {
+  if (!isOpen || !document) {
     return null;
   }
 
   const fileSize =
-  formatFileSize(document.size);
+    formatFileSize(document.size);
 
   const categoryLabel =
-    getCategoryLabel(document.category);
+    getCategoryLabel(
+      document.category
+    );
 
   const hasNotes =
     Boolean(document.notes?.trim());
@@ -192,6 +293,10 @@ export default function VaultDocumentDetailsModal({
     !isSaving &&
     !isDeleting;
 
+  /*
+   * SAVE DOCUMENT DETAILS
+   */
+
   async function handleSave() {
     if (!canSave) {
       return;
@@ -199,10 +304,6 @@ export default function VaultDocumentDetailsModal({
 
     setIsSaving(true);
     setError(null);
-    
-    if (!document) {
-      return;
-    }
 
     try {
       await onSave(document, {
@@ -228,12 +329,11 @@ export default function VaultDocumentDetailsModal({
     }
   }
 
-  async function handleDelete() {
-    
-    if (!document) {
-      return;
-    }
+  /*
+   * DELETE DOCUMENT
+   */
 
+  async function handleDelete() {
     const confirmed =
       window.confirm(
         `Delete "${document.title}" from the Document Vault? This cannot be undone.`
@@ -265,17 +365,21 @@ export default function VaultDocumentDetailsModal({
     }
   }
 
+  /*
+   * CANCEL EDITING
+   */
+
   function handleCancelEdit() {
-    if (!document) {
-      return;
-    }
-    
     setTitle(document.title ?? "");
     setCategory(document.category);
     setNotes(document.notes ?? "");
     setError(null);
     setIsEditing(false);
   }
+
+  /*
+   * MODAL UI
+   */
 
   return (
     <div
@@ -288,7 +392,7 @@ export default function VaultDocumentDetailsModal({
         justifyContent: "center",
         padding: 20,
         background:
-          "rgba(15, 23, 42, 0.48)",
+          "rgba(23, 59, 82, 0.50)",
       }}
       onMouseDown={(event) => {
         if (
@@ -310,35 +414,48 @@ export default function VaultDocumentDetailsModal({
           maxWidth: 620,
           maxHeight: "90vh",
           overflowY: "auto",
-          borderRadius: 20,
-          background: "#ffffff",
+          borderRadius: 24,
+          background: BRAND.white,
           boxShadow:
-            "0 24px 70px rgba(15, 23, 42, 0.22)",
+            "0 24px 70px rgba(23, 59, 82, 0.22)",
         }}
       >
+        {/* HEADER */}
+
         <div
           style={{
             display: "flex",
             alignItems: "flex-start",
-            justifyContent: "space-between",
+            justifyContent:
+              "space-between",
             gap: 20,
             padding: "24px 24px 18px",
             borderBottom:
-              "1px solid #e5e7eb",
+              `1px solid ${BRAND.border}`,
           }}
         >
           <div>
             <div
               style={{
-                marginBottom: 6,
-                fontSize: 12,
+                display: "inline-flex",
+                alignItems: "center",
+                minHeight: 26,
+                padding: "3px 10px",
+                marginBottom: 10,
+                borderRadius: 999,
+                background:
+                  BRAND.lightTeal,
+                color:
+                  BRAND.darkTeal,
+                fontSize: 11,
                 fontWeight: 800,
-                letterSpacing: "0.06em",
-                color: "#6d45a5",
-                textTransform: "uppercase",
+                letterSpacing:
+                  "0.04em",
+                textTransform:
+                  "uppercase",
               }}
             >
-              Document Vault
+              AUTIVOYA DOCUMENT VAULT
             </div>
 
             <h2
@@ -347,7 +464,9 @@ export default function VaultDocumentDetailsModal({
                 margin: 0,
                 fontSize: 24,
                 lineHeight: 1.25,
-                color: "#172033",
+                fontWeight: 800,
+                color:
+                  BRAND.darkNavy,
               }}
             >
               Document Details
@@ -363,21 +482,29 @@ export default function VaultDocumentDetailsModal({
             }
             onClick={onClose}
             style={{
-              border: 0,
-              background: "transparent",
-              fontSize: 26,
+              width: 40,
+              height: 40,
+              flexShrink: 0,
+              border:
+                `1px solid ${BRAND.border}`,
+              borderRadius: 12,
+              background:
+                BRAND.white,
+              fontSize: 24,
               lineHeight: 1,
               cursor:
                 isSaving ||
                 isDeleting
                   ? "not-allowed"
                   : "pointer",
-              color: "#64748b",
+              color: BRAND.navy,
             }}
           >
             ×
           </button>
         </div>
+
+        {/* CONTENT */}
 
         <div
           style={{
@@ -386,21 +513,25 @@ export default function VaultDocumentDetailsModal({
         >
           {!isEditing ? (
             <>
+              {/* DOCUMENT SUMMARY */}
+
               <div
                 style={{
                   padding: 18,
                   marginBottom: 20,
                   border:
-                    "1px solid #e7e1ef",
+                    "1px solid #D1EAE8",
                   borderRadius: 16,
-                  background: "#faf8fc",
+                  background:
+                    BRAND.lightTeal,
                 }}
               >
                 <div
                   style={{
                     display: "flex",
                     gap: 14,
-                    alignItems: "flex-start",
+                    alignItems:
+                      "flex-start",
                   }}
                 >
                   <div
@@ -408,20 +539,26 @@ export default function VaultDocumentDetailsModal({
                       minWidth: 48,
                       height: 48,
                       display: "flex",
-                      alignItems: "center",
+                      alignItems:
+                        "center",
                       justifyContent:
                         "center",
                       borderRadius: 12,
-                      background: "#f0eafb",
-                      color: "#6d45a5",
+                      background:
+                        BRAND.white,
+                      border:
+                        "1px solid #D1EAE8",
+                      color:
+                        BRAND.darkTeal,
                       fontSize: 13,
                       fontWeight: 800,
                     }}
                   >
                     {document.fileName
-  .split(".")
-  .pop()
-  ?.toUpperCase() || "FILE"}
+                      .split(".")
+                      .pop()
+                      ?.toUpperCase() ||
+                      "FILE"}
                   </div>
 
                   <div
@@ -435,7 +572,8 @@ export default function VaultDocumentDetailsModal({
                         marginBottom: 6,
                         fontSize: 18,
                         fontWeight: 800,
-                        color: "#172033",
+                        color:
+                          BRAND.darkNavy,
                         wordBreak:
                           "break-word",
                       }}
@@ -448,8 +586,10 @@ export default function VaultDocumentDetailsModal({
                         display: "flex",
                         flexWrap: "wrap",
                         gap: 8,
-                        alignItems: "center",
-                        color: "#64748b",
+                        alignItems:
+                          "center",
+                        color:
+                          BRAND.muted,
                         fontSize: 13,
                       }}
                     >
@@ -470,6 +610,8 @@ export default function VaultDocumentDetailsModal({
                 </div>
               </div>
 
+              {/* NOTES */}
+
               <div
                 style={{
                   marginBottom: 22,
@@ -480,7 +622,8 @@ export default function VaultDocumentDetailsModal({
                     marginBottom: 8,
                     fontSize: 13,
                     fontWeight: 800,
-                    color: "#334155",
+                    color:
+                      BRAND.darkNavy,
                   }}
                 >
                   Notes
@@ -491,11 +634,13 @@ export default function VaultDocumentDetailsModal({
                     minHeight: 80,
                     padding: 14,
                     border:
-                      "1px solid #e5e7eb",
+                      `1px solid ${BRAND.border}`,
                     borderRadius: 12,
+                    background:
+                      BRAND.background,
                     color: hasNotes
-                      ? "#334155"
-                      : "#94a3b8",
+                      ? BRAND.darkNavy
+                      : BRAND.muted,
                     fontSize: 14,
                     lineHeight: 1.6,
                     whiteSpace:
@@ -508,6 +653,8 @@ export default function VaultDocumentDetailsModal({
                 </div>
               </div>
 
+              {/* ERROR */}
+
               {error ? (
                 <div
                   role="alert"
@@ -515,16 +662,19 @@ export default function VaultDocumentDetailsModal({
                     marginBottom: 18,
                     padding: 12,
                     border:
-                      "1px solid #fecaca",
+                      "1px solid #FECACA",
                     borderRadius: 10,
-                    background: "#fef2f2",
-                    color: "#b91c1c",
+                    background:
+                      "#FEF2F2",
+                    color: "#B91C1C",
                     fontSize: 13,
                   }}
                 >
                   {error}
                 </div>
               ) : null}
+
+              {/* VIEW AND DOWNLOAD */}
 
               <div
                 style={{
@@ -541,7 +691,9 @@ export default function VaultDocumentDetailsModal({
                     onView(document)
                   }
                   disabled={isDeleting}
-                  style={secondaryButtonStyle}
+                  style={
+                    secondaryButtonStyle
+                  }
                 >
                   View Document
                 </button>
@@ -552,11 +704,15 @@ export default function VaultDocumentDetailsModal({
                     onDownload(document)
                   }
                   disabled={isDeleting}
-                  style={secondaryButtonStyle}
+                  style={
+                    secondaryButtonStyle
+                  }
                 >
                   Download
                 </button>
               </div>
+
+              {/* DELETE AND EDIT */}
 
               <div
                 style={{
@@ -569,13 +725,16 @@ export default function VaultDocumentDetailsModal({
               >
                 <button
                   type="button"
-                  onClick={handleDelete}
+                  onClick={
+                    handleDelete
+                  }
                   disabled={isDeleting}
                   style={{
                     ...dangerButtonStyle,
-                    opacity: isDeleting
-                      ? 0.6
-                      : 1,
+                    opacity:
+                      isDeleting
+                        ? 0.6
+                        : 1,
                   }}
                 >
                   {isDeleting
@@ -590,7 +749,9 @@ export default function VaultDocumentDetailsModal({
                     setIsEditing(true);
                   }}
                   disabled={isDeleting}
-                  style={primaryButtonStyle}
+                  style={
+                    primaryButtonStyle
+                  }
                 >
                   Edit Details
                 </button>
@@ -598,6 +759,8 @@ export default function VaultDocumentDetailsModal({
             </>
           ) : (
             <>
+              {/* EDIT DOCUMENT TITLE */}
+
               <div
                 style={{
                   marginBottom: 18,
@@ -630,6 +793,8 @@ export default function VaultDocumentDetailsModal({
                 </div>
               </div>
 
+              {/* EDIT CATEGORY */}
+
               <div
                 style={{
                   marginBottom: 18,
@@ -657,8 +822,12 @@ export default function VaultDocumentDetailsModal({
                   {CATEGORY_OPTIONS.map(
                     (option) => (
                       <option
-                        key={option.value}
-                        value={option.value}
+                        key={
+                          option.value
+                        }
+                        value={
+                          option.value
+                        }
                       >
                         {option.label}
                       </option>
@@ -666,6 +835,8 @@ export default function VaultDocumentDetailsModal({
                   )}
                 </select>
               </div>
+
+              {/* EDIT NOTES */}
 
               <div
                 style={{
@@ -680,7 +851,8 @@ export default function VaultDocumentDetailsModal({
                   <span
                     style={{
                       fontWeight: 500,
-                      color: "#64748b",
+                      color:
+                        BRAND.muted,
                     }}
                   >
                     (optional)
@@ -713,6 +885,8 @@ export default function VaultDocumentDetailsModal({
                 </div>
               </div>
 
+              {/* ERROR */}
+
               {error ? (
                 <div
                   role="alert"
@@ -720,16 +894,19 @@ export default function VaultDocumentDetailsModal({
                     marginBottom: 18,
                     padding: 12,
                     border:
-                      "1px solid #fecaca",
+                      "1px solid #FECACA",
                     borderRadius: 10,
-                    background: "#fef2f2",
-                    color: "#b91c1c",
+                    background:
+                      "#FEF2F2",
+                    color: "#B91C1C",
                     fontSize: 13,
                   }}
                 >
                   {error}
                 </div>
               ) : null}
+
+              {/* CANCEL AND SAVE */}
 
               <div
                 style={{
@@ -745,14 +922,18 @@ export default function VaultDocumentDetailsModal({
                     handleCancelEdit
                   }
                   disabled={isSaving}
-                  style={secondaryButtonStyle}
+                  style={
+                    secondaryButtonStyle
+                  }
                 >
                   Cancel
                 </button>
 
                 <button
                   type="button"
-                  onClick={handleSave}
+                  onClick={
+                    handleSave
+                  }
                   disabled={!canSave}
                   style={{
                     ...primaryButtonStyle,
@@ -776,66 +957,3 @@ export default function VaultDocumentDetailsModal({
     </div>
   );
 }
-
-const labelStyle: React.CSSProperties = {
-  display: "block",
-  marginBottom: 7,
-  fontSize: 13,
-  fontWeight: 800,
-  color: "#334155",
-};
-
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  boxSizing: "border-box",
-  padding: "12px 13px",
-  border: "1px solid #d8dee9",
-  borderRadius: 11,
-  background: "#ffffff",
-  color: "#172033",
-  fontSize: 14,
-  outline: "none",
-};
-
-const counterStyle: React.CSSProperties = {
-  marginTop: 5,
-  textAlign: "right",
-  fontSize: 11,
-  color: "#94a3b8",
-};
-
-const primaryButtonStyle: React.CSSProperties = {
-  minHeight: 42,
-  padding: "10px 18px",
-  border: 0,
-  borderRadius: 11,
-  background: "#6d45a5",
-  color: "#ffffff",
-  fontSize: 14,
-  fontWeight: 800,
-  cursor: "pointer",
-};
-
-const secondaryButtonStyle: React.CSSProperties = {
-  minHeight: 42,
-  padding: "10px 16px",
-  border: "1px solid #d8dee9",
-  borderRadius: 11,
-  background: "#ffffff",
-  color: "#4b5563",
-  fontSize: 14,
-  fontWeight: 700,
-  cursor: "pointer",
-};
-
-const dangerButtonStyle: React.CSSProperties = {
-  minHeight: 42,
-  padding: "10px 16px",
-  border: "1px solid #fecaca",
-  borderRadius: 11,
-  background: "#fff7f7",
-  color: "#b42318",
-  fontSize: 14,
-  fontWeight: 700,
-  cursor: "pointer",
-};

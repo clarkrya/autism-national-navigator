@@ -1,6 +1,9 @@
+
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import type { User } from "firebase/auth";
 
 import FamilyOrganizerPendingInvitations from "../../../components/familyOrganizer/FamilyOrganizerPendingInvitations";
 
@@ -9,138 +12,145 @@ import {
   watchAuthState,
 } from "../../../lib/auth";
 
-import {
-  useEffect,
-  useState,
-} from "react";
-
-import type { User } from "firebase/auth";
-
 /*
  * ============================================================
- * FAMILY ORGANIZER INVITATIONS PAGE
+ * AUTIVOYA — FAMILY ORGANIZER INVITATIONS
  * ============================================================
  *
  * Dedicated page for reviewing Family Team invitations.
  *
- * Invitation loading, acceptance, and decline behavior live in
- * FamilyOrganizerPendingInvitations so the same invitation
- * experience can also appear on the main Family Organizer page.
+ * Invitation loading, acceptance, and decline behavior remain
+ * in FamilyOrganizerPendingInvitations.
  *
  * Accepted invitations connect the authenticated Firebase UID
  * to the existing canonical child workspace.
  *
  * The child is never duplicated.
+ *
+ * Branding:
+ * Navy:      #204D6A
+ * Dark Navy: #173B52
+ * Teal:      #58AAA7
+ * Dark Teal: #317E7B
+ * Gold:      #F7AD3F
+ * ============================================================
+ */
+
+const BRAND = {
+  navy: "#204D6A",
+  darkNavy: "#173B52",
+  teal: "#58AAA7",
+  darkTeal: "#317E7B",
+  gold: "#F7AD3F",
+  lightTeal: "#EAF6F5",
+  background: "#F7FAFB",
+  white: "#FFFFFF",
+  muted: "#647B8B",
+  border: "#DCE7EC",
+};
+
+/*
+ * ============================================================
+ * SHARED STYLES
+ * ============================================================
+ */
+
+const cardStyle: React.CSSProperties = {
+  background: BRAND.white,
+  border: `1px solid ${BRAND.border}`,
+  borderRadius: 18,
+  padding: 28,
+  boxShadow: "0 6px 20px rgba(23, 59, 82, 0.04)",
+};
+
+const navigationLinkStyle: React.CSSProperties = {
+  color: BRAND.darkTeal,
+  fontSize: 14,
+  fontWeight: 750,
+  textDecoration: "none",
+};
+
+/*
+ * ============================================================
+ * FAMILY ORGANIZER INVITATIONS PAGE
  * ============================================================
  */
 
 export default function FamilyOrganizerInvitationsPage() {
-  const [
-    currentUser,
-    setCurrentUser,
-  ] = useState<User | null>(
-    getCurrentUser()
-  );
+  const [currentUser, setCurrentUser] =
+    useState<User | null>(getCurrentUser());
 
-  const [
-    authReady,
-    setAuthReady,
-  ] = useState(false);
+  const [authReady, setAuthReady] =
+    useState(false);
 
   /*
-   * ============================================================
-   * AUTH
-   * ============================================================
+   * ==========================================================
+   * AUTHENTICATION
+   * ==========================================================
    */
 
   useEffect(() => {
-    const unsubscribe =
-      watchAuthState(
-        (user) => {
-          setCurrentUser(
-            user
-          );
-
-          setAuthReady(
-            true
-          );
-        }
-      );
+    const unsubscribe = watchAuthState((user) => {
+      setCurrentUser(user);
+      setAuthReady(true);
+    });
 
     return unsubscribe;
   }, []);
 
   /*
-   * ============================================================
+   * ==========================================================
    * PAGE
-   * ============================================================
+   * ==========================================================
    */
 
   return (
     <main
       style={{
-        minHeight:
-          "calc(100vh - 72px)",
-        background:
-          "#F8FAFC",
-        padding:
-          "48px 24px 72px",
+        minHeight: "calc(100vh - 72px)",
+        background: BRAND.background,
+        padding: "48px 24px 72px",
       }}
     >
       <div
         style={{
           width: "100%",
-          maxWidth:
-            "900px",
-          margin:
-            "0 auto",
+          maxWidth: 900,
+          margin: "0 auto",
         }}
       >
         {/* ==================================================
-            HEADER
-        =================================================== */}
+            PAGE HEADER
+        ================================================== */}
 
-        <section
-          style={{
-            marginBottom:
-              "28px",
-          }}
-        >
+        <section style={{ marginBottom: 28 }}>
+          {/* FAMILY ORGANIZER BADGE */}
+
           <div
             style={{
-              display:
-                "inline-flex",
-              alignItems:
-                "center",
-              padding:
-                "6px 10px",
-              borderRadius:
-                "999px",
-              background:
-                "#DBEAFE",
-              color:
-                "#1D4ED8",
-              fontSize:
-                "11px",
+              display: "inline-flex",
+              alignItems: "center",
+              padding: "6px 10px",
+              borderRadius: 999,
+              background: BRAND.lightTeal,
+              color: BRAND.darkTeal,
+              fontSize: 11,
               fontWeight: 800,
-              textTransform:
-                "uppercase",
-              letterSpacing:
-                "0.05em",
-              marginBottom:
-                "16px",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              marginBottom: 16,
             }}
           >
-            Family Organizer
+            Autivoya Family Organizer
           </div>
+
+          {/* PAGE TITLE */}
 
           <h1
             style={{
               margin: 0,
-              color:
-                "#0F172A",
-              fontSize:
-                "36px",
+              color: BRAND.darkNavy,
+              fontSize: 36,
               lineHeight: 1.15,
               fontWeight: 850,
             }}
@@ -148,50 +158,34 @@ export default function FamilyOrganizerInvitationsPage() {
             Family Team Invitations
           </h1>
 
+          {/* PAGE DESCRIPTION */}
+
           <p
             style={{
-              margin:
-                "12px 0 0",
-              maxWidth:
-                "720px",
-              color:
-                "#64748B",
-              fontSize:
-                "16px",
+              margin: "12px 0 0",
+              maxWidth: 720,
+              color: BRAND.muted,
+              fontSize: 16,
               lineHeight: 1.7,
             }}
           >
-            Review invitations to
-            join a child&apos;s shared
-            Myriad Family Organizer.
-            You will continue using
-            your own Myriad account.
+            Review invitations to join a
+            child&apos;s shared Autivoya Family
+            Organizer. You will continue
+            using your own Autivoya account.
           </p>
         </section>
 
         {/* ==================================================
-            AUTH LOADING
-        =================================================== */}
+            AUTHENTICATION LOADING
+        ================================================== */}
 
         {!authReady ? (
-          <section
-            style={{
-              background:
-                "#FFFFFF",
-              border:
-                "1px solid #E2E8F0",
-              borderRadius:
-                "18px",
-              padding:
-                "28px",
-            }}
-          >
+          <section style={cardStyle}>
             <div
               style={{
-                color:
-                  "#64748B",
-                fontSize:
-                  "14px",
+                color: BRAND.muted,
+                fontSize: 14,
               }}
             >
               Loading your account...
@@ -200,75 +194,47 @@ export default function FamilyOrganizerInvitationsPage() {
         ) : null}
 
         {/* ==================================================
-            SIGNED OUT
-        =================================================== */}
+            SIGNED-OUT EXPERIENCE
+        ================================================== */}
 
-        {authReady &&
-        !currentUser ? (
-          <section
-            style={{
-              background:
-                "#FFFFFF",
-              border:
-                "1px solid #E2E8F0",
-              borderRadius:
-                "18px",
-              padding:
-                "28px",
-            }}
-          >
+        {authReady && !currentUser ? (
+          <section style={cardStyle}>
             <h2
               style={{
                 margin: 0,
-                color:
-                  "#0F172A",
-                fontSize:
-                  "21px",
+                color: BRAND.darkNavy,
+                fontSize: 21,
                 fontWeight: 800,
               }}
             >
-              Sign in to view your
-              invitations
+              Sign in to view your invitations
             </h2>
 
             <p
               style={{
-                margin:
-                  "8px 0 0",
-                color:
-                  "#64748B",
-                fontSize:
-                  "14px",
+                margin: "8px 0 0",
+                color: BRAND.muted,
+                fontSize: 14,
                 lineHeight: 1.65,
               }}
             >
-              Sign in with the
-              Myriad account that
-              uses the email address
-              where your Family Team
-              invitation was sent.
+              Sign in with the Autivoya account
+              that uses the email address where
+              your Family Team invitation was sent.
             </p>
 
             <Link
               href="/login"
               style={{
-                display:
-                  "inline-flex",
-                marginTop:
-                  "18px",
-                padding:
-                  "10px 16px",
-                borderRadius:
-                  "10px",
-                background:
-                  "#2563EB",
-                color:
-                  "#FFFFFF",
-                fontSize:
-                  "13px",
+                display: "inline-flex",
+                marginTop: 18,
+                padding: "10px 16px",
+                borderRadius: 10,
+                background: BRAND.darkTeal,
+                color: BRAND.white,
+                fontSize: 13,
                 fontWeight: 800,
-                textDecoration:
-                  "none",
+                textDecoration: "none",
               }}
             >
               Sign In
@@ -277,67 +243,52 @@ export default function FamilyOrganizerInvitationsPage() {
         ) : null}
 
         {/* ==================================================
-            INVITATIONS
-        =================================================== */}
+            FAMILY TEAM INVITATIONS
+        ================================================== */}
 
-        {authReady &&
-        currentUser ? (
+        {authReady && currentUser ? (
           <FamilyOrganizerPendingInvitations />
         ) : null}
 
         {/* ==================================================
-            ACCOUNT SAFETY
-        =================================================== */}
+            ACCOUNT SAFETY INFORMATION
+        ================================================== */}
 
-        {authReady &&
-        currentUser ? (
+        {authReady && currentUser ? (
           <section
             style={{
-              marginTop:
-                "18px",
-              padding:
-                "19px 20px",
-              borderRadius:
-                "14px",
-              background:
-                "#F5F3FF",
-              border:
-                "1px solid #DDD6FE",
+              marginTop: 18,
+              padding: "19px 20px",
+              borderRadius: 14,
+              background: BRAND.lightTeal,
+              border: "1px solid #D1EAE8",
+              borderLeft: `4px solid ${BRAND.teal}`,
             }}
           >
             <div
               style={{
-                color:
-                  "#5B21B6",
-                fontSize:
-                  "13px",
+                color: BRAND.darkTeal,
+                fontSize: 13,
                 fontWeight: 800,
               }}
             >
-              Your account stays
-              separate
+              Your account stays separate
             </div>
 
             <p
               style={{
-                margin:
-                  "6px 0 0",
-                color:
-                  "#64748B",
-                fontSize:
-                  "12px",
+                margin: "6px 0 0",
+                color: BRAND.navy,
+                fontSize: 12,
                 lineHeight: 1.65,
               }}
             >
-              Family Team members
-              use their own Myriad
-              login. Accepting an
-              invitation connects
-              your account to the
-              existing shared child
-              workspace without
-              sharing passwords or
-              creating duplicate
+              Family Team members use their
+              own Autivoya account. Accepting
+              an invitation connects your
+              account to the existing shared
+              child workspace without sharing
+              passwords or creating duplicate
               child information.
             </p>
           </section>
@@ -345,31 +296,19 @@ export default function FamilyOrganizerInvitationsPage() {
 
         {/* ==================================================
             NAVIGATION
-        =================================================== */}
+        ================================================== */}
 
         <div
           style={{
-            marginTop:
-              "28px",
-            display:
-              "flex",
-            flexWrap:
-              "wrap",
-            gap:
-              "18px",
+            marginTop: 28,
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 18,
           }}
         >
           <Link
             href="/family-organizer"
-            style={{
-              color:
-                "#2563EB",
-              fontSize:
-                "14px",
-              fontWeight: 750,
-              textDecoration:
-                "none",
-            }}
+            style={navigationLinkStyle}
           >
             ← Family Organizer
           </Link>
@@ -377,13 +316,8 @@ export default function FamilyOrganizerInvitationsPage() {
           <Link
             href="/family-organizer/family-team"
             style={{
-              color:
-                "#64748B",
-              fontSize:
-                "14px",
-              fontWeight: 750,
-              textDecoration:
-                "none",
+              ...navigationLinkStyle,
+              color: BRAND.navy,
             }}
           >
             Family Team →

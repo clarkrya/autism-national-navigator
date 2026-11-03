@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { signOut } from "firebase/auth";
 import { auth } from "../../lib/firebase";
 import { watchAuthState } from "../../lib/auth";
@@ -21,23 +22,49 @@ type SupportTool = {
   href: string;
 };
 
+/*
+ * ============================================================
+ * AUTIVOYA BRAND COLORS
+ * ============================================================
+ */
+
+const COLORS = {
+  navy: "#204D6A",
+  teal: "#58AAA7",
+  gold: "#F7AD3F",
+  text: "#334155",
+  muted: "#64748B",
+  border: "#E2E8F0",
+  lightTeal: "#EAF7F5",
+};
+
+/*
+ * ============================================================
+ * AUTIVOYA SUPPORT TOOLS
+ * ============================================================
+ *
+ * Updated display names only.
+ * All existing destination URLs are preserved.
+ * ============================================================
+ */
+
 const supportTools: SupportTool[] = [
   {
-    title: "Ask Your Navigator",
+    title: "Ask Your Autivoya Navigator",
     description:
-      "Get personalized guidance based on your family's journey.",
+      "Get personalized answers and guidance based on your family's journey.",
     href: "/navigator",
   },
   {
-    title: "Advanced Personalized Resources",
+    title: "Autivoya Personalized Resources",
     description:
-      "More tailored resources based on your family's needs.",
+      "Discover tailored resources based on your family's needs.",
     href: "/resources",
   },
   {
     title: "Meeting Preparation",
     description:
-      "Prepare questions, priorities, and talking points based on your family's Current Journey.",
+      "Prepare questions, priorities, and talking points based on your family's current journey.",
     href: "/meeting-preparation",
   },
   {
@@ -47,7 +74,7 @@ const supportTools: SupportTool[] = [
     href: "/document-vault",
   },
   {
-    title: "AI Progress Insights",
+    title: "Autivoya Progress Insights",
     description:
       "See patterns and progress across your family's journey.",
     href: "/progress-insights",
@@ -60,6 +87,12 @@ const supportTools: SupportTool[] = [
   },
 ];
 
+/*
+ * ============================================================
+ * STANDARD NAVIGATION LINK
+ * ============================================================
+ */
+
 function NavigationLink({
   href,
   label,
@@ -70,7 +103,7 @@ function NavigationLink({
       href={href}
       onClick={onClick}
       style={{
-        color: "#334155",
+        color: COLORS.text,
         fontSize: "14px",
         fontWeight: 700,
         textDecoration: "none",
@@ -84,6 +117,12 @@ function NavigationLink({
   );
 }
 
+/*
+ * ============================================================
+ * SUPPORT TOOL LINK
+ * ============================================================
+ */
+
 function SupportToolLink({
   tool,
   onClick,
@@ -91,7 +130,10 @@ function SupportToolLink({
   tool: SupportTool;
   onClick: () => void;
 }) {
-  const featured = tool.title === "Ask Your Navigator";
+  // Identify the featured tool by its destination,
+  // so renaming it does not remove its highlight.
+
+  const featured = tool.href === "/navigator";
 
   return (
     <Link
@@ -102,7 +144,9 @@ function SupportToolLink({
         display: "block",
         padding: "11px",
         borderRadius: "9px",
-        background: featured ? "#EFF6FF" : "transparent",
+        background: featured
+          ? COLORS.lightTeal
+          : "transparent",
         textDecoration: "none",
       }}
     >
@@ -116,7 +160,9 @@ function SupportToolLink({
       >
         <span
           style={{
-            color: featured ? "#1D4ED8" : "#334155",
+            color: featured
+              ? COLORS.navy
+              : COLORS.text,
             fontSize: "13px",
             fontWeight: featured ? 800 : 750,
           }}
@@ -129,8 +175,8 @@ function SupportToolLink({
             flexShrink: 0,
             padding: "3px 7px",
             borderRadius: "999px",
-            background: "#DBEAFE",
-            color: "#1D4ED8",
+            background: COLORS.lightTeal,
+            color: COLORS.navy,
             fontSize: "9px",
             fontWeight: 800,
             textTransform: "uppercase",
@@ -144,7 +190,7 @@ function SupportToolLink({
       <div
         style={{
           marginTop: "4px",
-          color: featured ? "#475569" : "#64748B",
+          color: COLORS.muted,
           fontSize: "10px",
           lineHeight: 1.45,
         }}
@@ -155,12 +201,27 @@ function SupportToolLink({
   );
 }
 
+/*
+ * ============================================================
+ * AUTIVOYA APPLICATION HEADER
+ * ============================================================
+ */
+
 export default function AppHeader() {
   const [currentUserEmail, setCurrentUserEmail] =
     useState<string | null>(null);
 
-  const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
-  const [loggingOut, setLoggingOut] = useState(false);
+  const [openMenu, setOpenMenu] =
+    useState<OpenMenu>(null);
+
+  const [loggingOut, setLoggingOut] =
+    useState(false);
+
+  /*
+   * ==========================================================
+   * AUTHENTICATION STATE
+   * ==========================================================
+   */
 
   useEffect(() => {
     const unsubscribe = watchAuthState((user) => {
@@ -169,6 +230,12 @@ export default function AppHeader() {
 
     return () => unsubscribe();
   }, []);
+
+  /*
+   * ==========================================================
+   * CLOSE MENUS WHEN CLICKING OUTSIDE
+   * ==========================================================
+   */
 
   useEffect(() => {
     function handleDocumentClick(event: MouseEvent) {
@@ -182,7 +249,10 @@ export default function AppHeader() {
       }
     }
 
-    document.addEventListener("click", handleDocumentClick);
+    document.addEventListener(
+      "click",
+      handleDocumentClick
+    );
 
     return () => {
       document.removeEventListener(
@@ -192,6 +262,12 @@ export default function AppHeader() {
     };
   }, []);
 
+  /*
+   * ==========================================================
+   * CLOSE MENUS WITH ESCAPE KEY
+   * ==========================================================
+   */
+
   useEffect(() => {
     function handleEscape(event: KeyboardEvent) {
       if (event.key === "Escape") {
@@ -199,12 +275,24 @@ export default function AppHeader() {
       }
     }
 
-    document.addEventListener("keydown", handleEscape);
+    document.addEventListener(
+      "keydown",
+      handleEscape
+    );
 
     return () => {
-      document.removeEventListener("keydown", handleEscape);
+      document.removeEventListener(
+        "keydown",
+        handleEscape
+      );
     };
   }, []);
+
+  /*
+   * ==========================================================
+   * MENU CONTROLS
+   * ==========================================================
+   */
 
   function closeMenus() {
     setOpenMenu(null);
@@ -222,6 +310,12 @@ export default function AppHeader() {
     );
   }
 
+  /*
+   * ==========================================================
+   * LOGOUT
+   * ==========================================================
+   */
+
   async function handleLogout() {
     if (loggingOut) return;
 
@@ -237,14 +331,21 @@ export default function AppHeader() {
     }
   }
 
+  /*
+   * ==========================================================
+   * SHARED MENU STYLES
+   * ==========================================================
+   */
+
   const menuStyle: React.CSSProperties = {
     position: "absolute",
     right: 0,
     top: "calc(100% + 8px)",
     background: "#FFFFFF",
-    border: "1px solid #E2E8F0",
+    border: `1px solid ${COLORS.border}`,
     borderRadius: "14px",
-    boxShadow: "0 12px 30px rgba(15, 23, 42, 0.12)",
+    boxShadow:
+      "0 12px 30px rgba(15, 23, 42, 0.12)",
     padding: "8px",
     overflow: "hidden",
     zIndex: 1001,
@@ -254,8 +355,8 @@ export default function AppHeader() {
     display: "flex",
     alignItems: "center",
     gap: "7px",
-    border: "1px solid #2563EB",
-    background: "#2563EB",
+    border: `1px solid ${COLORS.navy}`,
+    background: COLORS.navy,
     color: "#FFFFFF",
     padding: "9px 14px",
     borderRadius: "9px",
@@ -269,11 +370,17 @@ export default function AppHeader() {
     display: "block",
     padding: "10px 11px",
     borderRadius: "8px",
-    color: "#334155",
+    color: COLORS.text,
     fontSize: "14px",
     fontWeight: 700,
     textDecoration: "none",
   };
+
+  /*
+   * ==========================================================
+   * HEADER RENDER
+   * ==========================================================
+   */
 
   return (
     <header
@@ -283,7 +390,7 @@ export default function AppHeader() {
         zIndex: 1000,
         width: "100%",
         background: "rgba(255, 255, 255, 0.97)",
-        borderBottom: "1px solid #E2E8F0",
+        borderBottom: `1px solid ${COLORS.border}`,
         backdropFilter: "blur(10px)",
       }}
     >
@@ -299,45 +406,65 @@ export default function AppHeader() {
           gap: "20px",
         }}
       >
+        {/* ==================================================
+            AUTIVOYA LOGO AND BRAND
+        ================================================== */}
+
         <Link
           href="/"
           onClick={closeMenus}
+          aria-label="Autivoya home"
           style={{
             display: "flex",
             alignItems: "center",
             gap: "10px",
-            color: "#0F172A",
+            color: COLORS.navy,
             textDecoration: "none",
             minWidth: 0,
           }}
         >
           <div
             style={{
-              width: "38px",
-              height: "38px",
-              borderRadius: "11px",
-              background: "#EFF6FF",
+              width: "48px",
+              height: "48px",
+              borderRadius: "12px",
+              background: "#FFFFFF",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: "21px",
               flexShrink: 0,
+              overflow: "hidden",
             }}
           >
-            🧭
+            <Image
+              src="/autivoya-mark.png"
+              alt="Autivoya family journey symbol"
+              width={48}
+              height={48}
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "contain",
+              }}
+              priority
+            />
           </div>
 
           <div style={{ minWidth: 0 }}>
             <div
               style={{
-                fontSize: "15px",
+                fontSize: "22px",
                 fontWeight: 850,
-                lineHeight: 1.2,
-                color: "#0F172A",
+                lineHeight: 1.15,
+                color: COLORS.navy,
                 whiteSpace: "nowrap",
+                letterSpacing: "-0.5px",
               }}
             >
-              Myriad Autism Journey
+              Autiv
+              <span style={{ color: COLORS.gold }}>
+                oya
+              </span>
             </div>
 
             <div
@@ -345,14 +472,18 @@ export default function AppHeader() {
                 marginTop: "3px",
                 fontSize: "10px",
                 lineHeight: 1.2,
-                color: "#64748B",
+                color: COLORS.muted,
                 whiteSpace: "nowrap",
               }}
             >
-              Embracing the countless ways we thrive.
+              Every journey is unique. Every step matters.
             </div>
           </div>
         </Link>
+
+        {/* ==================================================
+            MAIN NAVIGATION
+        ================================================== */}
 
         <nav
           aria-label="Main navigation"
@@ -370,6 +501,10 @@ export default function AppHeader() {
             onClick={closeMenus}
           />
 
+          {/* ================================================
+              SUPPORT TOOLS DROPDOWN
+          ================================================ */}
+
           <div
             data-header-menu
             style={{ position: "relative" }}
@@ -386,9 +521,9 @@ export default function AppHeader() {
                 border: "none",
                 background:
                   openMenu === "support"
-                    ? "#EFF6FF"
+                    ? COLORS.lightTeal
                     : "transparent",
-                color: "#334155",
+                color: COLORS.text,
                 padding: "8px 10px",
                 borderRadius: "8px",
                 fontSize: "14px",
@@ -398,6 +533,7 @@ export default function AppHeader() {
               }}
             >
               <span>Support Tools</span>
+
               <span
                 aria-hidden="true"
                 style={{ fontSize: "9px" }}
@@ -415,6 +551,8 @@ export default function AppHeader() {
                   maxWidth: "calc(100vw - 32px)",
                 }}
               >
+                {/* AUTIVOYA SUPPORT TOOLS HEADING */}
+
                 <div
                   style={{
                     padding: "10px 11px 12px",
@@ -424,26 +562,28 @@ export default function AppHeader() {
                 >
                   <div
                     style={{
-                      color: "#0F172A",
+                      color: COLORS.navy,
                       fontSize: "13px",
                       fontWeight: 800,
                     }}
                   >
-                    Support Tools
+                    Autivoya Support Tools
                   </div>
 
                   <div
                     style={{
                       marginTop: "4px",
-                      color: "#64748B",
+                      color: COLORS.muted,
                       fontSize: "10px",
                       lineHeight: 1.45,
                     }}
                   >
-                    Personalized tools to support your family's
-                    journey.
+                    Personalized tools to support your
+                    family's journey.
                   </div>
                 </div>
+
+                {/* PREMIUM FEATURE LINKS */}
 
                 {supportTools.map((tool) => (
                   <SupportToolLink
@@ -456,11 +596,17 @@ export default function AppHeader() {
             )}
           </div>
 
+          {/* COMMUNITY */}
+
           <NavigationLink
             href="/community"
             label="Community"
             onClick={closeMenus}
           />
+
+          {/* ================================================
+              ACCOUNT DROPDOWN
+          ================================================ */}
 
           <div
             data-header-menu
@@ -479,6 +625,7 @@ export default function AppHeader() {
               <span>
                 {currentUserEmail ? "Account" : "Log In"}
               </span>
+
               <span
                 aria-hidden="true"
                 style={{ fontSize: "10px" }}
@@ -499,16 +646,19 @@ export default function AppHeader() {
               >
                 {currentUserEmail ? (
                   <>
+                    {/* SIGNED-IN USER */}
+
                     <div
                       style={{
                         padding: "10px 11px 12px",
-                        borderBottom: "1px solid #F1F5F9",
+                        borderBottom:
+                          "1px solid #F1F5F9",
                         marginBottom: "4px",
                       }}
                     >
                       <div
                         style={{
-                          color: "#64748B",
+                          color: COLORS.muted,
                           fontSize: "11px",
                           fontWeight: 800,
                           textTransform: "uppercase",
@@ -521,7 +671,7 @@ export default function AppHeader() {
 
                       <div
                         style={{
-                          color: "#0F172A",
+                          color: COLORS.navy,
                           fontSize: "13px",
                           fontWeight: 700,
                           overflow: "hidden",
@@ -579,6 +729,8 @@ export default function AppHeader() {
                   </>
                 ) : (
                   <>
+                    {/* SIGNED-OUT USER */}
+
                     <Link
                       href="/login"
                       role="menuitem"
@@ -594,7 +746,7 @@ export default function AppHeader() {
                       onClick={closeMenus}
                       style={{
                         ...accountLinkStyle,
-                        color: "#2563EB",
+                        color: COLORS.navy,
                         fontWeight: 800,
                       }}
                     >

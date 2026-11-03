@@ -1,3 +1,4 @@
+
 "use client";
 
 import type {
@@ -7,19 +8,47 @@ import type {
 
 /*
  * ============================================================
- * PROGRESS INSIGHTS CARD
+ * AUTIVOYA — PROGRESS INSIGHTS CARD
  * ============================================================
  *
  * Family-facing summary of progress through the current Journey.
  *
- * This component is presentation-only.
- * Progress calculations happen before the summary reaches the UI.
+ * Presentation only:
+ * - Progress calculations are performed elsewhere.
+ * - This component displays the provided summary.
+ * - Existing data and insight logic remain unchanged.
+ *
+ * Autivoya branding:
+ * Navy:       #204D6A
+ * Dark Navy:  #173B52
+ * Teal:       #58AAA7
+ * Dark Teal:  #317E7B
+ * Gold:       #F7AD3F
  * ============================================================
  */
+
+const BRAND = {
+  navy: "#204D6A",
+  darkNavy: "#173B52",
+  teal: "#58AAA7",
+  darkTeal: "#317E7B",
+  gold: "#F7AD3F",
+  lightTeal: "#EAF6F5",
+  white: "#FFFFFF",
+  background: "#F7FAFB",
+  muted: "#647B8B",
+  border: "#DCE7EC",
+};
 
 type ProgressInsightsCardProps = {
   summary: JourneyProgressSummary;
 };
+
+/*
+ * ============================================================
+ * INSIGHT ICONS
+ * ============================================================
+ */
 
 function getInsightIcon(
   insight: ProgressInsight
@@ -45,6 +74,12 @@ function getInsightIcon(
   }
 }
 
+/*
+ * ============================================================
+ * INSIGHT LABELS
+ * ============================================================
+ */
+
 function getInsightLabel(
   insight: ProgressInsight
 ): string {
@@ -69,6 +104,12 @@ function getInsightLabel(
   }
 }
 
+/*
+ * ============================================================
+ * PROGRESS INSIGHTS CARD
+ * ============================================================
+ */
+
 export default function ProgressInsightsCard({
   summary,
 }: ProgressInsightsCardProps) {
@@ -88,15 +129,16 @@ export default function ProgressInsightsCard({
         width: "100%",
         boxSizing: "border-box",
         padding: 22,
-        border:
-          "1px solid rgba(91, 72, 128, 0.12)",
+        border: `1px solid ${BRAND.border}`,
         borderRadius: 20,
-        background: "#ffffff",
+        background: BRAND.white,
         boxShadow:
-          "0 10px 28px rgba(46, 35, 67, 0.05)",
+          "0 10px 28px rgba(23, 59, 82, 0.06)",
       }}
     >
-      {/* HEADER */}
+      {/* ======================================================
+          HEADER
+      ====================================================== */}
 
       <div
         style={{
@@ -112,17 +154,18 @@ export default function ProgressInsightsCard({
             flex: "1 1 360px",
           }}
         >
+          {/* SECTION BADGE */}
+
           <div
             style={{
               display: "inline-flex",
               alignItems: "center",
               minHeight: 26,
-              padding: "3px 9px",
+              padding: "3px 10px",
               marginBottom: 9,
               borderRadius: 999,
-              background:
-                "rgba(108, 82, 160, 0.09)",
-              color: "#654c91",
+              background: BRAND.lightTeal,
+              color: BRAND.darkTeal,
               fontSize: 10,
               fontWeight: 800,
               letterSpacing: "0.05em",
@@ -132,24 +175,25 @@ export default function ProgressInsightsCard({
             Progress Insights
           </div>
 
+          {/* TITLE */}
+
           <h2
             id="progress-insights-title"
             style={{
               margin: 0,
-              color: "#302738",
+              color: BRAND.darkNavy,
               fontSize: 21,
               lineHeight: 1.25,
               fontWeight: 850,
             }}
           >
-            {displayName}&apos;s Journey
-            progress
+            {displayName}&apos;s Journey progress
           </h2>
 
           <p
             style={{
               margin: "7px 0 0",
-              color: "#766d7b",
+              color: BRAND.muted,
               fontSize: 13,
               lineHeight: 1.55,
             }}
@@ -160,21 +204,22 @@ export default function ProgressInsightsCard({
           </p>
         </div>
 
-        {/* PERCENTAGE */}
+        {/* ====================================================
+            COMPLETION PERCENTAGE
+        ==================================================== */}
 
         <div
           style={{
             minWidth: 96,
             padding: "11px 14px",
             borderRadius: 15,
-            background:
-              "rgba(108, 82, 160, 0.07)",
+            background: BRAND.lightTeal,
             textAlign: "center",
           }}
         >
           <div
             style={{
-              color: "#654c91",
+              color: BRAND.darkTeal,
               fontSize: 24,
               lineHeight: 1,
               fontWeight: 850,
@@ -186,7 +231,7 @@ export default function ProgressInsightsCard({
           <div
             style={{
               marginTop: 5,
-              color: "#817887",
+              color: BRAND.navy,
               fontSize: 10,
               fontWeight: 750,
               textTransform: "uppercase",
@@ -198,7 +243,9 @@ export default function ProgressInsightsCard({
         </div>
       </div>
 
-      {/* PROGRESS BAR */}
+      {/* ======================================================
+          PROGRESS BAR
+      ====================================================== */}
 
       <div
         style={{
@@ -218,8 +265,7 @@ export default function ProgressInsightsCard({
             height: 9,
             overflow: "hidden",
             borderRadius: 999,
-            background:
-              "rgba(108, 82, 160, 0.10)",
+            background: BRAND.lightTeal,
           }}
         >
           <div
@@ -227,15 +273,16 @@ export default function ProgressInsightsCard({
               width: `${counts.completionPercentage}%`,
               height: "100%",
               borderRadius: 999,
-              background: "#654c91",
-              transition:
-                "width 220ms ease",
+              background: BRAND.teal,
+              transition: "width 220ms ease",
             }}
           />
         </div>
       </div>
 
-      {/* COUNTS */}
+      {/* ======================================================
+          TASK COUNTS
+      ====================================================== */}
 
       <div
         style={{
@@ -246,18 +293,19 @@ export default function ProgressInsightsCard({
           marginTop: 16,
         }}
       >
+        {/* COMPLETED TASKS */}
+
         <div
           style={{
             padding: 13,
             borderRadius: 14,
-            background: "#fbfafc",
-            border:
-              "1px solid rgba(91, 72, 128, 0.08)",
+            background: BRAND.background,
+            border: `1px solid ${BRAND.border}`,
           }}
         >
           <div
             style={{
-              color: "#302738",
+              color: BRAND.darkTeal,
               fontSize: 19,
               fontWeight: 850,
             }}
@@ -268,7 +316,7 @@ export default function ProgressInsightsCard({
           <div
             style={{
               marginTop: 3,
-              color: "#817887",
+              color: BRAND.muted,
               fontSize: 11,
               fontWeight: 700,
             }}
@@ -277,18 +325,19 @@ export default function ProgressInsightsCard({
           </div>
         </div>
 
+        {/* REMAINING TASKS */}
+
         <div
           style={{
             padding: 13,
             borderRadius: 14,
-            background: "#fbfafc",
-            border:
-              "1px solid rgba(91, 72, 128, 0.08)",
+            background: BRAND.background,
+            border: `1px solid ${BRAND.border}`,
           }}
         >
           <div
             style={{
-              color: "#302738",
+              color: BRAND.darkNavy,
               fontSize: 19,
               fontWeight: 850,
             }}
@@ -299,7 +348,7 @@ export default function ProgressInsightsCard({
           <div
             style={{
               marginTop: 3,
-              color: "#817887",
+              color: BRAND.muted,
               fontSize: 11,
               fontWeight: 700,
             }}
@@ -308,18 +357,19 @@ export default function ProgressInsightsCard({
           </div>
         </div>
 
+        {/* TOTAL STEPS */}
+
         <div
           style={{
             padding: 13,
             borderRadius: 14,
-            background: "#fbfafc",
-            border:
-              "1px solid rgba(91, 72, 128, 0.08)",
+            background: BRAND.background,
+            border: `1px solid ${BRAND.border}`,
           }}
         >
           <div
             style={{
-              color: "#302738",
+              color: BRAND.navy,
               fontSize: 19,
               fontWeight: 850,
             }}
@@ -330,7 +380,7 @@ export default function ProgressInsightsCard({
           <div
             style={{
               marginTop: 3,
-              color: "#817887",
+              color: BRAND.muted,
               fontSize: 11,
               fontWeight: 700,
             }}
@@ -340,7 +390,9 @@ export default function ProgressInsightsCard({
         </div>
       </div>
 
-      {/* INSIGHTS */}
+      {/* ======================================================
+          PERSONALIZED INSIGHTS
+      ====================================================== */}
 
       {insights.length > 0 ? (
         <div
@@ -359,12 +411,12 @@ export default function ProgressInsightsCard({
                 gap: 12,
                 padding: 15,
                 borderRadius: 15,
-                background:
-                  "rgba(108, 82, 160, 0.045)",
-                border:
-                  "1px solid rgba(108, 82, 160, 0.09)",
+                background: BRAND.lightTeal,
+                border: "1px solid #D1EAE8",
               }}
             >
+              {/* INSIGHT ICON */}
+
               <div
                 aria-hidden="true"
                 style={{
@@ -375,15 +427,16 @@ export default function ProgressInsightsCard({
                   alignItems: "center",
                   justifyContent: "center",
                   borderRadius: 10,
-                  background:
-                    "rgba(108, 82, 160, 0.10)",
-                  color: "#654c91",
+                  background: BRAND.white,
+                  color: BRAND.darkTeal,
                   fontSize: 15,
                   fontWeight: 850,
                 }}
               >
                 {getInsightIcon(insight)}
               </div>
+
+              {/* INSIGHT CONTENT */}
 
               <div
                 style={{
@@ -393,7 +446,7 @@ export default function ProgressInsightsCard({
               >
                 <div
                   style={{
-                    color: "#756a7c",
+                    color: BRAND.darkTeal,
                     fontSize: 9,
                     fontWeight: 800,
                     letterSpacing: "0.05em",
@@ -406,7 +459,7 @@ export default function ProgressInsightsCard({
                 <h3
                   style={{
                     margin: "3px 0 0",
-                    color: "#3b3242",
+                    color: BRAND.darkNavy,
                     fontSize: 14,
                     lineHeight: 1.4,
                     fontWeight: 800,
@@ -418,7 +471,7 @@ export default function ProgressInsightsCard({
                 <p
                   style={{
                     margin: "5px 0 0",
-                    color: "#756d7a",
+                    color: BRAND.muted,
                     fontSize: 12,
                     lineHeight: 1.55,
                   }}
@@ -430,7 +483,7 @@ export default function ProgressInsightsCard({
                   <p
                     style={{
                       margin: "8px 0 0",
-                      color: "#554b5c",
+                      color: BRAND.navy,
                       fontSize: 12,
                       lineHeight: 1.55,
                       fontWeight: 650,
@@ -445,18 +498,20 @@ export default function ProgressInsightsCard({
         </div>
       ) : null}
 
-      {/* SAFETY / CONTEXT NOTE */}
+      {/* ======================================================
+          SAFETY AND CONTEXT NOTE
+      ====================================================== */}
 
       <p
         style={{
           margin: "17px 0 0",
-          color: "#918995",
+          color: BRAND.muted,
           fontSize: 10,
           lineHeight: 1.5,
         }}
       >
         Progress Insights summarize activity
-        within Myriad and are not a clinical,
+        within Autivoya and are not a clinical,
         educational, legal, or benefits
         assessment.
       </p>

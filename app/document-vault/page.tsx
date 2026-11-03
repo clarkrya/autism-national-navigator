@@ -1,3 +1,4 @@
+
 "use client";
 
 import {
@@ -19,14 +20,9 @@ import {
   type User,
 } from "firebase/auth";
 
-import {
-  auth,
-  db,
-} from "../../lib/firebase";
+import { auth, db } from "../../lib/firebase";
 
-import {
-  useAccountEntitlements,
-} from "../../lib/useAccountEntitlements";
+import { useAccountEntitlements } from "../../lib/useAccountEntitlements";
 
 import {
   deleteVaultDocument,
@@ -49,33 +45,39 @@ import {
 } from "../../types/vault";
 
 import VaultDocumentCard from "../../components/vault/VaultDocumentCard";
-
 import VaultUploadModal from "../../components/vault/VaultUploadModal";
-
 import VaultDocumentDetailsModal from "../../components/document-vault/VaultDocumentDetailsModal";
 
 /*
- * ============================================================
- * DOCUMENT VAULT PAGE
- * ============================================================
+ * AUTIVOYA DOCUMENT VAULT
  *
- * Premium family document organization.
+ * Branding:
+ * Navy: #204D6A
+ * Dark Navy: #173B52
+ * Teal: #58AAA7
+ * Gold: #F7AD3F
  *
- * Files:
- * Firebase Storage
- *
- * Metadata:
- * users/{uid}/children/{childId}/vaultDocuments/{documentId}
- *
- * IMPORTANT:
- *
- * UI entitlement checks improve the product experience.
- *
- * Firebase Storage Rules and Firestore Rules remain the
- * actual security boundary for protected Vault data.
- *
- * ============================================================
+ * Document functionality and Firebase
+ * integration are preserved.
  */
+
+const BRAND = {
+  navy: "#204D6A",
+  darkNavy: "#173B52",
+  teal: "#58AAA7",
+  darkTeal: "#317E7B",
+  gold: "#F7AD3F",
+  background: "#F7FAFB",
+  lightTeal: "#EAF6F5",
+  text: "#173B52",
+  muted: "#647B8B",
+  border: "#DCE7EC",
+  white: "#FFFFFF",
+};
+
+const selectedChildStorageKey =
+  "myriad-document-vault-selected-child";
+// Keep the existing key so saved selections continue working.
 
 type SavedChild = {
   id: string;
@@ -108,16 +110,55 @@ function getChildDisplayName(
   return fallback;
 }
 
-const VAULT_SELECTED_CHILD_STORAGE_KEY =
-  "myriad-document-vault-selected-child";
+const pageStyle: React.CSSProperties = {
+  minHeight: "100vh",
+  background: BRAND.background,
+  padding: "38px 20px 70px",
+};
+
+const panelStyle: React.CSSProperties = {
+  background: BRAND.white,
+  border: `1px solid ${BRAND.border}`,
+  borderRadius: 18,
+};
+
+const primaryButtonStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  minHeight: 44,
+  padding: "10px 18px",
+  border: "none",
+  borderRadius: 12,
+  background: BRAND.darkTeal,
+  color: BRAND.white,
+  fontSize: 13,
+  fontWeight: 800,
+  textDecoration: "none",
+  cursor: "pointer",
+};
+
+const secondaryButtonStyle: React.CSSProperties = {
+  ...primaryButtonStyle,
+  background: BRAND.white,
+  color: BRAND.navy,
+  border: `1px solid ${BRAND.border}`,
+};
+
+const premiumBadgeStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  minHeight: 27,
+  padding: "4px 11px",
+  borderRadius: 999,
+  background: BRAND.lightTeal,
+  color: BRAND.darkTeal,
+  fontSize: 11,
+  fontWeight: 800,
+  letterSpacing: "0.04em",
+};
 
 export default function DocumentVaultPage() {
-  /*
-   * ==========================================================
-   * ACCOUNT ENTITLEMENTS
-   * ==========================================================
-   */
-
   const {
     loading: entitlementLoading,
     error: entitlementError,
@@ -126,135 +167,67 @@ export default function DocumentVaultPage() {
     isPremium,
   } = useAccountEntitlements();
 
-  /*
-   * ==========================================================
-   * AUTH USER
-   * ==========================================================
-   */
+  const [user, setUser] =
+    useState<User | null>(null);
 
-  const [
-    user,
-    setUser,
-  ] = useState<User | null>(
-    null
-  );
+  const [authLoading, setAuthLoading] =
+    useState(true);
 
-  const [
-    authLoading,
-    setAuthLoading,
-  ] = useState(true);
+  const [children, setChildren] =
+    useState<SavedChild[]>([]);
 
-  /*
-   * ==========================================================
-   * CHILDREN
-   * ==========================================================
-   */
+  const [selectedChildId, setSelectedChildId] =
+    useState("");
 
-  const [
-    children,
-    setChildren,
-  ] = useState<SavedChild[]>(
-    []
-  );
+  const [childrenLoading, setChildrenLoading] =
+    useState(false);
 
-  const [
-    selectedChildId,
-    setSelectedChildId,
-  ] = useState("");
+  const [documents, setDocuments] =
+    useState<VaultDocument[]>([]);
 
-  const [
-    childrenLoading,
-    setChildrenLoading,
-  ] = useState(false);
+  const [documentsLoading, setDocumentsLoading] =
+    useState(false);
+
+  const [documentError, setDocumentError] =
+    useState("");
+
+  const [uploadOpen, setUploadOpen] =
+    useState(false);
+
+  const [selectedDocument, setSelectedDocument] =
+    useState<VaultDocument | null>(null);
+
+  const [searchTerm, setSearchTerm] =
+    useState("");
+
+  const [categoryFilter, setCategoryFilter] =
+    useState<VaultCategoryFilter>("all");
 
   /*
-   * ==========================================================
-   * DOCUMENTS
-   * ==========================================================
-   */
-
-  const [
-    documents,
-    setDocuments,
-  ] = useState<VaultDocument[]>(
-    []
-  );
-
-  const [
-    documentsLoading,
-    setDocumentsLoading,
-  ] = useState(false);
-
-  const [
-    documentError,
-    setDocumentError,
-  ] = useState("");
-
-  /*
-   * ==========================================================
-   * UI
-   * ==========================================================
-   */
-
-  const [
-    uploadOpen,
-    setUploadOpen,
-  ] = useState(false);
-
-  const [
-    selectedDocument,
-    setSelectedDocument,
-  ] =
-    useState<VaultDocument | null>(
-      null
-    );
-
-  const [
-    searchTerm,
-    setSearchTerm,
-  ] = useState("");
-
-  const [
-    categoryFilter,
-    setCategoryFilter,
-  ] =
-    useState<VaultCategoryFilter>(
-      "all"
-    );
-
-  /*
-   * ==========================================================
    * AUTH LISTENER
-   * ==========================================================
    */
 
   useEffect(() => {
-    const unsubscribe =
-      onAuthStateChanged(
-        auth,
-        (currentUser) => {
-          setUser(currentUser);
-          setAuthLoading(false);
-        }
-      );
+    const unsubscribe = onAuthStateChanged(
+      auth,
+      (currentUser) => {
+        setUser(currentUser);
+        setAuthLoading(false);
+      }
+    );
 
     return unsubscribe;
   }, []);
 
   /*
-   * ==========================================================
-   * LOAD CHILDREN
-   * ==========================================================
+   * LOAD FAMILY MEMBERS
    */
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadChildren() {
-      if (
-        authLoading ||
-        entitlementLoading
-      ) {
+      if (authLoading || entitlementLoading) {
         return;
       }
 
@@ -272,96 +245,65 @@ export default function DocumentVaultPage() {
       setDocumentError("");
 
       try {
-        const snapshot =
-          await getDocs(
-            collection(
-              db,
-              "users",
-              user.uid,
-              "children"
-            )
-          );
+        const snapshot = await getDocs(
+          collection(
+            db,
+            "users",
+            user.uid,
+            "children"
+          )
+        );
 
-        if (cancelled) {
-          return;
-        }
+        if (cancelled) return;
 
         const loadedChildren =
-          snapshot.docs.map(
-            (childDocument) => {
-              const data =
-                childDocument.data() as Record<
-                  string,
-                  unknown
-                >;
+          snapshot.docs.map((childDocument) => {
+            const data =
+              childDocument.data() as Record<
+                string,
+                unknown
+              >;
 
-              return {
-                id: childDocument.id,
-                name:
-                  getChildDisplayName(
-                    data,
-                    "Family member"
-                  ),
-              };
-            }
-          );
+            return {
+              id: childDocument.id,
+              name: getChildDisplayName(
+                data,
+                "Family member"
+              ),
+            };
+          });
 
-        setChildren(
-          loadedChildren
-        );
+        setChildren(loadedChildren);
 
-        setSelectedChildId(
-          (current) => {
-            /*
-             * Keep the current child if
-             * it is still valid.
-             */
+        setSelectedChildId((current) => {
+          if (
+            current &&
+            loadedChildren.some(
+              (child) => child.id === current
+            )
+          ) {
+            return current;
+          }
+
+          if (typeof window !== "undefined") {
+            const savedChildId =
+              window.localStorage.getItem(
+                selectedChildStorageKey
+              );
+
             if (
-              current &&
+              savedChildId &&
               loadedChildren.some(
                 (child) =>
-                  child.id ===
-                  current
+                  child.id === savedChildId
               )
             ) {
-              return current;
+              return savedChildId;
             }
-
-            /*
-             * Restore the last child
-             * selected in Document Vault.
-             */
-            if (
-              typeof window !==
-              "undefined"
-            ) {
-              const savedChildId =
-                window.localStorage.getItem(
-                  VAULT_SELECTED_CHILD_STORAGE_KEY
-                );
-
-              if (
-                savedChildId &&
-                loadedChildren.some(
-                  (child) =>
-                    child.id ===
-                    savedChildId
-                )
-              ) {
-                return savedChildId;
-              }
-            }
-
-            /*
-             * Fall back to the first
-             * available child.
-             */
-            return (
-              loadedChildren[0]
-                ?.id ?? ""
-            );
           }
-        );
+
+          return loadedChildren[0]?.id ?? "";
+        });
       } catch (error) {
         console.error(
           "Unable to load saved children:",
@@ -371,16 +313,13 @@ export default function DocumentVaultPage() {
         if (!cancelled) {
           setChildren([]);
           setSelectedChildId("");
-
           setDocumentError(
             "We couldn't load your saved family members."
           );
         }
       } finally {
         if (!cancelled) {
-          setChildrenLoading(
-            false
-          );
+          setChildrenLoading(false);
         }
       }
     }
@@ -399,9 +338,7 @@ export default function DocumentVaultPage() {
   ]);
 
   /*
-   * ==========================================================
-   * REMEMBER SELECTED CHILD
-   * ==========================================================
+   * REMEMBER SELECTED FAMILY MEMBER
    */
 
   useEffect(() => {
@@ -413,57 +350,49 @@ export default function DocumentVaultPage() {
     }
 
     window.localStorage.setItem(
-      VAULT_SELECTED_CHILD_STORAGE_KEY,
+      selectedChildStorageKey,
       selectedChildId
     );
   }, [selectedChildId]);
 
   /*
-   * ==========================================================
-   * LOAD VAULT DOCUMENTS
-   * ==========================================================
+   * LOAD DOCUMENTS
    */
 
-  const loadDocuments =
-    useCallback(
-      async (
-        uid: string,
-        childId: string
-      ) => {
-        setDocumentsLoading(true);
-        setDocumentError("");
+  const loadDocuments = useCallback(
+    async (uid: string, childId: string) => {
+      setDocumentsLoading(true);
+      setDocumentError("");
 
-        try {
-          const loadedDocuments =
-            await getVaultDocuments(
-              uid,
-              childId
-            );
-
-          setDocuments(
-            sortVaultDocumentsNewestFirst(
-              loadedDocuments
-            )
-          );
-        } catch (error) {
-          console.error(
-            "Unable to load Vault documents:",
-            error
+      try {
+        const loadedDocuments =
+          await getVaultDocuments(
+            uid,
+            childId
           );
 
-          setDocuments([]);
+        setDocuments(
+          sortVaultDocumentsNewestFirst(
+            loadedDocuments
+          )
+        );
+      } catch (error) {
+        console.error(
+          "Unable to load Vault documents:",
+          error
+        );
 
-          setDocumentError(
-            "We couldn't load the documents in this Vault."
-          );
-        } finally {
-          setDocumentsLoading(
-            false
-          );
-        }
-      },
-      []
-    );
+        setDocuments([]);
+
+        setDocumentError(
+          "We couldn't load the documents in this Vault."
+        );
+      } finally {
+        setDocumentsLoading(false);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     if (
@@ -486,11 +415,6 @@ export default function DocumentVaultPage() {
     loadDocuments,
   ]);
 
-  /*
-   * Reset local Vault UI state whenever
-   * the family switches children.
-   */
-
   useEffect(() => {
     setSearchTerm("");
     setCategoryFilter("all");
@@ -499,55 +423,42 @@ export default function DocumentVaultPage() {
   }, [selectedChildId]);
 
   /*
-   * ==========================================================
-   * DERIVED STATE
-   * ==========================================================
+   * DERIVED DATA
    */
 
-  const selectedChild =
-    useMemo(
-      () =>
-        children.find(
-          (child) =>
-            child.id ===
-            selectedChildId
-        ) ?? null,
-      [
-        children,
-        selectedChildId,
-      ]
-    );
+  const selectedChild = useMemo(
+    () =>
+      children.find(
+        (child) =>
+          child.id === selectedChildId
+      ) ?? null,
+    [children, selectedChildId]
+  );
 
-  const visibleDocuments =
-    useMemo(() => {
-      const filtered =
-        filterVaultDocuments(
-          documents,
-          searchTerm,
-          categoryFilter
-        );
-
-      return sortVaultDocumentsNewestFirst(
-        filtered
-      );
-    }, [
+  const visibleDocuments = useMemo(() => {
+    const filtered = filterVaultDocuments(
       documents,
       searchTerm,
-      categoryFilter,
-    ]);
+      categoryFilter
+    );
+
+    return sortVaultDocumentsNewestFirst(
+      filtered
+    );
+  }, [
+    documents,
+    searchTerm,
+    categoryFilter,
+  ]);
 
   /*
-   * ==========================================================
    * DOCUMENT ACTIONS
-   * ==========================================================
    */
 
   async function handleViewDocument(
     document: VaultDocument
   ) {
-    if (!isPremium) {
-      return;
-    }
+    if (!isPremium) return;
 
     setDocumentError("");
 
@@ -577,9 +488,7 @@ export default function DocumentVaultPage() {
   function handleDocumentDetails(
     document: VaultDocument
   ) {
-    if (!isPremium) {
-      return;
-    }
+    if (!isPremium) return;
 
     setDocumentError("");
     setSelectedDocument(document);
@@ -588,9 +497,7 @@ export default function DocumentVaultPage() {
   async function handleDownloadDocument(
     document: VaultDocument
   ) {
-    if (!isPremium) {
-      return;
-    }
+    if (!isPremium) return;
 
     setDocumentError("");
 
@@ -601,20 +508,16 @@ export default function DocumentVaultPage() {
         );
 
       const anchor =
-        window.document.createElement(
-          "a"
-        );
+        window.document.createElement("a");
 
       anchor.href = url;
-
       anchor.download =
         document.fileName ||
         document.title ||
         "document";
 
       anchor.target = "_blank";
-      anchor.rel =
-        "noopener noreferrer";
+      anchor.rel = "noopener noreferrer";
 
       window.document.body.appendChild(
         anchor
@@ -642,9 +545,7 @@ export default function DocumentVaultPage() {
       notes: string;
     }
   ) {
-    if (!isPremium) {
-      return;
-    }
+    if (!isPremium) return;
 
     setDocumentError("");
 
@@ -656,47 +557,35 @@ export default function DocumentVaultPage() {
 
     setDocuments((current) =>
       current.map((item) =>
-        item.id ===
-        updatedDocument.id
+        item.id === updatedDocument.id
           ? updatedDocument
           : item
       )
     );
 
-    setSelectedDocument(
-      updatedDocument
-    );
+    setSelectedDocument(updatedDocument);
   }
 
   async function handleDeleteDocument(
     document: VaultDocument
   ) {
-    if (!isPremium) {
-      return;
-    }
+    if (!isPremium) return;
 
     setDocumentError("");
 
     try {
-      await deleteVaultDocument(
-        document
+      await deleteVaultDocument(document);
+
+      setDocuments((current) =>
+        current.filter(
+          (item) => item.id !== document.id
+        )
       );
 
-      setDocuments(
-        (current) =>
-          current.filter(
-            (item) =>
-              item.id !==
-              document.id
-          )
-      );
-
-      setSelectedDocument(
-        (current) =>
-          current?.id ===
-          document.id
-            ? null
-            : current
+      setSelectedDocument((current) =>
+        current?.id === document.id
+          ? null
+          : current
       );
     } catch (error) {
       console.error(
@@ -715,22 +604,15 @@ export default function DocumentVaultPage() {
   async function handleUploaded(
     document: VaultDocument
   ) {
-    if (!isPremium) {
-      return;
-    }
+    if (!isPremium) return;
 
-    setDocuments(
-      (current) =>
-        sortVaultDocumentsNewestFirst(
-          [
-            document,
-            ...current.filter(
-              (item) =>
-                item.id !==
-                document.id
-            ),
-          ]
-        )
+    setDocuments((current) =>
+      sortVaultDocumentsNewestFirst([
+        document,
+        ...current.filter(
+          (item) => item.id !== document.id
+        ),
+      ])
     );
 
     setSearchTerm("");
@@ -738,92 +620,51 @@ export default function DocumentVaultPage() {
   }
 
   /*
-   * ==========================================================
    * INITIAL LOADING
-   * ==========================================================
    */
 
-  if (
-    authLoading ||
-    entitlementLoading
-  ) {
+  if (authLoading || entitlementLoading) {
     return (
-      <main
-        style={{
-          minHeight: "100vh",
-          background: "#fbfafc",
-          padding: "48px 20px",
-        }}
-      >
+      <main style={pageStyle}>
         <div
           style={{
             maxWidth: 1120,
             margin: "0 auto",
-            color: "#756d7c",
+            color: BRAND.muted,
             fontSize: 14,
           }}
         >
-          Loading Document Vault...
+          Loading Autivoya Document Vault...
         </div>
       </main>
     );
   }
 
   /*
-   * ==========================================================
-   * GUEST
-   * ==========================================================
+   * GUEST VIEW
    */
 
-  if (
-    !isAuthenticated ||
-    !user
-  ) {
+  if (!isAuthenticated || !user) {
     return (
-      <main
-        style={{
-          minHeight: "100vh",
-          background: "#fbfafc",
-          padding: "48px 20px",
-        }}
-      >
+      <main style={pageStyle}>
         <section
           style={{
+            ...panelStyle,
             maxWidth: 760,
             margin: "0 auto",
             padding: 30,
-            border:
-              "1px solid rgba(91, 72, 128, 0.12)",
-            borderRadius: 22,
-            background: "#ffffff",
             boxShadow:
-              "0 10px 30px rgba(46, 35, 67, 0.05)",
+              "0 10px 30px rgba(23,59,82,0.05)",
           }}
         >
-          <div
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              minHeight: 27,
-              padding: "3px 10px",
-              marginBottom: 12,
-              borderRadius: 999,
-              background:
-                "rgba(108, 82, 160, 0.10)",
-              color: "#654c91",
-              fontSize: 11,
-              fontWeight: 800,
-              letterSpacing:
-                "0.04em",
-            }}
-          >
-            DOCUMENT VAULT
+          <div style={premiumBadgeStyle}>
+            AUTIVOYA DOCUMENT VAULT
           </div>
 
           <h1
             style={{
-              margin: 0,
-              color: "#2f2638",
+              margin: "12px 0 0",
+              color: BRAND.darkNavy,
               fontSize: 30,
               lineHeight: 1.2,
             }}
@@ -835,31 +676,21 @@ export default function DocumentVaultPage() {
           <p
             style={{
               margin: "12px 0 0",
-              color: "#716877",
+              color: BRAND.muted,
               fontSize: 15,
               lineHeight: 1.6,
             }}
           >
-            Sign in to access Document
-            Vault and your family's saved
-            information.
+            Sign in to access your Autivoya
+            Document Vault and your family's
+            saved information.
           </p>
 
           <Link
             href="/login"
             style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              minHeight: 44,
+              ...primaryButtonStyle,
               marginTop: 20,
-              padding: "10px 18px",
-              borderRadius: 12,
-              background: "#654c91",
-              color: "#ffffff",
-              fontSize: 13,
-              fontWeight: 800,
-              textDecoration: "none",
             }}
           >
             Sign In
@@ -870,35 +701,24 @@ export default function DocumentVaultPage() {
   }
 
   /*
-   * ==========================================================
    * ENTITLEMENT ERROR
-   * ==========================================================
    */
 
   if (entitlementError) {
     return (
-      <main
-        style={{
-          minHeight: "100vh",
-          background: "#fbfafc",
-          padding: "48px 20px",
-        }}
-      >
+      <main style={pageStyle}>
         <section
           style={{
+            ...panelStyle,
             maxWidth: 760,
             margin: "0 auto",
             padding: 30,
-            border:
-              "1px solid rgba(162, 63, 75, 0.16)",
-            borderRadius: 22,
-            background: "#ffffff",
           }}
         >
           <h1
             style={{
               margin: 0,
-              color: "#2f2638",
+              color: BRAND.darkNavy,
               fontSize: 28,
             }}
           >
@@ -911,7 +731,7 @@ export default function DocumentVaultPage() {
               marginTop: 16,
               padding: "13px 15px",
               borderRadius: 12,
-              background: "#fff2f3",
+              background: "#FFF2F3",
               color: "#913845",
               fontSize: 13,
               lineHeight: 1.55,
@@ -923,14 +743,13 @@ export default function DocumentVaultPage() {
           <p
             style={{
               margin: "14px 0 0",
-              color: "#716877",
+              color: BRAND.muted,
               fontSize: 14,
               lineHeight: 1.6,
             }}
           >
             Please refresh the page and try
-            again before accessing your
-            Vault.
+            again before accessing your Vault.
           </p>
         </section>
       </main>
@@ -938,62 +757,32 @@ export default function DocumentVaultPage() {
   }
 
   /*
-   * ==========================================================
    * FREE ACCOUNT
-   * ==========================================================
    */
 
-  if (
-    isFree ||
-    !isPremium
-  ) {
+  if (isFree || !isPremium) {
     return (
-      <main
-        style={{
-          minHeight: "100vh",
-          background: "#fbfafc",
-          padding: "48px 20px",
-        }}
-      >
+      <main style={pageStyle}>
         <section
           style={{
+            ...panelStyle,
             maxWidth: 820,
             margin: "0 auto",
             padding: 32,
-            border:
-              "1px solid rgba(91, 72, 128, 0.12)",
-            borderRadius: 24,
-            background: "#ffffff",
             boxShadow:
-              "0 12px 34px rgba(46, 35, 67, 0.06)",
+              "0 12px 34px rgba(23,59,82,0.05)",
           }}
         >
-          <div
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              minHeight: 27,
-              padding: "3px 10px",
-              marginBottom: 12,
-              borderRadius: 999,
-              background:
-                "rgba(108, 82, 160, 0.10)",
-              color: "#654c91",
-              fontSize: 11,
-              fontWeight: 800,
-              letterSpacing:
-                "0.04em",
-            }}
-          >
-            PREMIUM FEATURE
+          <div style={premiumBadgeStyle}>
+            AUTIVOYA PREMIUM FEATURE
           </div>
 
           <h1
             style={{
-              margin: 0,
-              color: "#2f2638",
+              margin: "12px 0 0",
+              color: BRAND.darkNavy,
               fontSize:
-                "clamp(28px, 4vw, 38px)",
+                "clamp(28px,4vw,38px)",
               lineHeight: 1.15,
               fontWeight: 850,
             }}
@@ -1005,7 +794,7 @@ export default function DocumentVaultPage() {
             style={{
               maxWidth: 620,
               margin: "13px 0 0",
-              color: "#716877",
+              color: BRAND.muted,
               fontSize: 15,
               lineHeight: 1.65,
             }}
@@ -1013,9 +802,8 @@ export default function DocumentVaultPage() {
             Keep evaluations, school
             documents, therapy records,
             insurance information, and
-            other important family
-            documents organized in one
-            private place.
+            other important family documents
+            organized in one private place.
           </p>
 
           <div
@@ -1023,33 +811,32 @@ export default function DocumentVaultPage() {
               marginTop: 22,
               padding: 18,
               borderRadius: 16,
-              background:
-                "rgba(108, 82, 160, 0.06)",
+              background: BRAND.lightTeal,
               border:
-                "1px solid rgba(108, 82, 160, 0.10)",
+                "1px solid #D1EAE8",
             }}
           >
             <div
               style={{
-                color: "#3d3444",
+                color: BRAND.darkNavy,
                 fontSize: 14,
                 fontWeight: 800,
               }}
             >
-              Included with Premium
+              Included with Autivoya Premium
             </div>
 
             <p
               style={{
                 margin: "7px 0 0",
-                color: "#716877",
+                color: BRAND.muted,
                 fontSize: 13,
                 lineHeight: 1.6,
               }}
             >
-              Premium access is required
-              to upload, view, organize,
-              and remove documents from
+              Premium access is required to
+              upload, view, organize, and
+              remove documents from
               Document Vault.
             </p>
           </div>
@@ -1057,18 +844,8 @@ export default function DocumentVaultPage() {
           <Link
             href="/pricing"
             style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              minHeight: 44,
+              ...primaryButtonStyle,
               marginTop: 22,
-              padding: "10px 18px",
-              borderRadius: 12,
-              background: "#654c91",
-              color: "#ffffff",
-              fontSize: 13,
-              fontWeight: 800,
-              textDecoration: "none",
             }}
           >
             View Premium
@@ -1079,19 +856,11 @@ export default function DocumentVaultPage() {
   }
 
   /*
-   * ==========================================================
-   * PREMIUM VAULT
-   * ==========================================================
+   * PREMIUM DOCUMENT VAULT
    */
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        background: "#fbfafc",
-        padding: "38px 20px 64px",
-      }}
-    >
+    <main style={pageStyle}>
       <div
         style={{
           width: "100%",
@@ -1099,51 +868,29 @@ export default function DocumentVaultPage() {
           margin: "0 auto",
         }}
       >
-        {/* HEADER */}
+        {/* PAGE HEADER */}
 
         <section
           style={{
             display: "flex",
             alignItems: "flex-start",
-            justifyContent:
-              "space-between",
+            justifyContent: "space-between",
             gap: 24,
             flexWrap: "wrap",
             marginBottom: 28,
           }}
         >
-          <div
-            style={{
-              maxWidth: 680,
-            }}
-          >
-            <div
-              style={{
-                display:
-                  "inline-flex",
-                alignItems: "center",
-                minHeight: 27,
-                padding: "3px 10px",
-                marginBottom: 10,
-                borderRadius: 999,
-                background:
-                  "rgba(108, 82, 160, 0.10)",
-                color: "#654c91",
-                fontSize: 11,
-                fontWeight: 800,
-                letterSpacing:
-                  "0.04em",
-              }}
-            >
-              PREMIUM SUPPORT TOOL
+          <div style={{ maxWidth: 680 }}>
+            <div style={premiumBadgeStyle}>
+              AUTIVOYA PREMIUM SUPPORT TOOL
             </div>
 
             <h1
               style={{
-                margin: 0,
-                color: "#2f2638",
+                margin: "12px 0 0",
+                color: BRAND.darkNavy,
                 fontSize:
-                  "clamp(30px, 4vw, 42px)",
+                  "clamp(30px,4vw,42px)",
                 lineHeight: 1.1,
                 fontWeight: 850,
               }}
@@ -1154,14 +901,13 @@ export default function DocumentVaultPage() {
             <p
               style={{
                 margin: "12px 0 0",
-                color: "#716877",
+                color: BRAND.muted,
                 fontSize: 15,
                 lineHeight: 1.65,
               }}
             >
-              Keep important family
-              documents organized in one
-              private place.
+              Keep important family documents
+              organized in one private place.
             </p>
           </div>
 
@@ -1175,43 +921,36 @@ export default function DocumentVaultPage() {
               setUploadOpen(true)
             }
             style={{
+              ...primaryButtonStyle,
               minHeight: 46,
               padding: "11px 18px",
-              border: 0,
-              borderRadius: 13,
+              fontSize: 14,
               background:
                 !selectedChildId ||
                 childrenLoading
-                  ? "#c8bfd6"
-                  : "#654c91",
-              color: "#ffffff",
-              fontSize: 14,
-              fontWeight: 800,
+                  ? "#B9D3D2"
+                  : BRAND.darkTeal,
               cursor:
                 !selectedChildId ||
                 childrenLoading
                   ? "not-allowed"
                   : "pointer",
-              boxShadow:
-                selectedChildId
-                  ? "0 8px 18px rgba(101, 76, 145, 0.18)"
-                  : "none",
+              boxShadow: selectedChildId
+                ? "0 8px 18px rgba(49,126,123,0.18)"
+                : "none",
             }}
           >
             + Add Document
           </button>
         </section>
 
-        {/* CHILD SELECTOR */}
+        {/* FAMILY MEMBER SELECTOR */}
 
         <section
           style={{
+            ...panelStyle,
             marginBottom: 22,
             padding: 20,
-            border:
-              "1px solid rgba(91, 72, 128, 0.12)",
-            borderRadius: 18,
-            background: "#ffffff",
           }}
         >
           <label
@@ -1219,7 +958,7 @@ export default function DocumentVaultPage() {
             style={{
               display: "block",
               marginBottom: 7,
-              color: "#3d3444",
+              color: BRAND.darkNavy,
               fontSize: 13,
               fontWeight: 750,
             }}
@@ -1230,7 +969,7 @@ export default function DocumentVaultPage() {
           {childrenLoading ? (
             <div
               style={{
-                color: "#7b7280",
+                color: BRAND.muted,
                 fontSize: 14,
               }}
             >
@@ -1249,45 +988,41 @@ export default function DocumentVaultPage() {
                 width: "100%",
                 maxWidth: 420,
                 minHeight: 44,
-                boxSizing:
-                  "border-box",
+                boxSizing: "border-box",
                 padding: "10px 12px",
                 border:
-                  "1px solid rgba(91, 72, 128, 0.20)",
+                  `1px solid ${BRAND.border}`,
                 borderRadius: 12,
-                background: "#ffffff",
-                color: "#3d3444",
+                background: BRAND.white,
+                color: BRAND.darkNavy,
                 fontSize: 14,
               }}
             >
-              {children.map(
-                (child) => (
-                  <option
-                    key={child.id}
-                    value={child.id}
-                  >
-                    {child.name}
-                  </option>
-                )
-              )}
+              {children.map((child) => (
+                <option
+                  key={child.id}
+                  value={child.id}
+                >
+                  {child.name}
+                </option>
+              ))}
             </select>
           ) : (
             <div>
               <div
                 style={{
-                  color: "#4d4452",
+                  color: BRAND.darkNavy,
                   fontSize: 14,
                   fontWeight: 700,
                 }}
               >
-                No saved family members
-                found.
+                No saved family members found.
               </div>
 
               <p
                 style={{
                   margin: "6px 0 0",
-                  color: "#817887",
+                  color: BRAND.muted,
                   fontSize: 13,
                   lineHeight: 1.5,
                 }}
@@ -1309,10 +1044,11 @@ export default function DocumentVaultPage() {
                 marginBottom: 22,
                 padding: "18px 20px",
                 borderRadius: 18,
-                background:
-                  "rgba(108, 82, 160, 0.07)",
+                background: BRAND.lightTeal,
                 border:
-                  "1px solid rgba(108, 82, 160, 0.10)",
+                  "1px solid #D1EAE8",
+                borderLeft:
+                  `4px solid ${BRAND.teal}`,
               }}
             >
               <div
@@ -1328,13 +1064,12 @@ export default function DocumentVaultPage() {
                 <div>
                   <div
                     style={{
-                      color: "#817887",
+                      color: BRAND.darkTeal,
                       fontSize: 11,
                       fontWeight: 800,
                       textTransform:
                         "uppercase",
-                      letterSpacing:
-                        "0.04em",
+                      letterSpacing: "0.04em",
                     }}
                   >
                     Viewing Vault
@@ -1343,7 +1078,7 @@ export default function DocumentVaultPage() {
                   <div
                     style={{
                       marginTop: 3,
-                      color: "#3a3041",
+                      color: BRAND.darkNavy,
                       fontSize: 18,
                       fontWeight: 800,
                     }}
@@ -1354,9 +1089,9 @@ export default function DocumentVaultPage() {
 
                 <div
                   style={{
-                    color: "#654c91",
+                    color: BRAND.darkTeal,
                     fontSize: 13,
-                    fontWeight: 750,
+                    fontWeight: 800,
                   }}
                 >
                   {documents.length}{" "}
@@ -1367,7 +1102,7 @@ export default function DocumentVaultPage() {
               </div>
             </section>
 
-            {/* SEARCH */}
+            {/* DOCUMENT SEARCH */}
 
             <section
               style={{
@@ -1387,21 +1122,20 @@ export default function DocumentVaultPage() {
                 style={{
                   width: "100%",
                   minHeight: 46,
-                  boxSizing:
-                    "border-box",
+                  boxSizing: "border-box",
                   padding: "11px 14px",
                   border:
-                    "1px solid rgba(91, 72, 128, 0.16)",
+                    `1px solid ${BRAND.border}`,
                   borderRadius: 13,
-                  background: "#ffffff",
-                  color: "#3d3444",
+                  background: BRAND.white,
+                  color: BRAND.darkNavy,
                   fontSize: 14,
-                  outline: "none",
+                  outlineColor: BRAND.teal,
                 }}
               />
             </section>
 
-            {/* CATEGORY FILTERS */}
+            {/* DOCUMENT CATEGORY FILTERS */}
 
             <section
               aria-label="Document categories"
@@ -1415,29 +1149,24 @@ export default function DocumentVaultPage() {
               <button
                 type="button"
                 onClick={() =>
-                  setCategoryFilter(
-                    "all"
-                  )
+                  setCategoryFilter("all")
                 }
                 style={{
                   minHeight: 36,
                   padding: "7px 12px",
                   border:
-                    categoryFilter ===
-                    "all"
-                      ? "1px solid #654c91"
-                      : "1px solid rgba(91, 72, 128, 0.14)",
+                    categoryFilter === "all"
+                      ? `1px solid ${BRAND.darkTeal}`
+                      : `1px solid ${BRAND.border}`,
                   borderRadius: 999,
                   background:
-                    categoryFilter ===
-                    "all"
-                      ? "#654c91"
-                      : "#ffffff",
+                    categoryFilter === "all"
+                      ? BRAND.darkTeal
+                      : BRAND.white,
                   color:
-                    categoryFilter ===
-                    "all"
-                      ? "#ffffff"
-                      : "#62596a",
+                    categoryFilter === "all"
+                      ? BRAND.white
+                      : BRAND.navy,
                   fontSize: 12,
                   fontWeight: 750,
                   cursor: "pointer",
@@ -1455,8 +1184,7 @@ export default function DocumentVaultPage() {
                     );
 
                   const active =
-                    categoryFilter ===
-                    category;
+                    categoryFilter === category;
 
                   return (
                     <button
@@ -1469,22 +1197,20 @@ export default function DocumentVaultPage() {
                       }
                       style={{
                         minHeight: 36,
-                        padding:
-                          "7px 12px",
+                        padding: "7px 12px",
                         border: active
-                          ? "1px solid #654c91"
-                          : "1px solid rgba(91, 72, 128, 0.14)",
+                          ? `1px solid ${BRAND.darkTeal}`
+                          : `1px solid ${BRAND.border}`,
                         borderRadius: 999,
                         background: active
-                          ? "#654c91"
-                          : "#ffffff",
+                          ? BRAND.darkTeal
+                          : BRAND.white,
                         color: active
-                          ? "#ffffff"
-                          : "#62596a",
+                          ? BRAND.white
+                          : BRAND.navy,
                         fontSize: 12,
                         fontWeight: 750,
-                        cursor:
-                          "pointer",
+                        cursor: "pointer",
                       }}
                     >
                       {
@@ -1499,7 +1225,7 @@ export default function DocumentVaultPage() {
               )}
             </section>
 
-            {/* ERROR */}
+            {/* ERROR MESSAGE */}
 
             {documentError ? (
               <div
@@ -1508,9 +1234,9 @@ export default function DocumentVaultPage() {
                   marginBottom: 20,
                   padding: "12px 14px",
                   borderRadius: 12,
-                  background: "#fff2f3",
+                  background: "#FFF2F3",
                   border:
-                    "1px solid rgba(162, 63, 75, 0.18)",
+                    "1px solid rgba(162,63,75,0.18)",
                   color: "#913845",
                   fontSize: 13,
                   lineHeight: 1.5,
@@ -1525,14 +1251,10 @@ export default function DocumentVaultPage() {
             {documentsLoading ? (
               <section
                 style={{
-                  padding:
-                    "42px 20px",
+                  ...panelStyle,
+                  padding: "42px 20px",
                   textAlign: "center",
-                  border:
-                    "1px solid rgba(91, 72, 128, 0.10)",
-                  borderRadius: 18,
-                  background: "#ffffff",
-                  color: "#817887",
+                  color: BRAND.muted,
                   fontSize: 14,
                 }}
               >
@@ -1541,13 +1263,12 @@ export default function DocumentVaultPage() {
             ) : documents.length === 0 ? (
               <section
                 style={{
-                  padding:
-                    "46px 24px",
+                  padding: "46px 24px",
                   textAlign: "center",
                   border:
-                    "1px dashed rgba(91, 72, 128, 0.22)",
+                    `1px dashed ${BRAND.teal}`,
                   borderRadius: 20,
-                  background: "#ffffff",
+                  background: BRAND.white,
                 }}
               >
                 <div
@@ -1555,17 +1276,13 @@ export default function DocumentVaultPage() {
                   style={{
                     width: 58,
                     height: 58,
-                    margin:
-                      "0 auto 16px",
+                    margin: "0 auto 16px",
                     display: "flex",
-                    alignItems:
-                      "center",
-                    justifyContent:
-                      "center",
+                    alignItems: "center",
+                    justifyContent: "center",
                     borderRadius: 18,
-                    background:
-                      "rgba(108, 82, 160, 0.09)",
-                    color: "#654c91",
+                    background: BRAND.lightTeal,
+                    color: BRAND.darkTeal,
                     fontSize: 25,
                   }}
                 >
@@ -1575,7 +1292,7 @@ export default function DocumentVaultPage() {
                 <h2
                   style={{
                     margin: 0,
-                    color: "#3d3444",
+                    color: BRAND.darkNavy,
                     fontSize: 19,
                   }}
                 >
@@ -1585,19 +1302,17 @@ export default function DocumentVaultPage() {
                 <p
                   style={{
                     maxWidth: 460,
-                    margin:
-                      "8px auto 0",
-                    color: "#817887",
+                    margin: "8px auto 0",
+                    color: BRAND.muted,
                     fontSize: 13,
                     lineHeight: 1.55,
                   }}
                 >
                   Add evaluations, school
-                  documents, therapy
-                  records, insurance
-                  information, or other
-                  important documents for{" "}
-                  {selectedChild.name}.
+                  documents, therapy records,
+                  insurance information, or
+                  other important documents
+                  for {selectedChild.name}.
                 </p>
 
                 <button
@@ -1606,40 +1321,26 @@ export default function DocumentVaultPage() {
                     setUploadOpen(true)
                   }
                   style={{
+                    ...primaryButtonStyle,
                     marginTop: 18,
                     minHeight: 42,
-                    padding:
-                      "9px 16px",
-                    border: 0,
-                    borderRadius: 12,
-                    background:
-                      "#654c91",
-                    color: "#ffffff",
-                    fontSize: 13,
-                    fontWeight: 800,
-                    cursor: "pointer",
                   }}
                 >
                   Add First Document
                 </button>
               </section>
-            ) : visibleDocuments.length ===
-              0 ? (
+            ) : visibleDocuments.length === 0 ? (
               <section
                 style={{
-                  padding:
-                    "42px 20px",
+                  ...panelStyle,
+                  padding: "42px 20px",
                   textAlign: "center",
-                  border:
-                    "1px solid rgba(91, 72, 128, 0.10)",
-                  borderRadius: 18,
-                  background: "#ffffff",
                 }}
               >
                 <h2
                   style={{
                     margin: 0,
-                    color: "#3d3444",
+                    color: BRAND.darkNavy,
                     fontSize: 18,
                   }}
                 >
@@ -1649,7 +1350,7 @@ export default function DocumentVaultPage() {
                 <p
                   style={{
                     margin: "8px 0 0",
-                    color: "#817887",
+                    color: BRAND.muted,
                     fontSize: 13,
                   }}
                 >
@@ -1661,24 +1362,12 @@ export default function DocumentVaultPage() {
                   type="button"
                   onClick={() => {
                     setSearchTerm("");
-                    setCategoryFilter(
-                      "all"
-                    );
+                    setCategoryFilter("all");
                   }}
                   style={{
+                    ...secondaryButtonStyle,
                     marginTop: 16,
                     minHeight: 40,
-                    padding:
-                      "8px 14px",
-                    border:
-                      "1px solid rgba(101, 76, 145, 0.22)",
-                    borderRadius: 11,
-                    background:
-                      "#ffffff",
-                    color: "#654c91",
-                    fontSize: 12,
-                    fontWeight: 750,
-                    cursor: "pointer",
                   }}
                 >
                   Clear filters
@@ -1689,7 +1378,7 @@ export default function DocumentVaultPage() {
                 style={{
                   display: "grid",
                   gridTemplateColumns:
-                    "repeat(auto-fit, minmax(280px, 1fr))",
+                    "repeat(auto-fit,minmax(280px,1fr))",
                   gap: 16,
                 }}
               >
@@ -1697,9 +1386,7 @@ export default function DocumentVaultPage() {
                   (document) => (
                     <VaultDocumentCard
                       key={document.id}
-                      document={
-                        document
-                      }
+                      document={document}
                       onDetails={
                         handleDocumentDetails
                       }
@@ -1724,18 +1411,12 @@ export default function DocumentVaultPage() {
         <VaultUploadModal
           open={uploadOpen}
           userId={user.uid}
-          childId={
-            selectedChild.id
-          }
-          childName={
-            selectedChild.name
-          }
+          childId={selectedChild.id}
+          childName={selectedChild.name}
           onClose={() =>
             setUploadOpen(false)
           }
-          onUploaded={
-            handleUploaded
-          }
+          onUploaded={handleUploaded}
         />
       ) : null}
 
@@ -1743,18 +1424,12 @@ export default function DocumentVaultPage() {
 
       <VaultDocumentDetailsModal
         document={selectedDocument}
-        isOpen={Boolean(
-          selectedDocument
-        )}
+        isOpen={Boolean(selectedDocument)}
         onClose={() =>
           setSelectedDocument(null)
         }
-        onView={
-          handleViewDocument
-        }
-        onDownload={
-          handleDownloadDocument
-        }
+        onView={handleViewDocument}
+        onDownload={handleDownloadDocument}
         onSave={
           handleSaveDocumentDetails
         }

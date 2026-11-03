@@ -1,3 +1,4 @@
+
 "use client";
 
 import {
@@ -31,27 +32,36 @@ import {
   clearPendingJourney,
 } from "../../lib/journeyStorage";
 
-
 /*
  * ============================================================
- * SIGNUP PAGE
+ * AUTIVOYA — SIGNUP PAGE
  * ============================================================
  *
- * Supports returning users to the page they came from.
+ * Creates a free Autivoya account.
  *
- * Examples:
+ * Preserves:
+ * - Firebase email/password authentication
+ * - Password confirmation and validation
+ * - Pending Journey persistence
+ * - Firestore document structure
+ * - Safe returnTo navigation
+ * - Existing Firebase error handling
  *
- * /signup
- * /signup?returnTo=/community
- * /signup?returnTo=/community/abc123
- * /signup?returnTo=/journey
- *
- * IMPORTANT:
- *
- * Only internal application paths are accepted.
  * ============================================================
  */
 
+const BRAND = {
+  navy: "#204D6A",
+  darkNavy: "#173B52",
+  teal: "#58AAA7",
+  darkTeal: "#278482",
+  gold: "#F7AD3F",
+  lightTeal: "#EAF6F5",
+  background: "#F7FAFB",
+  white: "#FFFFFF",
+  muted: "#647B8B",
+  border: "#DCE7EC",
+};
 
 /*
  * ============================================================
@@ -60,49 +70,48 @@ import {
  */
 
 function getSafeReturnTo(
-  value:
-    | string
-    | null
+  value: string | null
 ): string {
-
-  if (
-    !value
-  ) {
-
+  if (!value) {
     return "/journey";
-
   }
 
-
-  /*
-   * Only allow local application paths.
-   */
-
-  if (
-    !value.startsWith("/")
-  ) {
-
+  if (!value.startsWith("/")) {
     return "/journey";
-
   }
 
-
-  /*
-   * Prevent protocol-relative external redirects.
-   */
-
-  if (
-    value.startsWith("//")
-  ) {
-
+  if (value.startsWith("//")) {
     return "/journey";
-
   }
-
 
   return value;
 }
 
+/*
+ * ============================================================
+ * SHARED FIELD STYLES
+ * ============================================================
+ */
+
+const labelStyle: React.CSSProperties = {
+  display: "block",
+  marginBottom: 7,
+  color: BRAND.navy,
+  fontSize: 14,
+  fontWeight: 700,
+};
+
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  boxSizing: "border-box",
+  padding: "13px 14px",
+  borderRadius: 10,
+  border: `1px solid ${BRAND.border}`,
+  background: BRAND.white,
+  fontSize: 16,
+  color: BRAND.darkNavy,
+  outlineColor: BRAND.teal,
+};
 
 /*
  * ============================================================
@@ -111,64 +120,26 @@ function getSafeReturnTo(
  */
 
 export default function SignupPage() {
-
-  const router =
-    useRouter();
-
-
-  const searchParams =
-    useSearchParams();
-
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
   /*
-   * Read the destination directly from the URL.
-   *
-   * This is intentionally NOT stored in React state.
+   * Read the return destination directly from the URL.
+   * This is intentionally not stored in React state.
    */
 
-  const returnTo =
-    getSafeReturnTo(
-      searchParams.get(
-        "returnTo"
-      )
-    );
+  const returnTo = getSafeReturnTo(
+    searchParams.get("returnTo")
+  );
 
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] =
+    useState("");
 
-  const [
-    email,
-    setEmail,
-  ] = useState("");
-
-
-  const [
-    password,
-    setPassword,
-  ] = useState("");
-
-
-  const [
-    confirmPassword,
-    setConfirmPassword,
-  ] = useState("");
-
-
-  const [
-    loading,
-    setLoading,
-  ] = useState(false);
-
-
-  const [
-    error,
-    setError,
-  ] = useState("");
-
-
-  const [
-    message,
-    setMessage,
-  ] = useState("");
-
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
 
   /*
    * ==========================================================
@@ -177,19 +148,11 @@ export default function SignupPage() {
    */
 
   const backLabel =
-    returnTo ===
-    "/community"
-
+    returnTo === "/community"
       ? "← Back to Community"
-
-      : returnTo.startsWith(
-          "/community/"
-        )
-
+      : returnTo.startsWith("/community/")
         ? "← Back to Conversation"
-
         : "← Back";
-
 
   /*
    * ==========================================================
@@ -198,35 +161,17 @@ export default function SignupPage() {
    */
 
   const loginUrl =
-    `/login?returnTo=${encodeURIComponent(
-      returnTo
-    )}`;
-
+    `/login?returnTo=${encodeURIComponent(returnTo)}`;
 
   /*
    * ==========================================================
    * BACK
    * ==========================================================
-   *
-   * Uses the URL value directly.
-   *
-   * This is the important part:
-   *
-   * /signup?returnTo=/community
-   *
-   * will ALWAYS go to:
-   *
-   * /community
    */
 
   function handleBack() {
-
-    router.replace(
-      returnTo
-    );
-
+    router.replace(returnTo);
   }
-
 
   /*
    * ==========================================================
@@ -235,62 +180,35 @@ export default function SignupPage() {
    */
 
   async function handleSignup(
-    event:
-      FormEvent<HTMLFormElement>
+    event: FormEvent<HTMLFormElement>
   ) {
-
     event.preventDefault();
 
     setError("");
-
     setMessage("");
-
     setLoading(true);
 
-
     /*
-     * --------------------------------------------------------
      * PASSWORD VALIDATION
-     * --------------------------------------------------------
      */
 
-    if (
-      password.length < 6
-    ) {
-
+    if (password.length < 6) {
       setError(
         "Your password must be at least 6 characters."
       );
-
       setLoading(false);
-
       return;
-
     }
 
-
-    if (
-      password !==
-      confirmPassword
-    ) {
-
-      setError(
-        "The passwords do not match."
-      );
-
+    if (password !== confirmPassword) {
+      setError("The passwords do not match.");
       setLoading(false);
-
       return;
-
     }
-
 
     try {
-
       /*
-       * ------------------------------------------------------
        * CREATE FIREBASE ACCOUNT
-       * ------------------------------------------------------
        */
 
       const credential =
@@ -300,193 +218,115 @@ export default function SignupPage() {
           password
         );
 
-
-      const user =
-        credential.user;
-
+      const user = credential.user;
 
       /*
-       * ------------------------------------------------------
        * CHECK FOR PENDING JOURNEY
-       * ------------------------------------------------------
        */
 
-      const pendingJourney =
-        getPendingJourney();
-
+      const pendingJourney = getPendingJourney();
 
       /*
-       * ------------------------------------------------------
        * SAVE PENDING JOURNEY
-       * ------------------------------------------------------
        */
 
-      if (
-        pendingJourney
-      ) {
-
+      if (pendingJourney) {
         try {
-
-          const journeyRef =
-            doc(
-              db,
-              "users",
-              user.uid,
-              "journeys",
-              "current"
-            );
-
+          const journeyRef = doc(
+            db,
+            "users",
+            user.uid,
+            "journeys",
+            "current"
+          );
 
           await setDoc(
             journeyRef,
             {
               familyProfile:
                 pendingJourney.familyProfile,
-
               journey:
                 pendingJourney.personalizedJourney,
-
-              updatedAt:
-                Date.now(),
-
-              createdBy:
-                user.uid,
+              updatedAt: Date.now(),
+              createdBy: user.uid,
             },
             {
-              merge:
-                true,
+              merge: true,
             }
           );
 
-
           clearPendingJourney();
-
-        } catch (
-          saveError
-        ) {
-
+        } catch (saveError) {
           console.error(
             "Unable to save pending journey after signup:",
             saveError
           );
-
 
           setError(
             "Your account was created, but we couldn't save your journey yet. Your journey is still being kept temporarily. Please try again."
           );
 
           setLoading(false);
-
           return;
-
         }
-
       }
 
-
       /*
-       * ------------------------------------------------------
        * RETURN TO ORIGINAL PAGE
-       * ------------------------------------------------------
        */
 
-      router.replace(
-        returnTo
-      );
-
-    } catch (
-      error: unknown
-    ) {
-
-      console.error(
-        "Signup error:",
-        error
-      );
-
+      router.replace(returnTo);
+    } catch (error: unknown) {
+      console.error("Signup error:", error);
 
       if (
         error &&
-        typeof error ===
-          "object" &&
+        typeof error === "object" &&
         "code" in error
       ) {
+        const code = String(
+          (error as { code?: unknown }).code
+        );
 
-        const code =
-          String(
-            (
-              error as {
-                code?: unknown;
-              }
-            ).code
-          );
-
-
-        switch (
-          code
-        ) {
-
+        switch (code) {
           case "auth/email-already-in-use":
-
             setError(
               "An account already exists with this email. Try logging in instead."
             );
-
             break;
 
-
           case "auth/invalid-email":
-
             setError(
               "Please enter a valid email address."
             );
-
             break;
 
-
           case "auth/weak-password":
-
             setError(
               "Please choose a stronger password."
             );
-
             break;
 
-
           case "auth/operation-not-allowed":
-
             setError(
               "Email and password accounts are not currently enabled."
             );
-
             break;
 
-
           default:
-
             setError(
               "We couldn't create your account right now. Please try again."
             );
-
         }
-
       } else {
-
         setError(
           "We couldn't create your account right now. Please try again."
         );
-
       }
-
     } finally {
-
-      setLoading(
-        false
-      );
-
+      setLoading(false);
     }
-
   }
-
 
   /*
    * ==========================================================
@@ -495,652 +335,301 @@ export default function SignupPage() {
    */
 
   return (
-
     <main
       style={{
-        minHeight:
-          "calc(100vh - 120px)",
-
-        display:
-          "flex",
-
-        justifyContent:
-          "center",
-
-        alignItems:
-          "center",
-
-        padding:
-          "60px 24px",
-
+        minHeight: "calc(100vh - 120px)",
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        padding: "60px 24px",
         background:
-          "linear-gradient(180deg, #F8FAFC 0%, #FFFFFF 100%)",
+          "linear-gradient(180deg, #F7FAFB 0%, #FFFFFF 100%)",
       }}
     >
-
       <section
         style={{
-          width:
-            "100%",
-
-          maxWidth:
-            "480px",
-
-          background:
-            "#FFFFFF",
-
-          border:
-            "1px solid #E2E8F0",
-
-          borderRadius:
-            "22px",
-
-          padding:
-            "40px",
-
+          width: "100%",
+          maxWidth: 480,
+          boxSizing: "border-box",
+          background: BRAND.white,
+          border: `1px solid ${BRAND.border}`,
+          borderRadius: 22,
+          padding: 40,
           boxShadow:
-            "0 12px 35px rgba(15, 23, 42, 0.08)",
+            "0 12px 35px rgba(23, 59, 82, 0.07)",
         }}
       >
-
         {/* ==================================================
             HEADER
-        =================================================== */}
+        ================================================== */}
 
         <div
           style={{
-            textAlign:
-              "center",
-
-            marginBottom:
-              "30px",
+            textAlign: "center",
+            marginBottom: 30,
           }}
         >
+          {/* AUTIVOYA LOGO MARK */}
 
           <div
             style={{
-              fontSize:
-                "38px",
-
-              marginBottom:
-                "12px",
+              width: 60,
+              height: 60,
+              margin: "0 auto 14px",
+              borderRadius: 18,
+              background: BRAND.lightTeal,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              border: "1px solid #D1EAE8",
             }}
           >
-            🧭
+            <img
+              src="/autivoya-mark.png"
+              alt="Autivoya"
+              style={{
+                width: 48,
+                height: 48,
+                objectFit: "contain",
+              }}
+            />
           </div>
-
 
           <h1
             style={{
-              margin:
-                0,
-
-              color:
-                "#0F172A",
-
-              fontSize:
-                "32px",
-
-              lineHeight:
-                1.2,
-
-              fontWeight:
-                800,
+              margin: 0,
+              color: BRAND.darkNavy,
+              fontSize: 32,
+              lineHeight: 1.2,
+              fontWeight: 800,
             }}
           >
             Create Your Free Account
           </h1>
 
-
           <p
             style={{
-              marginTop:
-                "12px",
-
-              marginBottom:
-                0,
-
-              color:
-                "#64748B",
-
-              fontSize:
-                "16px",
-
-              lineHeight:
-                1.6,
+              marginTop: 12,
+              marginBottom: 0,
+              color: BRAND.muted,
+              fontSize: 16,
+              lineHeight: 1.6,
             }}
           >
-            Save your personalized journey and
-            come back to it anytime.
+            Save your personalized Autivoya Journey
+            and come back to it anytime.
           </p>
-
         </div>
-
 
         {/* ==================================================
             ERROR
-        =================================================== */}
+        ================================================== */}
 
         {error && (
-
           <div
             role="alert"
-
             style={{
-              marginBottom:
-                "20px",
-
-              padding:
-                "13px 15px",
-
-              borderRadius:
-                "10px",
-
-              background:
-                "#FEF2F2",
-
-              border:
-                "1px solid #FECACA",
-
-              color:
-                "#B91C1C",
-
-              fontSize:
-                "14px",
-
-              lineHeight:
-                1.5,
+              marginBottom: 20,
+              padding: "13px 15px",
+              borderRadius: 10,
+              background: "#FEF2F2",
+              border: "1px solid #FECACA",
+              color: "#B91C1C",
+              fontSize: 14,
+              lineHeight: 1.5,
             }}
           >
             {error}
           </div>
-
         )}
-
 
         {/* ==================================================
             MESSAGE
-        =================================================== */}
+        ================================================== */}
 
         {message && (
-
           <div
             role="status"
-
             style={{
-              marginBottom:
-                "20px",
-
-              padding:
-                "13px 15px",
-
-              borderRadius:
-                "10px",
-
-              background:
-                "#ECFDF5",
-
-              border:
-                "1px solid #A7F3D0",
-
-              color:
-                "#047857",
-
-              fontSize:
-                "14px",
-
-              lineHeight:
-                1.5,
+              marginBottom: 20,
+              padding: "13px 15px",
+              borderRadius: 10,
+              background: BRAND.lightTeal,
+              border: "1px solid #C9E7E4",
+              color: BRAND.darkTeal,
+              fontSize: 14,
+              lineHeight: 1.5,
             }}
           >
             {message}
           </div>
-
         )}
-
 
         {/* ==================================================
             FORM
-        =================================================== */}
+        ================================================== */}
 
-        <form
-          onSubmit={
-            handleSignup
-          }
-        >
-
+        <form onSubmit={handleSignup}>
           {/* EMAIL */}
 
-          <div
-            style={{
-              marginBottom:
-                "18px",
-            }}
-          >
-
-            <label
-              htmlFor="email"
-
-              style={{
-                display:
-                  "block",
-
-                marginBottom:
-                  "7px",
-
-                color:
-                  "#334155",
-
-                fontSize:
-                  "14px",
-
-                fontWeight:
-                  700,
-              }}
-            >
+          <div style={{ marginBottom: 18 }}>
+            <label htmlFor="email" style={labelStyle}>
               Email
             </label>
 
-
             <input
               id="email"
-
               type="email"
-
               autoComplete="email"
-
-              value={
-                email
+              value={email}
+              onChange={(event) =>
+                setEmail(event.target.value)
               }
-
-              onChange={(
-                event
-              ) =>
-                setEmail(
-                  event.target.value
-                )
-              }
-
               required
-
               placeholder="you@example.com"
-
-              style={{
-                width:
-                  "100%",
-
-                boxSizing:
-                  "border-box",
-
-                padding:
-                  "13px 14px",
-
-                borderRadius:
-                  "10px",
-
-                border:
-                  "1px solid #CBD5E1",
-
-                fontSize:
-                  "16px",
-
-                color:
-                  "#0F172A",
-
-                outline:
-                  "none",
-              }}
+              style={inputStyle}
             />
-
           </div>
-
 
           {/* PASSWORD */}
 
-          <div
-            style={{
-              marginBottom:
-                "18px",
-            }}
-          >
-
-            <label
-              htmlFor="password"
-
-              style={{
-                display:
-                  "block",
-
-                marginBottom:
-                  "7px",
-
-                color:
-                  "#334155",
-
-                fontSize:
-                  "14px",
-
-                fontWeight:
-                  700,
-              }}
-            >
+          <div style={{ marginBottom: 18 }}>
+            <label htmlFor="password" style={labelStyle}>
               Password
             </label>
 
-
             <input
               id="password"
-
               type="password"
-
               autoComplete="new-password"
-
-              value={
-                password
+              value={password}
+              onChange={(event) =>
+                setPassword(event.target.value)
               }
-
-              onChange={(
-                event
-              ) =>
-                setPassword(
-                  event.target.value
-                )
-              }
-
               required
-
               placeholder="At least 6 characters"
-
-              style={{
-                width:
-                  "100%",
-
-                boxSizing:
-                  "border-box",
-
-                padding:
-                  "13px 14px",
-
-                borderRadius:
-                  "10px",
-
-                border:
-                  "1px solid #CBD5E1",
-
-                fontSize:
-                  "16px",
-
-                color:
-                  "#0F172A",
-
-                outline:
-                  "none",
-              }}
+              style={inputStyle}
             />
-
           </div>
-
 
           {/* CONFIRM PASSWORD */}
 
-          <div
-            style={{
-              marginBottom:
-                "24px",
-            }}
-          >
-
+          <div style={{ marginBottom: 24 }}>
             <label
               htmlFor="confirmPassword"
-
-              style={{
-                display:
-                  "block",
-
-                marginBottom:
-                  "7px",
-
-                color:
-                  "#334155",
-
-                fontSize:
-                  "14px",
-
-                fontWeight:
-                  700,
-              }}
+              style={labelStyle}
             >
               Confirm Password
             </label>
 
-
             <input
               id="confirmPassword"
-
               type="password"
-
               autoComplete="new-password"
-
-              value={
-                confirmPassword
+              value={confirmPassword}
+              onChange={(event) =>
+                setConfirmPassword(event.target.value)
               }
-
-              onChange={(
-                event
-              ) =>
-                setConfirmPassword(
-                  event.target.value
-                )
-              }
-
               required
-
               placeholder="Re-enter your password"
-
-              style={{
-                width:
-                  "100%",
-
-                boxSizing:
-                  "border-box",
-
-                padding:
-                  "13px 14px",
-
-                borderRadius:
-                  "10px",
-
-                border:
-                  "1px solid #CBD5E1",
-
-                fontSize:
-                  "16px",
-
-                color:
-                  "#0F172A",
-
-                outline:
-                  "none",
-              }}
+              style={inputStyle}
             />
-
           </div>
-
 
           {/* CREATE ACCOUNT */}
 
           <button
             type="submit"
-
-            disabled={
-              loading
-            }
-
+            disabled={loading}
             style={{
-              width:
-                "100%",
-
-              padding:
-                "14px 18px",
-
-              borderRadius:
-                "10px",
-
-              border:
-                "none",
-
-              background:
-                loading
-                  ? "#93C5FD"
-                  : "#2563EB",
-
-              color:
-                "#FFFFFF",
-
-              fontSize:
-                "16px",
-
-              fontWeight:
-                800,
-
-              cursor:
-                loading
-                  ? "default"
-                  : "pointer",
+              width: "100%",
+              padding: "14px 18px",
+              borderRadius: 10,
+              border: "none",
+              background: loading
+                ? BRAND.teal
+                : BRAND.darkTeal,
+              color: BRAND.white,
+              fontSize: 16,
+              fontWeight: 800,
+              cursor: loading
+                ? "default"
+                : "pointer",
+              opacity: loading ? 0.75 : 1,
+              boxShadow:
+                "0 5px 14px rgba(39, 132, 130, 0.15)",
             }}
           >
-            {
-              loading
-                ? "Creating Account..."
-                : "Create Free Account"
-            }
+            {loading
+              ? "Creating Account..."
+              : "Create Free Account"}
           </button>
-
         </form>
-
 
         {/* ==================================================
             LOGIN
-        =================================================== */}
+        ================================================== */}
 
         <div
           style={{
-            marginTop:
-              "28px",
-
-            paddingTop:
-              "24px",
-
-            borderTop:
-              "1px solid #E2E8F0",
-
-            textAlign:
-              "center",
+            marginTop: 28,
+            paddingTop: 24,
+            borderTop: `1px solid ${BRAND.border}`,
+            textAlign: "center",
           }}
         >
-
           <p
             style={{
-              margin:
-                0,
-
-              color:
-                "#64748B",
-
-              fontSize:
-                "14px",
+              margin: 0,
+              color: BRAND.muted,
+              fontSize: 14,
             }}
           >
             Already have an account?
           </p>
 
-
           <Link
-            href={
-              loginUrl
-            }
-
+            href={loginUrl}
             style={{
-              display:
-                "inline-block",
-
-              marginTop:
-                "7px",
-
-              color:
-                "#2563EB",
-
-              fontSize:
-                "15px",
-
-              fontWeight:
-                800,
-
-              textDecoration:
-                "none",
+              display: "inline-block",
+              marginTop: 7,
+              color: BRAND.darkTeal,
+              fontSize: 15,
+              fontWeight: 800,
+              textDecoration: "none",
             }}
           >
             Log in
           </Link>
-
         </div>
-
 
         {/* ==================================================
             BACK
-        =================================================== */}
+        ================================================== */}
 
         <div
           style={{
-            marginTop:
-              "28px",
-
-            textAlign:
-              "center",
+            marginTop: 28,
+            textAlign: "center",
           }}
         >
-
           <button
             type="button"
-
-            onClick={
-              handleBack
-            }
-
+            onClick={handleBack}
             style={{
-              border:
-                "none",
-
-              background:
-                "transparent",
-
-              padding:
-                0,
-
-              color:
-                "#64748B",
-
-              fontSize:
-                "13px",
-
-              fontWeight:
-                700,
-
-              cursor:
-                "pointer",
+              border: "none",
+              background: "transparent",
+              padding: 0,
+              color: BRAND.navy,
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: "pointer",
             }}
           >
-            {
-              backLabel
-            }
+            {backLabel}
           </button>
-
         </div>
-
       </section>
-
     </main>
-
   );
-
 }

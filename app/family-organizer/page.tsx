@@ -1,9 +1,9 @@
+
 "use client";
 
 import Link from "next/link";
 
 import FamilyOrganizerWorkspaceSelector from "../../components/familyOrganizer/FamilyOrganizerWorkspaceSelector";
-
 import FamilyOrganizerPendingInvitations from "../../components/familyOrganizer/FamilyOrganizerPendingInvitations";
 
 import {
@@ -12,7 +12,7 @@ import {
 
 /*
  * ============================================================
- * FAMILY ORGANIZER PAGE
+ * AUTIVOYA — FAMILY ORGANIZER
  * ============================================================
  *
  * Premium family coordination workspace.
@@ -20,37 +20,39 @@ import {
  * Family Organizer complements the Journey rather than
  * duplicating Journey functionality.
  *
- * Family Organizer supports:
- *
+ * Supports:
  * 1. Family Team
  * 2. Shared Calendar
  * 3. Support Team
  *
- * The workspace selector supports both:
+ * The workspace selector supports children owned by the
+ * signed-in user and children shared through Family Team.
  *
- * - children owned by the signed-in user
- * - children shared through Family Team
- *
- * Shared children remain canonical under the original owner's
- * UID and are never duplicated into another user's account.
+ * Shared children remain under the original owner's UID.
  * ============================================================
  */
 
+const BRAND = {
+  navy: "#204D6A",
+  darkNavy: "#173B52",
+  teal: "#58AAA7",
+  darkTeal: "#317E7B",
+  gold: "#F7AD3F",
+  lightTeal: "#EAF6F5",
+  background: "#F7FAFB",
+  white: "#FFFFFF",
+  muted: "#647B8B",
+  border: "#DCE7EC",
+};
+
 interface OrganizerFeatureCardProps {
   icon: string;
-
   title: string;
-
   description: string;
-
   details: string[];
-
   href: string;
-
   actionLabel: string;
-
   status?: string;
-
   disabled?: boolean;
 }
 
@@ -73,39 +75,41 @@ function OrganizerFeatureCard({
   return (
     <section
       style={{
-        background: "#FFFFFF",
-        border: "1px solid #E2E8F0",
-        borderRadius: "18px",
-        padding: "26px",
+        background: BRAND.white,
+        border: `1px solid ${BRAND.border}`,
+        borderRadius: 18,
+        padding: 26,
         boxShadow:
-          "0 8px 24px rgba(15, 23, 42, 0.04)",
+          "0 8px 24px rgba(23, 59, 82, 0.05)",
         display: "flex",
         flexDirection: "column",
         height: "100%",
+        boxSizing: "border-box",
       }}
     >
+      {/* ICON AND STATUS */}
+
       <div
         style={{
           display: "flex",
           alignItems: "flex-start",
-          justifyContent:
-            "space-between",
-          gap: "16px",
+          justifyContent: "space-between",
+          gap: 16,
         }}
       >
         <div
+          aria-hidden="true"
           style={{
-            width: "46px",
-            height: "46px",
-            borderRadius: "13px",
-            background: "#EFF6FF",
+            width: 46,
+            height: 46,
+            borderRadius: 13,
+            background: BRAND.lightTeal,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontSize: "21px",
+            fontSize: 21,
             flexShrink: 0,
           }}
-          aria-hidden="true"
         >
           {icon}
         </div>
@@ -114,15 +118,13 @@ function OrganizerFeatureCard({
           <div
             style={{
               padding: "5px 9px",
-              borderRadius: "999px",
-              background: "#F1F5F9",
-              color: "#475569",
-              fontSize: "10px",
+              borderRadius: 999,
+              background: BRAND.background,
+              color: BRAND.navy,
+              fontSize: 10,
               fontWeight: 800,
-              textTransform:
-                "uppercase",
-              letterSpacing:
-                "0.04em",
+              textTransform: "uppercase",
+              letterSpacing: "0.04em",
               whiteSpace: "nowrap",
             }}
           >
@@ -131,11 +133,13 @@ function OrganizerFeatureCard({
         ) : null}
       </div>
 
+      {/* TITLE */}
+
       <h2
         style={{
           margin: "18px 0 0",
-          color: "#0F172A",
-          fontSize: "21px",
+          color: BRAND.darkNavy,
+          fontSize: 21,
           lineHeight: 1.3,
           fontWeight: 800,
         }}
@@ -143,83 +147,80 @@ function OrganizerFeatureCard({
         {title}
       </h2>
 
+      {/* DESCRIPTION */}
+
       <p
         style={{
           margin: "9px 0 0",
-          color: "#64748B",
-          fontSize: "14px",
+          color: BRAND.muted,
+          fontSize: 14,
           lineHeight: 1.65,
         }}
       >
         {description}
       </p>
 
+      {/* FEATURE DETAILS */}
+
       <div
         style={{
-          marginTop: "20px",
-          paddingTop: "18px",
-          borderTop:
-            "1px solid #E2E8F0",
+          marginTop: 20,
+          paddingTop: 18,
+          borderTop: `1px solid ${BRAND.border}`,
           flex: 1,
         }}
       >
-        {details.map(
-          (detail) => (
+        {details.map((detail) => (
+          <div
+            key={detail}
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 9,
+              marginBottom: 11,
+            }}
+          >
             <div
-              key={detail}
+              aria-hidden="true"
               style={{
-                display: "flex",
-                alignItems:
-                  "flex-start",
-                gap: "9px",
-                marginBottom:
-                  "11px",
+                width: 6,
+                height: 6,
+                borderRadius: 999,
+                background: BRAND.teal,
+                marginTop: 7,
+                flexShrink: 0,
+              }}
+            />
+
+            <div
+              style={{
+                color: BRAND.navy,
+                fontSize: 13,
+                lineHeight: 1.55,
               }}
             >
-              <div
-                style={{
-                  width: "6px",
-                  height: "6px",
-                  borderRadius:
-                    "999px",
-                  background:
-                    "#3B82F6",
-                  marginTop: "7px",
-                  flexShrink: 0,
-                }}
-              />
-
-              <div
-                style={{
-                  color: "#475569",
-                  fontSize: "13px",
-                  lineHeight: 1.55,
-                }}
-              >
-                {detail}
-              </div>
+              {detail}
             </div>
-          )
-        )}
+          </div>
+        ))}
       </div>
+
+      {/* ACTION */}
 
       {disabled ? (
         <div
           style={{
-            marginTop: "12px",
+            marginTop: 12,
             width: "100%",
-            boxSizing:
-              "border-box",
+            boxSizing: "border-box",
             display: "flex",
             alignItems: "center",
-            justifyContent:
-              "center",
-            padding:
-              "11px 16px",
-            borderRadius: "10px",
-            background: "#E2E8F0",
-            color: "#64748B",
-            fontSize: "13px",
+            justifyContent: "center",
+            padding: "11px 16px",
+            borderRadius: 10,
+            background: BRAND.border,
+            color: BRAND.muted,
+            fontSize: 13,
             fontWeight: 800,
           }}
         >
@@ -229,23 +230,19 @@ function OrganizerFeatureCard({
         <Link
           href={href}
           style={{
-            marginTop: "12px",
+            marginTop: 12,
             width: "100%",
-            boxSizing:
-              "border-box",
+            boxSizing: "border-box",
             display: "flex",
             alignItems: "center",
-            justifyContent:
-              "center",
-            padding:
-              "11px 16px",
-            borderRadius: "10px",
-            background: "#2563EB",
-            color: "#FFFFFF",
-            fontSize: "13px",
+            justifyContent: "center",
+            padding: "11px 16px",
+            borderRadius: 10,
+            background: BRAND.darkTeal,
+            color: BRAND.white,
+            fontSize: 13,
             fontWeight: 800,
-            textDecoration:
-              "none",
+            textDecoration: "none",
           }}
         >
           {actionLabel}
@@ -257,7 +254,7 @@ function OrganizerFeatureCard({
 
 /*
  * ============================================================
- * PAGE
+ * MAIN FAMILY ORGANIZER PAGE
  * ============================================================
  */
 
@@ -270,68 +267,53 @@ export default function FamilyOrganizerPage() {
     workspaces,
     selectedWorkspace,
     selectWorkspace,
-  } =
-    useFamilyOrganizerWorkspace();
+  } = useFamilyOrganizerWorkspace();
 
-  const hasWorkspace =
-    Boolean(
-      selectedWorkspace
-    );
+  const hasWorkspace = Boolean(selectedWorkspace);
 
   return (
     <main
       style={{
-        minHeight:
-          "calc(100vh - 72px)",
-        background: "#F8FAFC",
-        padding:
-          "48px 24px 72px",
+        minHeight: "calc(100vh - 72px)",
+        background: BRAND.background,
+        padding: "48px 24px 72px",
       }}
     >
       <div
         style={{
           width: "100%",
-          maxWidth: "1100px",
+          maxWidth: 1100,
           margin: "0 auto",
         }}
       >
         {/* ==================================================
             PAGE INTRODUCTION
-        =================================================== */}
+        ================================================== */}
 
-        <section
-          style={{
-            marginBottom: "30px",
-          }}
-        >
+        <section style={{ marginBottom: 30 }}>
           <div
             style={{
-              display:
-                "inline-flex",
+              display: "inline-flex",
               alignItems: "center",
               padding: "6px 10px",
-              borderRadius:
-                "999px",
-              background: "#DBEAFE",
-              color: "#1D4ED8",
-              fontSize: "11px",
+              borderRadius: 999,
+              background: BRAND.lightTeal,
+              color: BRAND.darkTeal,
+              fontSize: 11,
               fontWeight: 800,
-              textTransform:
-                "uppercase",
-              letterSpacing:
-                "0.05em",
-              marginBottom:
-                "16px",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              marginBottom: 16,
             }}
           >
-            Premium
+            Autivoya Premium
           </div>
 
           <h1
             style={{
               margin: 0,
-              color: "#0F172A",
-              fontSize: "36px",
+              color: BRAND.darkNavy,
+              fontSize: 36,
               lineHeight: 1.15,
               fontWeight: 850,
             }}
@@ -341,131 +323,102 @@ export default function FamilyOrganizerPage() {
 
           <p
             style={{
-              margin:
-                "12px 0 0",
-              maxWidth: "760px",
-              color: "#64748B",
-              fontSize: "16px",
+              margin: "12px 0 0",
+              maxWidth: 760,
+              color: BRAND.muted,
+              fontSize: 16,
               lineHeight: 1.7,
             }}
           >
-            Keep the people, dates,
-            and support around your
-            child organized in one
-            place so your family can
-            coordinate more easily.
+            Keep the people, dates, and support
+            around your child organized in one
+            place so your family can coordinate
+            more easily.
           </p>
         </section>
 
         {/* ==================================================
             PENDING INVITATIONS
-        =================================================== */}
+        ================================================== */}
 
-        {authReady &&
-        currentUser ? (
-          <div
-            style={{
-              marginBottom:
-                "24px",
-            }}
-          >
+        {authReady && currentUser ? (
+          <div style={{ marginBottom: 24 }}>
             <FamilyOrganizerPendingInvitations />
           </div>
         ) : null}
 
         {/* ==================================================
-            AUTH / WORKSPACE
-        =================================================== */}
+            AUTHENTICATION / WORKSPACE
+        ================================================== */}
 
         {!authReady ? (
           <section
             style={{
-              background:
-                "#FFFFFF",
-              border:
-                "1px solid #E2E8F0",
-              borderRadius:
-                "16px",
-              padding:
-                "20px 22px",
-              marginBottom:
-                "24px",
+              background: BRAND.white,
+              border: `1px solid ${BRAND.border}`,
+              borderRadius: 16,
+              padding: "20px 22px",
+              marginBottom: 24,
             }}
           >
             <div
               style={{
-                color: "#64748B",
-                fontSize: "13px",
+                color: BRAND.muted,
+                fontSize: 13,
                 fontWeight: 700,
               }}
             >
-              Loading your Family
-              Organizer...
+              Loading your Family Organizer...
             </div>
           </section>
         ) : null}
 
-        {authReady &&
-        !currentUser ? (
+        {authReady && !currentUser ? (
           <section
             style={{
-              background:
-                "#FFFFFF",
-              border:
-                "1px solid #E2E8F0",
-              borderRadius:
-                "16px",
-              padding:
-                "22px",
-              marginBottom:
-                "24px",
+              background: BRAND.white,
+              border: `1px solid ${BRAND.border}`,
+              borderRadius: 16,
+              padding: 22,
+              marginBottom: 24,
             }}
           >
             <div
               style={{
-                color: "#0F172A",
-                fontSize: "16px",
+                color: BRAND.darkNavy,
+                fontSize: 16,
                 fontWeight: 800,
               }}
             >
-              Sign in to use Family
-              Organizer
+              Sign in to use Family Organizer
             </div>
 
             <p
               style={{
-                margin:
-                  "6px 0 0",
-                color: "#64748B",
-                fontSize: "13px",
+                margin: "6px 0 0",
+                color: BRAND.muted,
+                fontSize: 13,
                 lineHeight: 1.6,
               }}
             >
-              Family Organizer uses
-              your Myriad account to
-              connect you with the
-              children you own or
-              have been invited to
-              support.
+              Family Organizer uses your Autivoya
+              account to connect you with the
+              children you own or have been
+              invited to support.
             </p>
 
             <Link
               href="/login"
               style={{
-                display:
-                  "inline-flex",
-                marginTop: "14px",
-                padding:
-                  "9px 14px",
-                borderRadius:
-                  "9px",
-                background:
-                  "#2563EB",
-                color: "#FFFFFF",
-                fontSize: "12px",
+                display: "inline-flex",
+                marginTop: 14,
+                padding: "9px 14px",
+                borderRadius: 9,
+                background: BRAND.darkTeal,
+                color: BRAND.white,
+                fontSize: 12,
                 fontWeight: 800,
-                textDecoration:
-                  "none",
+                textDecoration: "none",
               }}
             >
               Sign In
@@ -473,30 +426,23 @@ export default function FamilyOrganizerPage() {
           </section>
         ) : null}
 
-        {authReady &&
-        currentUser ? (
+        {authReady && currentUser ? (
           <section
             style={{
-              background:
-                "#FFFFFF",
-              border:
-                "1px solid #E2E8F0",
-              borderRadius:
-                "16px",
-              padding:
-                "18px 20px",
-              marginBottom:
-                "24px",
+              background: BRAND.white,
+              border: `1px solid ${BRAND.border}`,
+              borderRadius: 16,
+              padding: "18px 20px",
+              marginBottom: 24,
               boxShadow:
-                "0 4px 14px rgba(15, 23, 42, 0.03)",
+                "0 4px 14px rgba(23, 59, 82, 0.04)",
             }}
           >
             {loading ? (
               <div
                 style={{
-                  color:
-                    "#64748B",
-                  fontSize: "13px",
+                  color: BRAND.muted,
+                  fontSize: 13,
                   fontWeight: 700,
                 }}
               >
@@ -504,13 +450,12 @@ export default function FamilyOrganizerPage() {
               </div>
             ) : null}
 
-            {!loading &&
-            error ? (
+            {!loading && error ? (
               <div
+                role="alert"
                 style={{
-                  color:
-                    "#B91C1C",
-                  fontSize: "12px",
+                  color: "#B91C1C",
+                  fontSize: 12,
                   lineHeight: 1.6,
                 }}
               >
@@ -520,55 +465,46 @@ export default function FamilyOrganizerPage() {
 
             {!loading &&
             !error &&
-            workspaces.length ===
-              0 ? (
+            workspaces.length === 0 ? (
               <div>
                 <div
                   style={{
-                    color:
-                      "#334155",
-                    fontSize: "14px",
+                    color: BRAND.darkNavy,
+                    fontSize: 14,
                     fontWeight: 800,
                   }}
                 >
-                  No child workspace
-                  available
+                  No child workspace available
                 </div>
 
                 <div
                   style={{
-                    marginTop: "5px",
-                    color:
-                      "#64748B",
-                    fontSize: "12px",
+                    marginTop: 5,
+                    color: BRAND.muted,
+                    fontSize: 12,
                     lineHeight: 1.6,
                   }}
                 >
-                  Start a Journey for
-                  a child or accept a
-                  Family Team
-                  invitation to use
-                  Family Organizer.
+                  Start a Journey for a child
+                  or accept a Family Team
+                  invitation to use Family Organizer.
                 </div>
 
                 <div
                   style={{
                     display: "flex",
-                    gap: "14px",
+                    gap: 14,
                     flexWrap: "wrap",
-                    marginTop: "13px",
+                    marginTop: 13,
                   }}
                 >
                   <Link
                     href="/journey"
                     style={{
-                      color:
-                        "#2563EB",
-                      fontSize:
-                        "12px",
+                      color: BRAND.darkTeal,
+                      fontSize: 12,
                       fontWeight: 800,
-                      textDecoration:
-                        "none",
+                      textDecoration: "none",
                     }}
                   >
                     Go to My Journey
@@ -577,13 +513,10 @@ export default function FamilyOrganizerPage() {
                   <Link
                     href="/family-organizer/invitations"
                     style={{
-                      color:
-                        "#7C3AED",
-                      fontSize:
-                        "12px",
+                      color: BRAND.darkTeal,
+                      fontSize: 12,
                       fontWeight: 800,
-                      textDecoration:
-                        "none",
+                      textDecoration: "none",
                     }}
                   >
                     Check Invitations
@@ -594,18 +527,11 @@ export default function FamilyOrganizerPage() {
 
             {!loading &&
             !error &&
-            workspaces.length >
-              0 ? (
+            workspaces.length > 0 ? (
               <FamilyOrganizerWorkspaceSelector
-                workspaces={
-                  workspaces
-                }
-                selectedWorkspace={
-                  selectedWorkspace
-                }
-                onSelect={
-                  selectWorkspace
-                }
+                workspaces={workspaces}
+                selectedWorkspace={selectedWorkspace}
+                onSelect={selectWorkspace}
               />
             ) : null}
           </section>
@@ -613,26 +539,22 @@ export default function FamilyOrganizerPage() {
 
         {/* ==================================================
             ORGANIZER SUMMARY
-        =================================================== */}
+        ================================================== */}
 
         <section
           style={{
             background:
-              "linear-gradient(135deg, #EFF6FF 0%, #F5F3FF 100%)",
-            border:
-              "1px solid #DBEAFE",
-            borderRadius:
-              "18px",
-            padding:
-              "24px 26px",
-            marginBottom:
-              "24px",
+              "linear-gradient(135deg, #EAF6F5 0%, #F7FAFB 100%)",
+            border: "1px solid #D1EAE8",
+            borderRadius: 18,
+            padding: "24px 26px",
+            marginBottom: 24,
           }}
         >
           <div
             style={{
-              color: "#1E3A8A",
-              fontSize: "17px",
+              color: BRAND.darkNavy,
+              fontSize: 17,
               fontWeight: 800,
             }}
           >
@@ -643,20 +565,17 @@ export default function FamilyOrganizerPage() {
 
           <p
             style={{
-              margin:
-                "7px 0 0",
-              color: "#475569",
-              fontSize: "14px",
+              margin: "7px 0 0",
+              color: BRAND.navy,
+              fontSize: 14,
               lineHeight: 1.65,
-              maxWidth: "800px",
+              maxWidth: 800,
             }}
           >
-            Your Journey remains the
-            place for personalized
-            next steps. Family
-            Organizer helps
-            coordinate the people
-            and schedule surrounding
+            Your Journey remains the place
+            for personalized next steps.
+            Family Organizer helps coordinate
+            the people and schedule surrounding
             that Journey.
           </p>
 
@@ -664,24 +583,17 @@ export default function FamilyOrganizerPage() {
           "family_member" ? (
             <div
               style={{
-                marginTop: "13px",
-                display:
-                  "inline-flex",
-                padding:
-                  "6px 9px",
-                borderRadius:
-                  "999px",
-                background:
-                  "#FFFFFF",
-                border:
-                  "1px solid #DDD6FE",
-                color: "#6D28D9",
-                fontSize: "10px",
+                marginTop: 13,
+                display: "inline-flex",
+                padding: "6px 9px",
+                borderRadius: 999,
+                background: BRAND.white,
+                border: "1px solid #D1EAE8",
+                color: BRAND.darkTeal,
+                fontSize: 10,
                 fontWeight: 850,
-                textTransform:
-                  "uppercase",
-                letterSpacing:
-                  "0.04em",
+                textTransform: "uppercase",
+                letterSpacing: "0.04em",
               }}
             >
               Shared Family Access
@@ -691,16 +603,15 @@ export default function FamilyOrganizerPage() {
 
         {/* ==================================================
             FEATURE CARDS
-        =================================================== */}
+        ================================================== */}
 
         <div
           style={{
             display: "grid",
             gridTemplateColumns:
               "repeat(auto-fit, minmax(280px, 1fr))",
-            gap: "18px",
-            alignItems:
-              "stretch",
+            gap: 18,
+            alignItems: "stretch",
           }}
         >
           <OrganizerFeatureCard
@@ -709,15 +620,13 @@ export default function FamilyOrganizerPage() {
             description="Bring the people coordinating your child's care and daily life into one shared family workspace."
             details={[
               "Invite a parent, guardian, grandparent, caregiver, or other family member",
-              "Each person uses their own Myriad login",
+              "Each person uses their own Autivoya account",
               "Shared access connects to the same child rather than creating duplicate profiles",
             ]}
             href="/family-organizer/family-team"
             actionLabel="Manage Family Team"
             status="Sharing"
-            disabled={
-              !hasWorkspace
-            }
+            disabled={!hasWorkspace}
           />
 
           <OrganizerFeatureCard
@@ -732,9 +641,7 @@ export default function FamilyOrganizerPage() {
             href="/family-organizer/calendar"
             actionLabel="Open Calendar"
             status="Calendar"
-            disabled={
-              !hasWorkspace
-            }
+            disabled={!hasWorkspace}
           />
 
           <OrganizerFeatureCard
@@ -749,68 +656,54 @@ export default function FamilyOrganizerPage() {
             href="/family-organizer/support-team"
             actionLabel="View Support Team"
             status="Contacts"
-            disabled={
-              !hasWorkspace
-            }
+            disabled={!hasWorkspace}
           />
         </div>
 
         {/* ==================================================
-            INVITATIONS
-        =================================================== */}
+            FAMILY TEAM INVITATIONS
+        ================================================== */}
 
-        {authReady &&
-        currentUser ? (
+        {authReady && currentUser ? (
           <section
             style={{
-              marginTop: "22px",
-              padding:
-                "19px 21px",
-              borderRadius:
-                "14px",
-              background:
-                "#FFFFFF",
-              border:
-                "1px solid #E2E8F0",
+              marginTop: 22,
+              padding: "19px 21px",
+              borderRadius: 14,
+              background: BRAND.white,
+              border: `1px solid ${BRAND.border}`,
             }}
           >
             <div
               style={{
                 display: "flex",
-                justifyContent:
-                  "space-between",
-                alignItems:
-                  "center",
-                gap: "16px",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 16,
                 flexWrap: "wrap",
               }}
             >
               <div>
                 <div
                   style={{
-                    color:
-                      "#334155",
-                    fontSize: "13px",
+                    color: BRAND.darkNavy,
+                    fontSize: 13,
                     fontWeight: 800,
                   }}
                 >
-                  Family Team
-                  Invitations
+                  Family Team Invitations
                 </div>
 
                 <p
                   style={{
-                    margin:
-                      "5px 0 0",
-                    color:
-                      "#64748B",
-                    fontSize: "12px",
+                    margin: "5px 0 0",
+                    color: BRAND.muted,
+                    fontSize: 12,
                     lineHeight: 1.6,
                   }}
                 >
-                  Review invitations
-                  to join another
-                  child&apos;s shared
+                  Review invitations to join
+                  another child&apos;s shared
                   Family Organizer.
                 </p>
               </div>
@@ -818,19 +711,13 @@ export default function FamilyOrganizerPage() {
               <Link
                 href="/family-organizer/invitations"
                 style={{
-                  padding:
-                    "9px 13px",
-                  borderRadius:
-                    "9px",
-                  background:
-                    "#F5F3FF",
-                  color:
-                    "#6D28D9",
-                  fontSize:
-                    "11px",
+                  padding: "9px 13px",
+                  borderRadius: 9,
+                  background: BRAND.lightTeal,
+                  color: BRAND.darkTeal,
+                  fontSize: 11,
                   fontWeight: 800,
-                  textDecoration:
-                    "none",
+                  textDecoration: "none",
                 }}
               >
                 View Invitations
@@ -840,73 +727,61 @@ export default function FamilyOrganizerPage() {
         ) : null}
 
         {/* ==================================================
-            PRIVACY / ACCESS NOTE
-        =================================================== */}
+            FAMILY ACCESS INFORMATION
+        ================================================== */}
 
         <section
           style={{
-            marginTop: "22px",
-            padding:
-              "19px 21px",
-            borderRadius:
-              "14px",
-            background: "#FFFFFF",
-            border:
-              "1px solid #E2E8F0",
+            marginTop: 22,
+            padding: "19px 21px",
+            borderRadius: 14,
+            background: BRAND.white,
+            border: `1px solid ${BRAND.border}`,
           }}
         >
           <div
             style={{
-              color: "#334155",
-              fontSize: "13px",
+              color: BRAND.darkNavy,
+              fontSize: 13,
               fontWeight: 800,
             }}
           >
-            Family access and Support
-            Team contacts are
-            different
+            Family access and Support Team
+            contacts are different
           </div>
 
           <p
             style={{
-              margin:
-                "6px 0 0",
-              color: "#64748B",
-              fontSize: "12px",
+              margin: "6px 0 0",
+              color: BRAND.muted,
+              fontSize: 12,
               lineHeight: 1.65,
             }}
           >
-            Family Team members may
-            be invited to use their
-            own Myriad account to
-            collaborate around a
-            shared child. Adding
-            someone to the Support
-            Team is for organization
-            only and does not give
-            that person access to
-            your Myriad account or
-            your child&apos;s information.
+            Family Team members may be invited
+            to use their own Autivoya account
+            to collaborate around a shared
+            child. Adding someone to the
+            Support Team is for organization
+            only and does not give that
+            person access to your Autivoya
+            account or your child&apos;s
+            information.
           </p>
         </section>
 
         {/* ==================================================
-            JOURNEY LINK
-        =================================================== */}
+            BACK TO JOURNEY
+        ================================================== */}
 
-        <div
-          style={{
-            marginTop: "28px",
-          }}
-        >
+        <div style={{ marginTop: 28 }}>
           <Link
             href="/journey"
             style={{
-              color: "#2563EB",
-              fontSize: "14px",
+              color: BRAND.darkTeal,
+              fontSize: 14,
               fontWeight: 750,
-              textDecoration:
-                "none",
+              textDecoration: "none",
             }}
           >
             ← Back to My Journey

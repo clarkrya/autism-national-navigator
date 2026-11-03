@@ -1,77 +1,124 @@
-.footer {
-    background: #0f172a;
-    color: white;
-    padding: 70px 24px 40px;
-  }
-  
-  .wrapper {
-    max-width: 1200px;
-    margin: 0 auto;
-  }
-  
+
+/*
+ * ============================================================
+ * AUTIVOYA — FOOTER STYLES
+ * ============================================================
+ *
+ * Navy: #204D6A
+ * Dark Navy: #173B52
+ * Teal: #58AAA7
+ * Gold: #F7AD3F
+ *
+ * Preserves existing CSS class names and responsive layout.
+ * Note: These styles apply only when imported and used
+ * by the Footer component.
+ * ============================================================
+ */
+
+ .footer {
+  background: #173b52;
+  color: #ffffff;
+  padding: 70px 24px 40px;
+}
+
+.wrapper {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.top {
+  display: flex;
+  justify-content: space-between;
+  gap: 60px;
+  flex-wrap: wrap;
+  margin-bottom: 40px;
+}
+
+.brand {
+  max-width: 420px;
+}
+
+.logo {
+  font-size: 28px;
+  font-weight: 800;
+  color: #ffffff;
+  margin-bottom: 18px;
+}
+
+.description {
+  color: #d5e5e9;
+  line-height: 1.8;
+  font-size: 17px;
+}
+
+.links h3 {
+  color: #ffffff;
+  margin-bottom: 18px;
+  font-size: 20px;
+}
+
+.links ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.links li {
+  margin-bottom: 12px;
+}
+
+.links a {
+  color: #d5e5e9;
+  text-decoration: none;
+  transition: color 0.25s ease;
+}
+
+.links a:hover {
+  color: #f7ad3f;
+}
+
+.links a:focus-visible {
+  color: #f7ad3f;
+  outline: 2px solid #f7ad3f;
+  outline-offset: 4px;
+  border-radius: 2px;
+}
+
+.bottom {
+  border-top: 1px solid rgba(255, 255, 255, 0.16);
+  padding-top: 25px;
+  text-align: center;
+  color: #c6d8df;
+  font-size: 15px;
+}
+
+/*
+ * ============================================================
+ * TABLET AND MOBILE
+ * ============================================================
+ */
+
+@media (max-width: 900px) {
   .top {
-    display: flex;
-    justify-content: space-between;
-    gap: 60px;
-    flex-wrap: wrap;
-  
-    margin-bottom: 40px;
+    flex-direction: column;
+    gap: 36px;
   }
-  
-  .brand {
-    max-width: 420px;
+}
+
+@media (max-width: 600px) {
+  .footer {
+    padding: 55px 18px 30px;
   }
-  
+
   .logo {
-    font-size: 28px;
-    font-weight: 800;
-    margin-bottom: 18px;
+    font-size: 26px;
   }
-  
+
   .description {
-    color: #cbd5e1;
-    line-height: 1.8;
-    font-size: 17px;
+    font-size: 16px;
   }
-  
-  .links h3 {
-    margin-bottom: 18px;
-    font-size: 20px;
-  }
-  
-  .links ul {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-  }
-  
-  .links li {
-    margin-bottom: 12px;
-  }
-  
-  .links a {
-    color: #cbd5e1;
-    text-decoration: none;
-    transition: color .25s ease;
-  }
-  
-  .links a:hover {
-    color: white;
-  }
-  
+
   .bottom {
-    border-top: 1px solid rgba(255,255,255,.12);
-    padding-top: 25px;
-    text-align: center;
-  
-    color: #94a3b8;
-    font-size: 15px;
+    font-size: 13px;
   }
-  
-  @media (max-width:900px) {
-  
-  .top{
-      flex-direction:column;
-  }
-  
-  }
+}

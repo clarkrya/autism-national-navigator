@@ -1,13 +1,14 @@
+
 "use client";
 
 import Link from "next/link";
-
 import {
   useCallback,
   useEffect,
   useMemo,
   useState,
 } from "react";
+import type { CSSProperties, FormEvent } from "react";
 
 import FamilyOrganizerWorkspaceSelector from "../../../components/familyOrganizer/FamilyOrganizerWorkspaceSelector";
 
@@ -28,127 +29,71 @@ import type {
 } from "../../../lib/familyOrganizer/familyOrganizerTypes";
 
 /*
- * ============================================================
- * SHARED CALENDAR
- * ============================================================
+ * AUTIVOYA — SHARED CALENDAR
  *
- * Family Organizer shared calendar.
- *
- * Events belong to the canonical child workspace:
- *
+ * Events remain in the canonical child workspace:
  * users/{ownerUserId}/children/{childId}/calendarEvents
  *
- * Authorized Family Team members therefore see and update
- * the SAME calendar while using their own Myriad accounts.
- * ============================================================
+ * Authorized Family Team members access the same calendar.
  */
+
+const BRAND = {
+  navy: "#204D6A",
+  darkNavy: "#173B52",
+  teal: "#58AAA7",
+  darkTeal: "#278482",
+  gold: "#F7AD3F",
+  lightTeal: "#EAF6F5",
+  background: "#F7FAFB",
+  white: "#FFFFFF",
+  muted: "#647B8B",
+  border: "#DCE7EC",
+};
 
 const EVENT_TYPES: {
   value: FamilyOrganizerCalendarEventType;
   label: string;
 }[] = [
-  {
-    value: "appointment",
-    label: "Appointment",
-  },
-  {
-    value: "therapy",
-    label: "Therapy",
-  },
-  {
-    value: "school",
-    label: "School",
-  },
-  {
-    value: "iep",
-    label: "IEP",
-  },
-  {
-    value: "evaluation",
-    label: "Evaluation",
-  },
-  {
-    value: "insurance",
-    label: "Insurance",
-  },
-  {
-    value: "deadline",
-    label: "Deadline",
-  },
-  {
-    value: "meeting",
-    label: "Meeting",
-  },
-  {
-    value: "other",
-    label: "Other",
-  },
+  { value: "appointment", label: "Appointment" },
+  { value: "therapy", label: "Therapy" },
+  { value: "school", label: "School" },
+  { value: "iep", label: "IEP" },
+  { value: "evaluation", label: "Evaluation" },
+  { value: "insurance", label: "Insurance" },
+  { value: "deadline", label: "Deadline" },
+  { value: "meeting", label: "Meeting" },
+  { value: "other", label: "Other" },
 ];
-
-/*
- * ============================================================
- * FORM STATE
- * ============================================================
- */
 
 interface CalendarFormState {
   title: string;
-
-  eventType:
-    FamilyOrganizerCalendarEventType;
-
+  eventType: FamilyOrganizerCalendarEventType;
   date: string;
-
   startTime: string;
-
   endTime: string;
-
   allDay: boolean;
-
   location: string;
-
   notes: string;
 }
 
-function getEmptyForm():
-  CalendarFormState {
+function getEmptyForm(): CalendarFormState {
   return {
     title: "",
-
-    eventType:
-      "appointment",
-
+    eventType: "appointment",
     date: "",
-
-    startTime:
-      "09:00",
-
-    endTime:
-      "10:00",
-
-    allDay:
-      false,
-
+    startTime: "09:00",
+    endTime: "10:00",
+    allDay: false,
     location: "",
-
     notes: "",
   };
 }
-
-/*
- * ============================================================
- * HELPERS
- * ============================================================
- */
 
 function getErrorMessage(
   error: unknown,
   fallback: string
 ): string {
-  if (
-    error instanceof Error &&
-    error.message.trim()
-  ) {
+  if (error instanceof Error && error.message.trim()) {
     return error.message;
   }
 
@@ -156,70 +101,43 @@ function getErrorMessage(
 }
 
 function getEventTypeLabel(
-  eventType:
-    FamilyOrganizerCalendarEventType
+  eventType: FamilyOrganizerCalendarEventType
 ): string {
   return (
-    EVENT_TYPES.find(
-      (item) =>
-        item.value ===
-        eventType
-    )?.label ??
-    "Other"
+    EVENT_TYPES.find((item) => item.value === eventType)
+      ?.label ?? "Other"
   );
 }
 
-function formatEventDate(
-  timestamp: number
-): string {
-  return new Intl.DateTimeFormat(
-    undefined,
-    {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    }
-  ).format(
-    new Date(timestamp)
-  );
+function formatEventDate(timestamp: number): string {
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(timestamp));
 }
 
 function formatEventTime(
-  event:
-    FamilyOrganizerCalendarEvent
+  event: FamilyOrganizerCalendarEvent
 ): string {
   if (event.allDay) {
     return "All day";
   }
 
-  const formatter =
-    new Intl.DateTimeFormat(
-      undefined,
-      {
-        hour: "numeric",
-        minute: "2-digit",
-      }
-    );
+  const formatter = new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
 
-  const start =
-    formatter.format(
-      new Date(
-        event.startAt
-      )
-    );
+  const start = formatter.format(new Date(event.startAt));
 
-  if (
-    typeof event.endAt !==
-    "number"
-  ) {
+  if (typeof event.endAt !== "number") {
     return start;
   }
 
   return `${start} – ${formatter.format(
-    new Date(
-      event.endAt
-    )
+    new Date(event.endAt)
   )}`;
 }
 
@@ -233,413 +151,278 @@ function buildTimestamp(
   }
 
   if (allDay) {
-    const timestamp =
-      new Date(
-        `${date}T00:00:00`
-      ).getTime();
-
-    return timestamp;
+    return new Date(`${date}T00:00:00`).getTime();
   }
 
   if (!time) {
     return Number.NaN;
   }
 
-  return new Date(
-    `${date}T${time}:00`
-  ).getTime();
+  return new Date(`${date}T${time}:00`).getTime();
 }
 
-function toDateInputValue(
-  timestamp: number
-): string {
-  const date =
-    new Date(timestamp);
+function toDateInputValue(timestamp: number): string {
+  const date = new Date(timestamp);
 
-  const year =
-    date.getFullYear();
-
-  const month =
-    String(
-      date.getMonth() + 1
-    ).padStart(
-      2,
-      "0"
-    );
-
-  const day =
-    String(
-      date.getDate()
-    ).padStart(
-      2,
-      "0"
-    );
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
 
   return `${year}-${month}-${day}`;
 }
 
-function toTimeInputValue(
-  timestamp: number
-): string {
-  const date =
-    new Date(timestamp);
+function toTimeInputValue(timestamp: number): string {
+  const date = new Date(timestamp);
 
-  const hours =
-    String(
-      date.getHours()
-    ).padStart(
-      2,
-      "0"
-    );
-
-  const minutes =
-    String(
-      date.getMinutes()
-    ).padStart(
-      2,
-      "0"
-    );
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
 
   return `${hours}:${minutes}`;
 }
 
-/*
- * ============================================================
- * PAGE
- * ============================================================
- */
+const styles: Record<string, CSSProperties> = {
+  card: {
+    background: BRAND.white,
+    border: `1px solid ${BRAND.border}`,
+    borderRadius: 18,
+    padding: 26,
+    marginBottom: 18,
+    boxShadow: "0 8px 24px rgba(23,59,82,0.04)",
+  },
+  heading: {
+    margin: 0,
+    color: BRAND.darkNavy,
+    fontSize: 20,
+    fontWeight: 800,
+  },
+  label: {
+    display: "block",
+    color: BRAND.navy,
+    fontSize: 12,
+    fontWeight: 800,
+    marginBottom: 7,
+  },
+  input: {
+    width: "100%",
+    boxSizing: "border-box",
+    padding: "10px 12px",
+    borderRadius: 9,
+    border: `1px solid ${BRAND.border}`,
+    background: BRAND.white,
+    color: BRAND.darkNavy,
+    fontSize: 14,
+    fontFamily: "inherit",
+  },
+  button: {
+    padding: "11px 17px",
+    border: "none",
+    borderRadius: 10,
+    background: BRAND.darkTeal,
+    color: BRAND.white,
+    fontSize: 13,
+    fontWeight: 800,
+    cursor: "pointer",
+  },
+  link: {
+    color: BRAND.darkTeal,
+    fontSize: 13,
+    fontWeight: 800,
+    textDecoration: "none",
+  },
+  body: {
+    color: BRAND.muted,
+    fontSize: 13,
+    lineHeight: 1.65,
+  },
+  error: {
+    marginTop: 14,
+    padding: "11px 13px",
+    borderRadius: 9,
+    background: "#FEF2F2",
+    border: "1px solid #FECACA",
+    color: "#B91C1C",
+    fontSize: 12,
+  },
+  success: {
+    marginTop: 14,
+    padding: "11px 13px",
+    borderRadius: 9,
+    background: BRAND.lightTeal,
+    border: "1px solid #C9E7E4",
+    color: BRAND.darkTeal,
+    fontSize: 12,
+  },
+};
 
 export default function FamilyOrganizerCalendarPage() {
   const {
     currentUser,
     authReady,
-    loading:
-      loadingWorkspaces,
-    error:
-      workspaceError,
+    loading: loadingWorkspaces,
+    error: workspaceError,
     workspaces,
     selectedWorkspace,
     selectWorkspace,
-  } =
-    useFamilyOrganizerWorkspace();
+  } = useFamilyOrganizerWorkspace();
 
-  const [
-    events,
-    setEvents,
-  ] = useState<
+  const [events, setEvents] = useState<
     FamilyOrganizerCalendarEvent[]
   >([]);
 
-  const [
-    loadingEvents,
-    setLoadingEvents,
-  ] = useState(false);
+  const [loadingEvents, setLoadingEvents] = useState(false);
+  const [calendarError, setCalendarError] = useState("");
 
-  const [
-    calendarError,
-    setCalendarError,
-  ] = useState("");
+  const [form, setForm] = useState<CalendarFormState>(
+    getEmptyForm()
+  );
 
-  const [
-    form,
-    setForm,
-  ] =
-    useState<CalendarFormState>(
-      getEmptyForm()
-    );
-
-  const [
-    editingEventId,
-    setEditingEventId,
-  ] = useState<
+  const [editingEventId, setEditingEventId] = useState<
     string | null
   >(null);
 
-  const [
-    saving,
-    setSaving,
-  ] = useState(false);
-
-  const [
-    deletingEventId,
-    setDeletingEventId,
-  ] = useState("");
-
-  const [
-    formError,
-    setFormError,
-  ] = useState("");
-
-  const [
-    successMessage,
-    setSuccessMessage,
-  ] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [deletingEventId, setDeletingEventId] = useState("");
+  const [formError, setFormError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
 
   /*
-   * ==========================================================
-   * LOAD EVENTS
-   * ==========================================================
+   * LOAD SHARED CALENDAR EVENTS
    */
 
-  const loadEvents =
-    useCallback(
-      async () => {
-        if (
-          !currentUser ||
-          !selectedWorkspace
-        ) {
-          setEvents(
-            []
-          );
+  const loadEvents = useCallback(async () => {
+    if (!currentUser || !selectedWorkspace) {
+      setEvents([]);
+      return;
+    }
 
-          return;
-        }
+    try {
+      setLoadingEvents(true);
+      setCalendarError("");
 
-        try {
-          setLoadingEvents(
-            true
-          );
+      const loadedEvents =
+        await getFamilyOrganizerCalendarEvents(
+          currentUser.uid,
+          selectedWorkspace.ownerUserId,
+          selectedWorkspace.childId
+        );
 
-          setCalendarError(
-            ""
-          );
+      setEvents(loadedEvents);
+    } catch (error) {
+      console.error(
+        "Unable to load Family Organizer calendar:",
+        error
+      );
 
-          const loadedEvents =
-            await getFamilyOrganizerCalendarEvents(
-              currentUser.uid,
-              selectedWorkspace.ownerUserId,
-              selectedWorkspace.childId
-            );
+      setEvents([]);
 
-          setEvents(
-            loadedEvents
-          );
-        } catch (error) {
-          console.error(
-            "Unable to load Family Organizer calendar:",
-            error
-          );
-
-          setEvents(
-            []
-          );
-
-          setCalendarError(
-            getErrorMessage(
-              error,
-              "We couldn't load the shared calendar right now."
-            )
-          );
-        } finally {
-          setLoadingEvents(
-            false
-          );
-        }
-      },
-      [
-        currentUser,
-        selectedWorkspace,
-      ]
-    );
+      setCalendarError(
+        getErrorMessage(
+          error,
+          "We couldn't load the shared calendar right now."
+        )
+      );
+    } finally {
+      setLoadingEvents(false);
+    }
+  }, [currentUser, selectedWorkspace]);
 
   useEffect(() => {
     void loadEvents();
-  }, [
-    loadEvents,
-  ]);
+  }, [loadEvents]);
 
   /*
-   * ==========================================================
-   * RESET FORM WHEN CHILD CHANGES
-   * ==========================================================
+   * RESET FORM WHEN CHILD WORKSPACE CHANGES
    */
 
   useEffect(() => {
-    setForm(
-      getEmptyForm()
-    );
-
-    setEditingEventId(
-      null
-    );
-
-    setFormError(
-      ""
-    );
-
-    setSuccessMessage(
-      ""
-    );
-
-    setCalendarError(
-      ""
-    );
+    setForm(getEmptyForm());
+    setEditingEventId(null);
+    setFormError("");
+    setSuccessMessage("");
+    setCalendarError("");
   }, [
-    selectedWorkspace
-      ?.ownerUserId,
-    selectedWorkspace
-      ?.childId,
+    selectedWorkspace?.ownerUserId,
+    selectedWorkspace?.childId,
   ]);
 
   /*
-   * ==========================================================
-   * UPCOMING / PAST EVENTS
-   * ==========================================================
+   * UPCOMING AND PAST EVENTS
    */
 
-  const {
-    upcomingEvents,
-    pastEvents,
-  } = useMemo(() => {
-    const now =
-      Date.now();
+  const { upcomingEvents, pastEvents } = useMemo(() => {
+    const now = Date.now();
 
-    const upcoming =
-      events
-        .filter(
-          (event) =>
-            (event.endAt ??
-              event.startAt) >=
-            now
-        )
-        .sort(
-          (a, b) =>
-            a.startAt -
-            b.startAt
-        );
+    const upcoming = events
+      .filter(
+        (event) =>
+          (event.endAt ?? event.startAt) >= now
+      )
+      .sort((a, b) => a.startAt - b.startAt);
 
-    const past =
-      events
-        .filter(
-          (event) =>
-            (event.endAt ??
-              event.startAt) <
-            now
-        )
-        .sort(
-          (a, b) =>
-            b.startAt -
-            a.startAt
-        );
+    const past = events
+      .filter(
+        (event) =>
+          (event.endAt ?? event.startAt) < now
+      )
+      .sort((a, b) => b.startAt - a.startAt);
 
     return {
-      upcomingEvents:
-        upcoming,
-
-      pastEvents:
-        past,
+      upcomingEvents: upcoming,
+      pastEvents: past,
     };
-  }, [
-    events,
-  ]);
+  }, [events]);
 
   /*
-   * ==========================================================
-   * FORM
-   * ==========================================================
+   * FORM HELPERS
    */
 
-  function updateForm<
-    K extends keyof CalendarFormState
-  >(
+  function updateForm<K extends keyof CalendarFormState>(
     key: K,
-    value:
-      CalendarFormState[K]
+    value: CalendarFormState[K]
   ) {
-    setForm(
-      (current) => ({
-        ...current,
-        [key]:
-          value,
-      })
-    );
+    setForm((current) => ({
+      ...current,
+      [key]: value,
+    }));
 
-    setFormError(
-      ""
-    );
-
-    setSuccessMessage(
-      ""
-    );
+    setFormError("");
+    setSuccessMessage("");
   }
 
   function resetForm() {
-    setForm(
-      getEmptyForm()
-    );
-
-    setEditingEventId(
-      null
-    );
-
-    setFormError(
-      ""
-    );
+    setForm(getEmptyForm());
+    setEditingEventId(null);
+    setFormError("");
   }
 
   /*
-   * ==========================================================
-   * EDIT EVENT
-   * ==========================================================
+   * EDIT EXISTING EVENT
    */
 
   function beginEditing(
-    event:
-      FamilyOrganizerCalendarEvent
+    event: FamilyOrganizerCalendarEvent
   ) {
-    setEditingEventId(
-      event.id
-    );
+    setEditingEventId(event.id);
 
     setForm({
-      title:
-        event.title,
-
-      eventType:
-        event.eventType,
-
-      date:
-        toDateInputValue(
-          event.startAt
-        ),
-
-      startTime:
-        event.allDay
-          ? "09:00"
-          : toTimeInputValue(
-              event.startAt
-            ),
-
-      endTime:
-        event.allDay
-          ? "10:00"
-          : typeof event.endAt ===
-              "number"
-            ? toTimeInputValue(
-                event.endAt
-              )
-            : "",
-
-      allDay:
-        event.allDay ===
-        true,
-
-      location:
-        event.location ??
-        "",
-
-      notes:
-        event.notes ??
-        "",
+      title: event.title,
+      eventType: event.eventType,
+      date: toDateInputValue(event.startAt),
+      startTime: event.allDay
+        ? "09:00"
+        : toTimeInputValue(event.startAt),
+      endTime: event.allDay
+        ? "10:00"
+        : typeof event.endAt === "number"
+          ? toTimeInputValue(event.endAt)
+          : "",
+      allDay: event.allDay === true,
+      location: event.location ?? "",
+      notes: event.notes ?? "",
     });
 
-    setFormError(
-      ""
-    );
-
-    setSuccessMessage(
-      ""
-    );
+    setFormError("");
+    setSuccessMessage("");
 
     window.scrollTo({
       top: 0,
@@ -648,207 +431,96 @@ export default function FamilyOrganizerCalendarPage() {
   }
 
   /*
-   * ==========================================================
-   * SAVE EVENT
-   * ==========================================================
+   * CREATE OR UPDATE EVENT
    */
 
   async function handleSubmit(
-    event:
-      React.FormEvent<HTMLFormElement>
+    event: FormEvent<HTMLFormElement>
   ) {
     event.preventDefault();
 
-    if (
-      !currentUser ||
-      !selectedWorkspace
-    ) {
+    if (!currentUser || !selectedWorkspace) {
       return;
     }
 
-    const title =
-      form.title.trim();
+    const title = form.title.trim();
 
     if (!title) {
-      setFormError(
-        "Enter an event title."
-      );
-
+      setFormError("Enter an event title.");
       return;
     }
 
     if (!form.date) {
-      setFormError(
-        "Select an event date."
-      );
-
+      setFormError("Select an event date.");
       return;
     }
 
-    const startAt =
-      buildTimestamp(
+    const startAt = buildTimestamp(
+      form.date,
+      form.startTime,
+      form.allDay
+    );
+
+    if (!Number.isFinite(startAt)) {
+      setFormError("Enter a valid event date and time.");
+      return;
+    }
+
+    let endAt: number | undefined;
+
+    if (!form.allDay && form.endTime) {
+      endAt = buildTimestamp(
         form.date,
-        form.startTime,
-        form.allDay
+        form.endTime,
+        false
       );
 
-    if (
-      !Number.isFinite(
-        startAt
-      )
-    ) {
-      setFormError(
-        "Enter a valid event date and time."
-      );
-
-      return;
-    }
-
-    let endAt:
-      number | undefined;
-
-    if (
-      !form.allDay &&
-      form.endTime
-    ) {
-      endAt =
-        buildTimestamp(
-          form.date,
-          form.endTime,
-          false
-        );
-
-      if (
-        !Number.isFinite(
-          endAt
-        )
-      ) {
-        setFormError(
-          "Enter a valid end time."
-        );
-
+      if (!Number.isFinite(endAt)) {
+        setFormError("Enter a valid end time.");
         return;
       }
 
-      if (
-        endAt <
-        startAt
-      ) {
+      if (endAt < startAt) {
         setFormError(
           "End time cannot be before the start time."
         );
-
         return;
       }
     }
 
     try {
-      setSaving(
-        true
-      );
+      setSaving(true);
+      setFormError("");
+      setSuccessMessage("");
 
-      setFormError(
-        ""
-      );
+      const eventData = {
+        currentUserId: currentUser.uid,
+        ownerUserId: selectedWorkspace.ownerUserId,
+        childId: selectedWorkspace.childId,
+        title,
+        eventType: form.eventType,
+        startAt,
+        ...(endAt !== undefined ? { endAt } : {}),
+        allDay: form.allDay,
+        location: form.location,
+        notes: form.notes,
+      };
 
-      setSuccessMessage(
-        ""
-      );
+      if (editingEventId) {
+        await updateFamilyOrganizerCalendarEvent({
+          ...eventData,
+          eventId: editingEventId,
+        });
 
-      if (
-        editingEventId
-      ) {
-        await updateFamilyOrganizerCalendarEvent(
-          {
-            currentUserId:
-              currentUser.uid,
-
-            ownerUserId:
-              selectedWorkspace.ownerUserId,
-
-            childId:
-              selectedWorkspace.childId,
-
-            eventId:
-              editingEventId,
-
-            title,
-
-            eventType:
-              form.eventType,
-
-            startAt,
-
-            ...(endAt !==
-            undefined
-              ? {
-                  endAt,
-                }
-              : {}),
-
-            allDay:
-              form.allDay,
-
-            location:
-              form.location,
-
-            notes:
-              form.notes,
-          }
-        );
-
-        setSuccessMessage(
-          "Calendar event updated."
-        );
+        setSuccessMessage("Calendar event updated.");
       } else {
-        await createFamilyOrganizerCalendarEvent(
-          {
-            currentUserId:
-              currentUser.uid,
+        await createFamilyOrganizerCalendarEvent(eventData);
 
-            ownerUserId:
-              selectedWorkspace.ownerUserId,
-
-            childId:
-              selectedWorkspace.childId,
-
-            title,
-
-            eventType:
-              form.eventType,
-
-            startAt,
-
-            ...(endAt !==
-            undefined
-              ? {
-                  endAt,
-                }
-              : {}),
-
-            allDay:
-              form.allDay,
-
-            location:
-              form.location,
-
-            notes:
-              form.notes,
-          }
-        );
-
-        setSuccessMessage(
-          "Calendar event added."
-        );
+        setSuccessMessage("Calendar event added.");
       }
 
-      setForm(
-        getEmptyForm()
-      );
-
-      setEditingEventId(
-        null
-      );
+      setForm(getEmptyForm());
+      setEditingEventId(null);
 
       await loadEvents();
     } catch (error) {
@@ -864,65 +536,39 @@ export default function FamilyOrganizerCalendarPage() {
         )
       );
     } finally {
-      setSaving(
-        false
-      );
+      setSaving(false);
     }
   }
 
   /*
-   * ==========================================================
    * DELETE EVENT
-   * ==========================================================
    */
 
-  async function handleDelete(
-    eventId: string
-  ) {
-    if (
-      !currentUser ||
-      !selectedWorkspace
-    ) {
+  async function handleDelete(eventId: string) {
+    if (!currentUser || !selectedWorkspace) {
       return;
     }
 
-    const confirmed =
-      window.confirm(
-        "Remove this event from the shared calendar?"
-      );
+    const confirmed = window.confirm(
+      "Remove this event from the shared calendar?"
+    );
 
     if (!confirmed) {
       return;
     }
 
     try {
-      setDeletingEventId(
-        eventId
-      );
+      setDeletingEventId(eventId);
+      setCalendarError("");
 
-      setCalendarError(
-        ""
-      );
+      await deleteFamilyOrganizerCalendarEvent({
+        currentUserId: currentUser.uid,
+        ownerUserId: selectedWorkspace.ownerUserId,
+        childId: selectedWorkspace.childId,
+        eventId,
+      });
 
-      await deleteFamilyOrganizerCalendarEvent(
-        {
-          currentUserId:
-            currentUser.uid,
-
-          ownerUserId:
-            selectedWorkspace.ownerUserId,
-
-          childId:
-            selectedWorkspace.childId,
-
-          eventId,
-        }
-      );
-
-      if (
-        editingEventId ===
-        eventId
-      ) {
+      if (editingEventId === eventId) {
         resetForm();
       }
 
@@ -940,69 +586,48 @@ export default function FamilyOrganizerCalendarPage() {
         )
       );
     } finally {
-      setDeletingEventId(
-        ""
-      );
+      setDeletingEventId("");
     }
   }
 
   /*
-   * ==========================================================
-   * EVENT CARD
-   * ==========================================================
+   * EVENT DISPLAY
    */
 
   function renderEvent(
-    event:
-      FamilyOrganizerCalendarEvent
+    event: FamilyOrganizerCalendarEvent
   ) {
     return (
       <article
         key={event.id}
         style={{
-          padding:
-            "18px 0",
-          borderBottom:
-            "1px solid #E2E8F0",
+          padding: "18px 0",
+          borderBottom: `1px solid ${BRAND.border}`,
         }}
       >
         <div
           style={{
             display: "flex",
-            justifyContent:
-              "space-between",
-            alignItems:
-              "flex-start",
-            gap: "18px",
-            flexWrap:
-              "wrap",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: 18,
+            flexWrap: "wrap",
           }}
         >
-          <div
-            style={{
-              flex: 1,
-              minWidth:
-                "220px",
-            }}
-          >
+          <div style={{ flex: 1, minWidth: 220 }}>
             <div
               style={{
-                display:
-                  "flex",
-                alignItems:
-                  "center",
-                gap: "8px",
-                flexWrap:
-                  "wrap",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                flexWrap: "wrap",
               }}
             >
               <h3
                 style={{
                   margin: 0,
-                  color:
-                    "#0F172A",
-                  fontSize:
-                    "16px",
+                  color: BRAND.darkNavy,
+                  fontSize: 16,
                   fontWeight: 800,
                 }}
               >
@@ -1011,78 +636,54 @@ export default function FamilyOrganizerCalendarPage() {
 
               <span
                 style={{
-                  padding:
-                    "4px 8px",
-                  borderRadius:
-                    "999px",
-                  background:
-                    "#EFF6FF",
-                  color:
-                    "#1D4ED8",
-                  fontSize:
-                    "9px",
+                  padding: "4px 8px",
+                  borderRadius: 999,
+                  background: BRAND.lightTeal,
+                  color: BRAND.darkTeal,
+                  fontSize: 9,
                   fontWeight: 800,
-                  textTransform:
-                    "uppercase",
-                  letterSpacing:
-                    "0.04em",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.04em",
                 }}
               >
-                {getEventTypeLabel(
-                  event.eventType
-                )}
+                {getEventTypeLabel(event.eventType)}
               </span>
             </div>
 
             <div
               style={{
-                marginTop:
-                  "8px",
-                color:
-                  "#475569",
-                fontSize:
-                  "13px",
+                marginTop: 8,
+                color: BRAND.navy,
+                fontSize: 13,
                 fontWeight: 700,
               }}
             >
-              {formatEventDate(
-                event.startAt
-              )}
+              {formatEventDate(event.startAt)}
               {" • "}
-              {formatEventTime(
-                event
-              )}
+              {formatEventTime(event)}
             </div>
 
             {event.location ? (
               <div
                 style={{
-                  marginTop:
-                    "6px",
-                  color:
-                    "#64748B",
-                  fontSize:
-                    "12px",
+                  marginTop: 6,
+                  color: BRAND.muted,
+                  fontSize: 12,
                   lineHeight: 1.5,
                 }}
               >
-                📍{" "}
-                {event.location}
+                📍 {event.location}
               </div>
             ) : null}
 
             {event.notes ? (
               <div
                 style={{
-                  marginTop:
-                    "8px",
-                  color:
-                    "#64748B",
-                  fontSize:
-                    "12px",
+                  marginTop: 8,
+                  color: BRAND.muted,
+                  fontSize: 12,
                   lineHeight: 1.6,
-                  whiteSpace:
-                    "pre-wrap",
+                  whiteSpace: "pre-wrap",
                 }}
               >
                 {event.notes}
@@ -1093,33 +694,22 @@ export default function FamilyOrganizerCalendarPage() {
           <div
             style={{
               display: "flex",
-              gap: "8px",
+              gap: 8,
               flexShrink: 0,
             }}
           >
             <button
               type="button"
-              onClick={() =>
-                beginEditing(
-                  event
-                )
-              }
+              onClick={() => beginEditing(event)}
               style={{
-                padding:
-                  "7px 10px",
-                borderRadius:
-                  "8px",
-                border:
-                  "1px solid #CBD5E1",
-                background:
-                  "#FFFFFF",
-                color:
-                  "#334155",
-                fontSize:
-                  "11px",
+                padding: "7px 10px",
+                borderRadius: 8,
+                border: `1px solid ${BRAND.border}`,
+                background: BRAND.white,
+                color: BRAND.darkTeal,
+                fontSize: 11,
                 fontWeight: 800,
-                cursor:
-                  "pointer",
+                cursor: "pointer",
               }}
             >
               Edit
@@ -1127,43 +717,27 @@ export default function FamilyOrganizerCalendarPage() {
 
             <button
               type="button"
-              disabled={
-                deletingEventId ===
-                event.id
-              }
+              disabled={deletingEventId === event.id}
               onClick={() => {
-                void handleDelete(
-                  event.id
-                );
+                void handleDelete(event.id);
               }}
               style={{
-                padding:
-                  "7px 10px",
-                borderRadius:
-                  "8px",
-                border:
-                  "1px solid #FECACA",
-                background:
-                  "#FFFFFF",
-                color:
-                  "#B91C1C",
-                fontSize:
-                  "11px",
+                padding: "7px 10px",
+                borderRadius: 8,
+                border: "1px solid #FECACA",
+                background: BRAND.white,
+                color: "#B91C1C",
+                fontSize: 11,
                 fontWeight: 800,
                 cursor:
-                  deletingEventId ===
-                  event.id
+                  deletingEventId === event.id
                     ? "not-allowed"
                     : "pointer",
                 opacity:
-                  deletingEventId ===
-                  event.id
-                    ? 0.6
-                    : 1,
+                  deletingEventId === event.id ? 0.6 : 1,
               }}
             >
-              {deletingEventId ===
-              event.id
+              {deletingEventId === event.id
                 ? "Removing..."
                 : "Remove"}
             </button>
@@ -1174,70 +748,49 @@ export default function FamilyOrganizerCalendarPage() {
   }
 
   /*
-   * ==========================================================
    * PAGE
-   * ==========================================================
    */
 
   return (
     <main
       style={{
-        minHeight:
-          "calc(100vh - 72px)",
-        background:
-          "#F8FAFC",
-        padding:
-          "48px 24px 72px",
+        minHeight: "calc(100vh - 72px)",
+        background: BRAND.background,
+        padding: "48px 24px 72px",
       }}
     >
       <div
         style={{
           width: "100%",
-          maxWidth:
-            "1000px",
-          margin:
-            "0 auto",
+          maxWidth: 1000,
+          margin: "0 auto",
         }}
       >
-        <section
-          style={{
-            marginBottom:
-              "28px",
-          }}
-        >
+        {/* PAGE INTRODUCTION */}
+
+        <section style={{ marginBottom: 28 }}>
           <div
             style={{
-              display:
-                "inline-flex",
-              padding:
-                "6px 10px",
-              borderRadius:
-                "999px",
-              background:
-                "#DBEAFE",
-              color:
-                "#1D4ED8",
-              fontSize:
-                "11px",
+              display: "inline-flex",
+              padding: "6px 10px",
+              borderRadius: 999,
+              background: BRAND.lightTeal,
+              color: BRAND.darkTeal,
+              fontSize: 11,
               fontWeight: 800,
-              textTransform:
-                "uppercase",
-              letterSpacing:
-                "0.05em",
-              marginBottom:
-                "16px",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              marginBottom: 16,
             }}
           >
-            Family Organizer
+            Autivoya Family Organizer
           </div>
 
           <h1
             style={{
               margin: 0,
-              color:
-                "#0F172A",
-              fontSize:
-                "36px",
+              color: BRAND.darkNavy,
+              fontSize: 36,
               lineHeight: 1.15,
               fontWeight: 850,
             }}
@@ -1247,103 +800,47 @@ export default function FamilyOrganizerCalendarPage() {
 
           <p
             style={{
-              margin:
-                "12px 0 0",
-              maxWidth:
-                "760px",
-              color:
-                "#64748B",
-              fontSize:
-                "16px",
+              margin: "12px 0 0",
+              maxWidth: 760,
+              color: BRAND.muted,
+              fontSize: 16,
               lineHeight: 1.7,
             }}
           >
-            Keep appointments,
-            therapy, school
-            meetings, IEP dates,
-            evaluations, deadlines,
-            and other important
-            events visible to the
-            family.
+            Keep appointments, therapy, school meetings,
+            IEP dates, evaluations, deadlines, and other
+            important events visible to your Family Team.
           </p>
         </section>
 
+        {/* AUTHENTICATION */}
+
         {!authReady ? (
-          <section
-            style={{
-              background:
-                "#FFFFFF",
-              border:
-                "1px solid #E2E8F0",
-              borderRadius:
-                "18px",
-              padding:
-                "26px",
-            }}
-          >
-            <div
-              style={{
-                color:
-                  "#64748B",
-                fontSize:
-                  "13px",
-                fontWeight: 700,
-              }}
-            >
-              Loading shared
-              calendar...
+          <section style={styles.card}>
+            <div style={styles.body}>
+              Loading shared calendar...
             </div>
           </section>
         ) : null}
 
-        {authReady &&
-        !currentUser ? (
-          <section
-            style={{
-              background:
-                "#FFFFFF",
-              border:
-                "1px solid #E2E8F0",
-              borderRadius:
-                "18px",
-              padding:
-                "26px",
-            }}
-          >
-            <h2
-              style={{
-                margin: 0,
-                color:
-                  "#0F172A",
-                fontSize:
-                  "20px",
-                fontWeight: 800,
-              }}
-            >
-              Sign in to use the
-              Shared Calendar
+        {authReady && !currentUser ? (
+          <section style={styles.card}>
+            <h2 style={styles.heading}>
+              Sign in to use the Shared Calendar
             </h2>
+
+            <p style={styles.body}>
+              Sign in to your Autivoya account to access
+              your family's shared calendar.
+            </p>
 
             <Link
               href="/login"
               style={{
-                display:
-                  "inline-flex",
-                marginTop:
-                  "16px",
-                padding:
-                  "10px 15px",
-                borderRadius:
-                  "9px",
-                background:
-                  "#2563EB",
-                color:
-                  "#FFFFFF",
-                fontSize:
-                  "12px",
-                fontWeight: 800,
-                textDecoration:
-                  "none",
+                ...styles.button,
+                display: "inline-flex",
+                marginTop: 12,
+                textDecoration: "none",
               }}
             >
               Sign In
@@ -1351,149 +848,87 @@ export default function FamilyOrganizerCalendarPage() {
           </section>
         ) : null}
 
-        {authReady &&
-        currentUser ? (
+        {authReady && currentUser ? (
           <>
-            <section
-              style={{
-                background:
-                  "#FFFFFF",
-                border:
-                  "1px solid #E2E8F0",
-                borderRadius:
-                  "16px",
-                padding:
-                  "20px",
-                marginBottom:
-                  "18px",
-              }}
-            >
+            {/* CHILD WORKSPACE SELECTOR */}
+
+            <section style={styles.card}>
               {loadingWorkspaces ? (
-                <div
-                  style={{
-                    color:
-                      "#64748B",
-                    fontSize:
-                      "13px",
-                  }}
-                >
+                <div style={styles.body}>
                   Loading children...
                 </div>
               ) : null}
 
-              {!loadingWorkspaces &&
-              workspaceError ? (
-                <div
-                  style={{
-                    color:
-                      "#B91C1C",
-                    fontSize:
-                      "12px",
-                  }}
-                >
+              {!loadingWorkspaces && workspaceError ? (
+                <div role="alert" style={styles.error}>
                   {workspaceError}
                 </div>
               ) : null}
 
               {!loadingWorkspaces &&
               !workspaceError &&
-              workspaces.length >
-                0 ? (
+              workspaces.length > 0 ? (
                 <FamilyOrganizerWorkspaceSelector
-                  workspaces={
-                    workspaces
-                  }
-                  selectedWorkspace={
-                    selectedWorkspace
-                  }
-                  onSelect={
-                    selectWorkspace
-                  }
+                  workspaces={workspaces}
+                  selectedWorkspace={selectedWorkspace}
+                  onSelect={selectWorkspace}
                 />
               ) : null}
 
               {!loadingWorkspaces &&
               !workspaceError &&
-              workspaces.length ===
-                0 ? (
-                <div
-                  style={{
-                    color:
-                      "#64748B",
-                    fontSize:
-                      "13px",
-                    lineHeight: 1.6,
-                  }}
-                >
-                  No child workspace
-                  is available yet.
+              workspaces.length === 0 ? (
+                <div style={styles.body}>
+                  No child workspace is available yet.
                 </div>
               ) : null}
             </section>
 
             {selectedWorkspace ? (
               <>
+                {/* SELECTED CHILD BANNER */}
+
                 <section
                   style={{
                     background:
-                      "linear-gradient(135deg, #EFF6FF 0%, #F5F3FF 100%)",
-                    border:
-                      "1px solid #DBEAFE",
-                    borderRadius:
-                      "16px",
-                    padding:
-                      "20px 22px",
-                    marginBottom:
-                      "18px",
+                      "linear-gradient(135deg, #EAF6F5 0%, #F7FAFB 100%)",
+                    border: "1px solid #CFE7E5",
+                    borderRadius: 16,
+                    padding: "20px 22px",
+                    marginBottom: 18,
                   }}
                 >
                   <div
                     style={{
-                      display:
-                        "flex",
-                      justifyContent:
-                        "space-between",
-                      gap:
-                        "14px",
-                      alignItems:
-                        "center",
-                      flexWrap:
-                        "wrap",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 14,
+                      flexWrap: "wrap",
                     }}
                   >
                     <div>
                       <div
                         style={{
-                          color:
-                            "#1E3A8A",
-                          fontSize:
-                            "16px",
+                          color: BRAND.navy,
+                          fontSize: 16,
                           fontWeight: 800,
                         }}
                       >
-                        {
-                          selectedWorkspace.childName
-                        }
-                        &apos;s Shared
-                        Calendar
+                        {selectedWorkspace.childName}
+                        &apos;s Shared Calendar
                       </div>
 
                       <div
                         style={{
-                          marginTop:
-                            "5px",
-                          color:
-                            "#64748B",
-                          fontSize:
-                            "12px",
+                          marginTop: 5,
+                          color: BRAND.muted,
+                          fontSize: 12,
                           lineHeight: 1.6,
                         }}
                       >
-                        Events added
-                        here are shared
-                        with authorized
-                        Family Team
-                        members.
+                        Events added here are shared with
+                        authorized Family Team members.
                       </div>
                     </div>
 
@@ -1501,76 +936,36 @@ export default function FamilyOrganizerCalendarPage() {
                     "family_member" ? (
                       <span
                         style={{
-                          padding:
-                            "5px 9px",
-                          borderRadius:
-                            "999px",
-                          background:
-                            "#FFFFFF",
-                          border:
-                            "1px solid #DDD6FE",
-                          color:
-                            "#6D28D9",
-                          fontSize:
-                            "9px",
+                          padding: "5px 9px",
+                          borderRadius: 999,
+                          background: BRAND.white,
+                          border: "1px solid #CFE7E5",
+                          color: BRAND.darkTeal,
+                          fontSize: 9,
                           fontWeight: 850,
-                          textTransform:
-                            "uppercase",
-                          letterSpacing:
-                            "0.05em",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.05em",
                         }}
                       >
-                        Shared Family
-                        Access
+                        Shared Family Access
                       </span>
                     ) : null}
                   </div>
                 </section>
 
-                {/* ==========================================
-                    ADD / EDIT EVENT
-                =========================================== */}
+                {/* ADD / EDIT EVENT */}
 
-                <section
-                  style={{
-                    background:
-                      "#FFFFFF",
-                    border:
-                      "1px solid #E2E8F0",
-                    borderRadius:
-                      "18px",
-                    padding:
-                      "26px",
-                    marginBottom:
-                      "18px",
-                    boxShadow:
-                      "0 8px 24px rgba(15, 23, 42, 0.04)",
-                  }}
-                >
+                <section style={styles.card}>
                   <div
                     style={{
-                      display:
-                        "flex",
-                      justifyContent:
-                        "space-between",
-                      alignItems:
-                        "center",
-                      gap:
-                        "12px",
-                      flexWrap:
-                        "wrap",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 12,
+                      flexWrap: "wrap",
                     }}
                   >
-                    <h2
-                      style={{
-                        margin: 0,
-                        color:
-                          "#0F172A",
-                        fontSize:
-                          "20px",
-                        fontWeight: 800,
-                      }}
-                    >
+                    <h2 style={styles.heading}>
                       {editingEventId
                         ? "Edit Event"
                         : "Add Event"}
@@ -1579,21 +974,14 @@ export default function FamilyOrganizerCalendarPage() {
                     {editingEventId ? (
                       <button
                         type="button"
-                        onClick={
-                          resetForm
-                        }
+                        onClick={resetForm}
                         style={{
-                          border:
-                            "none",
-                          background:
-                            "transparent",
-                          color:
-                            "#2563EB",
-                          fontSize:
-                            "12px",
+                          border: "none",
+                          background: "transparent",
+                          color: BRAND.darkTeal,
+                          fontSize: 12,
                           fontWeight: 800,
-                          cursor:
-                            "pointer",
+                          cursor: "pointer",
                         }}
                       >
                         Cancel Edit
@@ -1602,38 +990,21 @@ export default function FamilyOrganizerCalendarPage() {
                   </div>
 
                   <form
-                    onSubmit={
-                      handleSubmit
-                    }
-                    style={{
-                      marginTop:
-                        "20px",
-                    }}
+                    onSubmit={handleSubmit}
+                    style={{ marginTop: 20 }}
                   >
                     <div
                       style={{
-                        display:
-                          "grid",
+                        display: "grid",
                         gridTemplateColumns:
                           "repeat(auto-fit, minmax(220px, 1fr))",
-                        gap:
-                          "14px",
+                        gap: 14,
                       }}
                     >
                       <div>
                         <label
                           htmlFor="calendar-title"
-                          style={{
-                            display:
-                              "block",
-                            color:
-                              "#334155",
-                            fontSize:
-                              "12px",
-                            fontWeight: 800,
-                            marginBottom:
-                              "7px",
-                          }}
+                          style={styles.label}
                         >
                           Event Title
                         </label>
@@ -1642,123 +1013,53 @@ export default function FamilyOrganizerCalendarPage() {
                           id="calendar-title"
                           type="text"
                           required
-                          value={
-                            form.title
-                          }
-                          onChange={(
-                            event
-                          ) =>
+                          value={form.title}
+                          onChange={(event) =>
                             updateForm(
                               "title",
-                              event
-                                .target
-                                .value
+                              event.target.value
                             )
                           }
                           placeholder="e.g. Speech therapy"
-                          style={{
-                            width:
-                              "100%",
-                            boxSizing:
-                              "border-box",
-                            padding:
-                              "10px 12px",
-                            borderRadius:
-                              "9px",
-                            border:
-                              "1px solid #CBD5E1",
-                            fontSize:
-                              "14px",
-                          }}
+                          style={styles.input}
                         />
                       </div>
 
                       <div>
                         <label
                           htmlFor="calendar-type"
-                          style={{
-                            display:
-                              "block",
-                            color:
-                              "#334155",
-                            fontSize:
-                              "12px",
-                            fontWeight: 800,
-                            marginBottom:
-                              "7px",
-                          }}
+                          style={styles.label}
                         >
                           Type
                         </label>
 
                         <select
                           id="calendar-type"
-                          value={
-                            form.eventType
-                          }
-                          onChange={(
-                            event
-                          ) =>
+                          value={form.eventType}
+                          onChange={(event) =>
                             updateForm(
                               "eventType",
-                              event
-                                .target
-                                .value as
-                                FamilyOrganizerCalendarEventType
+                              event.target
+                                .value as FamilyOrganizerCalendarEventType
                             )
                           }
-                          style={{
-                            width:
-                              "100%",
-                            boxSizing:
-                              "border-box",
-                            padding:
-                              "10px 12px",
-                            borderRadius:
-                              "9px",
-                            border:
-                              "1px solid #CBD5E1",
-                            background:
-                              "#FFFFFF",
-                            fontSize:
-                              "14px",
-                          }}
+                          style={styles.input}
                         >
-                          {EVENT_TYPES.map(
-                            (
-                              item
-                            ) => (
-                              <option
-                                key={
-                                  item.value
-                                }
-                                value={
-                                  item.value
-                                }
-                              >
-                                {
-                                  item.label
-                                }
-                              </option>
-                            )
-                          )}
+                          {EVENT_TYPES.map((item) => (
+                            <option
+                              key={item.value}
+                              value={item.value}
+                            >
+                              {item.label}
+                            </option>
+                          ))}
                         </select>
                       </div>
 
                       <div>
                         <label
                           htmlFor="calendar-date"
-                          style={{
-                            display:
-                              "block",
-                            color:
-                              "#334155",
-                            fontSize:
-                              "12px",
-                            fontWeight: 800,
-                            marginBottom:
-                              "7px",
-                          }}
+                          style={styles.label}
                         >
                           Date
                         </label>
@@ -1767,33 +1068,14 @@ export default function FamilyOrganizerCalendarPage() {
                           id="calendar-date"
                           type="date"
                           required
-                          value={
-                            form.date
-                          }
-                          onChange={(
-                            event
-                          ) =>
+                          value={form.date}
+                          onChange={(event) =>
                             updateForm(
                               "date",
-                              event
-                                .target
-                                .value
+                              event.target.value
                             )
                           }
-                          style={{
-                            width:
-                              "100%",
-                            boxSizing:
-                              "border-box",
-                            padding:
-                              "10px 12px",
-                            borderRadius:
-                              "9px",
-                            border:
-                              "1px solid #CBD5E1",
-                            fontSize:
-                              "14px",
-                          }}
+                          style={styles.input}
                         />
                       </div>
 
@@ -1802,17 +1084,7 @@ export default function FamilyOrganizerCalendarPage() {
                           <div>
                             <label
                               htmlFor="calendar-start"
-                              style={{
-                                display:
-                                  "block",
-                                color:
-                                  "#334155",
-                                fontSize:
-                                  "12px",
-                                fontWeight: 800,
-                                marginBottom:
-                                  "7px",
-                              }}
+                              style={styles.label}
                             >
                               Start Time
                             </label>
@@ -1821,50 +1093,21 @@ export default function FamilyOrganizerCalendarPage() {
                               id="calendar-start"
                               type="time"
                               required
-                              value={
-                                form.startTime
-                              }
-                              onChange={(
-                                event
-                              ) =>
+                              value={form.startTime}
+                              onChange={(event) =>
                                 updateForm(
                                   "startTime",
-                                  event
-                                    .target
-                                    .value
+                                  event.target.value
                                 )
                               }
-                              style={{
-                                width:
-                                  "100%",
-                                boxSizing:
-                                  "border-box",
-                                padding:
-                                  "10px 12px",
-                                borderRadius:
-                                  "9px",
-                                border:
-                                  "1px solid #CBD5E1",
-                                fontSize:
-                                  "14px",
-                              }}
+                              style={styles.input}
                             />
                           </div>
 
                           <div>
                             <label
                               htmlFor="calendar-end"
-                              style={{
-                                display:
-                                  "block",
-                                color:
-                                  "#334155",
-                                fontSize:
-                                  "12px",
-                                fontWeight: 800,
-                                marginBottom:
-                                  "7px",
-                              }}
+                              style={styles.label}
                             >
                               End Time
                             </label>
@@ -1872,33 +1115,14 @@ export default function FamilyOrganizerCalendarPage() {
                             <input
                               id="calendar-end"
                               type="time"
-                              value={
-                                form.endTime
-                              }
-                              onChange={(
-                                event
-                              ) =>
+                              value={form.endTime}
+                              onChange={(event) =>
                                 updateForm(
                                   "endTime",
-                                  event
-                                    .target
-                                    .value
+                                  event.target.value
                                 )
                               }
-                              style={{
-                                width:
-                                  "100%",
-                                boxSizing:
-                                  "border-box",
-                                padding:
-                                  "10px 12px",
-                                borderRadius:
-                                  "9px",
-                                border:
-                                  "1px solid #CBD5E1",
-                                fontSize:
-                                  "14px",
-                              }}
+                              style={styles.input}
                             />
                           </div>
                         </>
@@ -1907,17 +1131,7 @@ export default function FamilyOrganizerCalendarPage() {
                       <div>
                         <label
                           htmlFor="calendar-location"
-                          style={{
-                            display:
-                              "block",
-                            color:
-                              "#334155",
-                            fontSize:
-                              "12px",
-                            fontWeight: 800,
-                            marginBottom:
-                              "7px",
-                          }}
+                          style={styles.label}
                         >
                           Location
                         </label>
@@ -1925,157 +1139,78 @@ export default function FamilyOrganizerCalendarPage() {
                         <input
                           id="calendar-location"
                           type="text"
-                          value={
-                            form.location
-                          }
-                          onChange={(
-                            event
-                          ) =>
+                          value={form.location}
+                          onChange={(event) =>
                             updateForm(
                               "location",
-                              event
-                                .target
-                                .value
+                              event.target.value
                             )
                           }
                           placeholder="Optional"
-                          style={{
-                            width:
-                              "100%",
-                            boxSizing:
-                              "border-box",
-                            padding:
-                              "10px 12px",
-                            borderRadius:
-                              "9px",
-                            border:
-                              "1px solid #CBD5E1",
-                            fontSize:
-                              "14px",
-                          }}
+                          style={styles.input}
                         />
                       </div>
                     </div>
 
                     <label
                       style={{
-                        display:
-                          "flex",
-                        alignItems:
-                          "center",
-                        gap:
-                          "9px",
-                        marginTop:
-                          "16px",
-                        color:
-                          "#334155",
-                        fontSize:
-                          "13px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 9,
+                        marginTop: 16,
+                        color: BRAND.navy,
+                        fontSize: 13,
                         fontWeight: 700,
-                        cursor:
-                          "pointer",
+                        cursor: "pointer",
                       }}
                     >
                       <input
                         type="checkbox"
-                        checked={
-                          form.allDay
-                        }
-                        onChange={(
-                          event
-                        ) =>
+                        checked={form.allDay}
+                        onChange={(event) =>
                           updateForm(
                             "allDay",
-                            event
-                              .target
-                              .checked
+                            event.target.checked
                           )
                         }
+                        style={{
+                          accentColor: BRAND.darkTeal,
+                        }}
                       />
-
                       All-day event
                     </label>
 
-                    <div
-                      style={{
-                        marginTop:
-                          "16px",
-                      }}
-                    >
+                    <div style={{ marginTop: 16 }}>
                       <label
                         htmlFor="calendar-notes"
-                        style={{
-                          display:
-                            "block",
-                          color:
-                            "#334155",
-                          fontSize:
-                            "12px",
-                          fontWeight: 800,
-                          marginBottom:
-                            "7px",
-                        }}
+                        style={styles.label}
                       >
                         Notes
                       </label>
 
                       <textarea
                         id="calendar-notes"
-                        value={
-                          form.notes
-                        }
-                        onChange={(
-                          event
-                        ) =>
+                        value={form.notes}
+                        onChange={(event) =>
                           updateForm(
                             "notes",
-                            event
-                              .target
-                              .value
+                            event.target.value
                           )
                         }
                         placeholder="Optional details or reminders"
                         rows={4}
                         style={{
-                          width:
-                            "100%",
-                          boxSizing:
-                            "border-box",
-                          padding:
-                            "10px 12px",
-                          borderRadius:
-                            "9px",
-                          border:
-                            "1px solid #CBD5E1",
-                          fontSize:
-                            "14px",
+                          ...styles.input,
                           lineHeight: 1.6,
-                          resize:
-                            "vertical",
-                          fontFamily:
-                            "inherit",
+                          resize: "vertical",
                         }}
                       />
                     </div>
 
                     {formError ? (
                       <div
-                        style={{
-                          marginTop:
-                            "14px",
-                          padding:
-                            "11px 13px",
-                          borderRadius:
-                            "9px",
-                          background:
-                            "#FEF2F2",
-                          border:
-                            "1px solid #FECACA",
-                          color:
-                            "#B91C1C",
-                          fontSize:
-                            "12px",
-                        }}
+                        role="alert"
+                        style={styles.error}
                       >
                         {formError}
                       </div>
@@ -2083,22 +1218,8 @@ export default function FamilyOrganizerCalendarPage() {
 
                     {successMessage ? (
                       <div
-                        style={{
-                          marginTop:
-                            "14px",
-                          padding:
-                            "11px 13px",
-                          borderRadius:
-                            "9px",
-                          background:
-                            "#F0FDF4",
-                          border:
-                            "1px solid #BBF7D0",
-                          color:
-                            "#166534",
-                          fontSize:
-                            "12px",
-                        }}
+                        role="status"
+                        style={styles.success}
                       >
                         {successMessage}
                       </div>
@@ -2106,33 +1227,14 @@ export default function FamilyOrganizerCalendarPage() {
 
                     <button
                       type="submit"
-                      disabled={
-                        saving
-                      }
+                      disabled={saving}
                       style={{
-                        marginTop:
-                          "18px",
-                        padding:
-                          "11px 17px",
-                        border:
-                          "none",
-                        borderRadius:
-                          "10px",
-                        background:
-                          "#2563EB",
-                        color:
-                          "#FFFFFF",
-                        fontSize:
-                          "13px",
-                        fontWeight: 800,
-                        cursor:
-                          saving
-                            ? "not-allowed"
-                            : "pointer",
-                        opacity:
-                          saving
-                            ? 0.65
-                            : 1,
+                        ...styles.button,
+                        marginTop: 18,
+                        cursor: saving
+                          ? "not-allowed"
+                          : "pointer",
+                        opacity: saving ? 0.65 : 1,
                       }}
                     >
                       {saving
@@ -2144,46 +1246,18 @@ export default function FamilyOrganizerCalendarPage() {
                   </form>
                 </section>
 
-                {/* ==========================================
-                    UPCOMING EVENTS
-                =========================================== */}
+                {/* UPCOMING EVENTS */}
 
-                <section
-                  style={{
-                    background:
-                      "#FFFFFF",
-                    border:
-                      "1px solid #E2E8F0",
-                    borderRadius:
-                      "18px",
-                    padding:
-                      "26px",
-                    marginBottom:
-                      "18px",
-                  }}
-                >
-                  <h2
-                    style={{
-                      margin: 0,
-                      color:
-                        "#0F172A",
-                      fontSize:
-                        "20px",
-                      fontWeight: 800,
-                    }}
-                  >
+                <section style={styles.card}>
+                  <h2 style={styles.heading}>
                     Upcoming
                   </h2>
 
                   {loadingEvents ? (
                     <div
                       style={{
-                        marginTop:
-                          "14px",
-                        color:
-                          "#64748B",
-                        fontSize:
-                          "12px",
+                        ...styles.body,
+                        marginTop: 14,
                       }}
                     >
                       Loading events...
@@ -2191,126 +1265,60 @@ export default function FamilyOrganizerCalendarPage() {
                   ) : null}
 
                   {!loadingEvents &&
-                  upcomingEvents.length ===
-                    0 ? (
+                  upcomingEvents.length === 0 ? (
                     <div
                       style={{
-                        marginTop:
-                          "14px",
-                        padding:
-                          "18px",
-                        borderRadius:
-                          "12px",
-                        background:
-                          "#F8FAFC",
-                        color:
-                          "#64748B",
-                        fontSize:
-                          "12px",
+                        marginTop: 14,
+                        padding: 18,
+                        borderRadius: 12,
+                        background: BRAND.lightTeal,
+                        color: BRAND.navy,
+                        fontSize: 12,
                         lineHeight: 1.6,
                       }}
                     >
-                      No upcoming
-                      events yet. Add
-                      an appointment,
-                      meeting,
-                      deadline, or
-                      other important
-                      date above.
+                      No upcoming events yet. Add an
+                      appointment, meeting, deadline, or
+                      other important date above.
                     </div>
                   ) : null}
 
                   {!loadingEvents
-                    ? upcomingEvents.map(
-                        renderEvent
-                      )
+                    ? upcomingEvents.map(renderEvent)
                     : null}
 
                   {calendarError ? (
                     <div
-                      style={{
-                        marginTop:
-                          "14px",
-                        padding:
-                          "11px 13px",
-                        borderRadius:
-                          "9px",
-                        background:
-                          "#FEF2F2",
-                        border:
-                          "1px solid #FECACA",
-                        color:
-                          "#B91C1C",
-                        fontSize:
-                          "12px",
-                      }}
+                      role="alert"
+                      style={styles.error}
                     >
                       {calendarError}
                     </div>
                   ) : null}
                 </section>
 
-                {/* ==========================================
-                    PAST EVENTS
-                =========================================== */}
+                {/* PAST EVENTS */}
 
-                {pastEvents.length >
-                0 ? (
-                  <section
-                    style={{
-                      background:
-                        "#FFFFFF",
-                      border:
-                        "1px solid #E2E8F0",
-                      borderRadius:
-                        "18px",
-                      padding:
-                        "26px",
-                      marginBottom:
-                        "18px",
-                    }}
-                  >
-                    <h2
-                      style={{
-                        margin: 0,
-                        color:
-                          "#0F172A",
-                        fontSize:
-                          "18px",
-                        fontWeight: 800,
-                      }}
-                    >
+                {pastEvents.length > 0 ? (
+                  <section style={styles.card}>
+                    <h2 style={styles.heading}>
                       Past Events
                     </h2>
 
-                    {pastEvents.map(
-                      renderEvent
-                    )}
+                    {pastEvents.map(renderEvent)}
                   </section>
                 ) : null}
               </>
             ) : null}
 
-            <div
-              style={{
-                marginTop:
-                  "28px",
-              }}
-            >
+            {/* BACK NAVIGATION */}
+
+            <div style={{ marginTop: 28 }}>
               <Link
                 href="/family-organizer"
-                style={{
-                  color:
-                    "#2563EB",
-                  fontSize:
-                    "14px",
-                  fontWeight: 750,
-                  textDecoration:
-                    "none",
-                }}
+                style={styles.link}
               >
-                ← Back to Family
-                Organizer
+                ← Back to Family Organizer
               </Link>
             </div>
           </>

@@ -1,8 +1,7 @@
+
 "use client";
 
-import {
-  useState,
-} from "react";
+import { useState } from "react";
 
 import type {
   VaultDocument,
@@ -15,6 +14,25 @@ import {
   getVaultDocumentDisplayTitle,
   getVaultFileTypeLabel,
 } from "../../lib/vaultHelpers";
+
+/* ============================================================
+   AUTIVOYA BRAND COLORS
+============================================================ */
+
+const BRAND = {
+  navy: "#204D6A",
+  darkNavy: "#173B52",
+  teal: "#58AAA7",
+  darkTeal: "#317E7B",
+  lightTeal: "#EAF6F5",
+  border: "#DCE7EC",
+  muted: "#647B8B",
+  white: "#FFFFFF",
+};
+
+/* ============================================================
+   PROPS
+============================================================ */
 
 type VaultDocumentCardProps = {
   document: VaultDocument;
@@ -34,6 +52,10 @@ type VaultDocumentCardProps = {
   disabled?: boolean;
 };
 
+/* ============================================================
+   DOCUMENT CARD
+============================================================ */
+
 export default function VaultDocumentCard({
   document,
   onDetails,
@@ -41,25 +63,21 @@ export default function VaultDocumentCard({
   onDelete,
   disabled = false,
 }: VaultDocumentCardProps) {
-  const [
-    menuOpen,
-    setMenuOpen,
-  ] = useState(false);
+  const [menuOpen, setMenuOpen] =
+    useState(false);
 
-  const [
-    deleting,
-    setDeleting,
-  ] = useState(false);
+  const [deleting, setDeleting] =
+    useState(false);
 
-  const [
-    viewing,
-    setViewing,
-  ] = useState(false);
+  const [viewing, setViewing] =
+    useState(false);
+
+  /* ==========================================================
+     DOCUMENT INFORMATION
+  ========================================================== */
 
   const displayTitle =
-    getVaultDocumentDisplayTitle(
-      document
-    );
+    getVaultDocumentDisplayTitle(document);
 
   const categoryLabel =
     getVaultCategoryLabel(
@@ -77,9 +95,11 @@ export default function VaultDocumentCard({
     );
 
   const fileType =
-    getVaultFileTypeLabel(
-      document
-    );
+    getVaultFileTypeLabel(document);
+
+  /* ==========================================================
+     DOCUMENT DETAILS
+  ========================================================== */
 
   function handleDetails() {
     if (
@@ -93,6 +113,10 @@ export default function VaultDocumentCard({
     setMenuOpen(false);
     onDetails(document);
   }
+
+  /* ==========================================================
+     VIEW DOCUMENT
+  ========================================================== */
 
   async function handleView() {
     if (
@@ -112,6 +136,10 @@ export default function VaultDocumentCard({
       setViewing(false);
     }
   }
+
+  /* ==========================================================
+     DELETE DOCUMENT
+  ========================================================== */
 
   async function handleDelete() {
     if (
@@ -142,17 +170,20 @@ export default function VaultDocumentCard({
     }
   }
 
+  /* ==========================================================
+     DOCUMENT CARD UI
+  ========================================================== */
+
   return (
     <article
       style={{
         position: "relative",
-        border:
-          "1px solid rgba(91, 72, 128, 0.16)",
+        border: `1px solid ${BRAND.border}`,
         borderRadius: 18,
-        background: "#ffffff",
+        background: BRAND.white,
         padding: 18,
         boxShadow:
-          "0 8px 24px rgba(46, 35, 67, 0.06)",
+          "0 8px 24px rgba(23, 59, 82, 0.06)",
       }}
     >
       <div
@@ -164,6 +195,8 @@ export default function VaultDocumentCard({
           gap: 16,
         }}
       >
+        {/* DOCUMENT INFORMATION */}
+
         <div
           style={{
             display: "flex",
@@ -173,6 +206,8 @@ export default function VaultDocumentCard({
             flex: 1,
           }}
         >
+          {/* FILE TYPE ICON */}
+
           <div
             aria-hidden="true"
             style={{
@@ -180,7 +215,7 @@ export default function VaultDocumentCard({
               height: 46,
               borderRadius: 14,
               background:
-                "rgba(108, 82, 160, 0.10)",
+                BRAND.lightTeal,
               display: "flex",
               alignItems: "center",
               justifyContent:
@@ -188,11 +223,14 @@ export default function VaultDocumentCard({
               flexShrink: 0,
               fontSize: 13,
               fontWeight: 800,
-              color: "#654c91",
+              color:
+                BRAND.darkTeal,
             }}
           >
             {fileType}
           </div>
+
+          {/* DOCUMENT TITLE AND DETAILS */}
 
           <div
             style={{
@@ -203,7 +241,8 @@ export default function VaultDocumentCard({
             <h3
               style={{
                 margin: 0,
-                color: "#2f2638",
+                color:
+                  BRAND.darkNavy,
                 fontSize: 16,
                 lineHeight: 1.35,
                 fontWeight: 750,
@@ -213,6 +252,8 @@ export default function VaultDocumentCard({
             >
               {displayTitle}
             </h3>
+
+            {/* CATEGORY AND FILE SIZE */}
 
             <div
               style={{
@@ -234,8 +275,9 @@ export default function VaultDocumentCard({
                     "3px 9px",
                   borderRadius: 999,
                   background:
-                    "rgba(108, 82, 160, 0.09)",
-                  color: "#654c91",
+                    BRAND.lightTeal,
+                  color:
+                    BRAND.darkTeal,
                   fontSize: 12,
                   fontWeight: 700,
                 }}
@@ -245,7 +287,8 @@ export default function VaultDocumentCard({
 
               <span
                 style={{
-                  color: "#756d7c",
+                  color:
+                    BRAND.muted,
                   fontSize: 12,
                 }}
               >
@@ -253,11 +296,14 @@ export default function VaultDocumentCard({
               </span>
             </div>
 
+            {/* UPLOAD DATE */}
+
             <p
               style={{
                 margin:
                   "8px 0 0",
-                color: "#817887",
+                color:
+                  BRAND.muted,
                 fontSize: 12,
                 lineHeight: 1.45,
               }}
@@ -265,12 +311,15 @@ export default function VaultDocumentCard({
               Uploaded {uploadDate}
             </p>
 
+            {/* DOCUMENT NOTES */}
+
             {document.notes ? (
               <p
                 style={{
                   margin:
                     "10px 0 0",
-                  color: "#655d69",
+                  color:
+                    BRAND.navy,
                   fontSize: 13,
                   lineHeight: 1.5,
                   overflowWrap:
@@ -283,6 +332,10 @@ export default function VaultDocumentCard({
           </div>
         </div>
 
+        {/* ====================================================
+            THREE-DOT ACTION MENU
+        ==================================================== */}
+
         <div
           style={{
             position:
@@ -293,9 +346,7 @@ export default function VaultDocumentCard({
           <button
             type="button"
             aria-label={`More options for ${displayTitle}`}
-            aria-expanded={
-              menuOpen
-            }
+            aria-expanded={menuOpen}
             disabled={
               disabled ||
               deleting ||
@@ -311,11 +362,12 @@ export default function VaultDocumentCard({
               width: 38,
               height: 38,
               border:
-                "1px solid rgba(91, 72, 128, 0.14)",
+                `1px solid ${BRAND.border}`,
               borderRadius: 12,
               background:
-                "#ffffff",
-              color: "#5f5666",
+                BRAND.white,
+              color:
+                BRAND.navy,
               fontSize: 21,
               lineHeight: 1,
               cursor:
@@ -329,6 +381,8 @@ export default function VaultDocumentCard({
             ⋯
           </button>
 
+          {/* DROPDOWN MENU */}
+
           {menuOpen ? (
             <div
               style={{
@@ -340,14 +394,16 @@ export default function VaultDocumentCard({
                 width: 170,
                 padding: 6,
                 border:
-                  "1px solid rgba(91, 72, 128, 0.14)",
+                  `1px solid ${BRAND.border}`,
                 borderRadius: 12,
                 background:
-                  "#ffffff",
+                  BRAND.white,
                 boxShadow:
-                  "0 12px 30px rgba(46, 35, 67, 0.14)",
+                  "0 12px 30px rgba(23, 59, 82, 0.14)",
               }}
             >
+              {/* DOCUMENT DETAILS */}
+
               <button
                 type="button"
                 onClick={
@@ -358,11 +414,9 @@ export default function VaultDocumentCard({
                   deleting
                 }
                 style={{
-                  width:
-                    "100%",
+                  width: "100%",
                   border: 0,
-                  borderRadius:
-                    8,
+                  borderRadius: 8,
                   background:
                     "transparent",
                   padding:
@@ -370,17 +424,17 @@ export default function VaultDocumentCard({
                   textAlign:
                     "left",
                   color:
-                    "#3d3444",
-                  fontSize:
-                    13,
-                  fontWeight:
-                    650,
+                    BRAND.darkNavy,
+                  fontSize: 13,
+                  fontWeight: 650,
                   cursor:
                     "pointer",
                 }}
               >
                 Document details
               </button>
+
+              {/* VIEW DOCUMENT */}
 
               <button
                 type="button"
@@ -392,11 +446,9 @@ export default function VaultDocumentCard({
                   deleting
                 }
                 style={{
-                  width:
-                    "100%",
+                  width: "100%",
                   border: 0,
-                  borderRadius:
-                    8,
+                  borderRadius: 8,
                   background:
                     "transparent",
                   padding:
@@ -404,11 +456,9 @@ export default function VaultDocumentCard({
                   textAlign:
                     "left",
                   color:
-                    "#3d3444",
-                  fontSize:
-                    13,
-                  fontWeight:
-                    650,
+                    BRAND.darkNavy,
+                  fontSize: 13,
+                  fontWeight: 650,
                   cursor:
                     "pointer",
                 }}
@@ -417,6 +467,8 @@ export default function VaultDocumentCard({
                   ? "Opening..."
                   : "View document"}
               </button>
+
+              {/* DELETE DOCUMENT */}
 
               <button
                 type="button"
@@ -428,11 +480,9 @@ export default function VaultDocumentCard({
                   viewing
                 }
                 style={{
-                  width:
-                    "100%",
+                  width: "100%",
                   border: 0,
-                  borderRadius:
-                    8,
+                  borderRadius: 8,
                   background:
                     "transparent",
                   padding:
@@ -440,11 +490,9 @@ export default function VaultDocumentCard({
                   textAlign:
                     "left",
                   color:
-                    "#a23f4b",
-                  fontSize:
-                    13,
-                  fontWeight:
-                    650,
+                    "#A23F4B",
+                  fontSize: 13,
+                  fontWeight: 650,
                   cursor:
                     "pointer",
                 }}
@@ -457,6 +505,10 @@ export default function VaultDocumentCard({
           ) : null}
         </div>
       </div>
+
+      {/* ======================================================
+          VIEW DOCUMENT BUTTON
+      ====================================================== */}
 
       <button
         type="button"
@@ -471,11 +523,12 @@ export default function VaultDocumentCard({
           width: "100%",
           minHeight: 42,
           border:
-            "1px solid rgba(101, 76, 145, 0.22)",
+            `1px solid ${BRAND.teal}`,
           borderRadius: 12,
           background:
-            "rgba(108, 82, 160, 0.06)",
-          color: "#654c91",
+            BRAND.lightTeal,
+          color:
+            BRAND.darkTeal,
           fontSize: 13,
           fontWeight: 750,
           cursor:

@@ -1,20 +1,11 @@
+
 "use client";
 
-import {
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
-
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
-import {
-  getCurrentUser,
-} from "../../lib/auth";
-
-import {
-  useAccountEntitlements,
-} from "../../lib/useAccountEntitlements";
+import { getCurrentUser } from "../../lib/auth";
+import { useAccountEntitlements } from "../../lib/useAccountEntitlements";
 
 import {
   getCurrentJourney,
@@ -26,43 +17,41 @@ import type {
   SavedJourney,
 } from "../../lib/journeyRepository";
 
-import {
-  getJourneyInsightFocus,
-} from "../../lib/journeyInsights/journeyAnalyticsContext";
-
-import {
-  getStageCompletionInsight,
-} from "../../lib/journeyInsights/journeyInsightClient";
+import { getJourneyInsightFocus } from "../../lib/journeyInsights/journeyAnalyticsContext";
+import { getStageCompletionInsight } from "../../lib/journeyInsights/journeyInsightClient";
 
 import type {
   PublicJourneyInsightResponse,
 } from "../../lib/journeyInsights/journeyInsightPublicTypes";
 
 /*
- * ============================================================
- * AI PROGRESS INSIGHTS PAGE
- * ============================================================
+ * AUTIVOYA — AI PROGRESS INSIGHTS
  *
- * Family-facing aggregate Journey comparison experience.
+ * Family-facing aggregate Journey comparisons.
  *
- * This page:
+ * Existing behavior:
+ * - Premium access required
+ * - Loads saved children and current Journey
+ * - Maps Journey to comparison cohort
+ * - Requests de-identified aggregate insights
+ * - Displays comparisons only when the privacy
+ *   threshold has been satisfied
  *
- * 1. Requires an authenticated Premium account
- * 2. Loads the family's saved children
- * 3. Loads the selected child's current Journey
- * 4. Maps that Journey into a safe comparison cohort
- * 5. Requests de-identified aggregate Journey Insight data
- * 6. Displays a comparison only when the privacy threshold
- *    has been satisfied
- *
- * IMPORTANT:
- *
- * This page does NOT read raw Journey analytics.
- *
- * It only receives safe aggregate data through the trusted
- * Journey Insights read API.
- * ============================================================
+ * This page does not read raw Journey analytics.
  */
+
+const BRAND = {
+  navy: "#204D6A",
+  darkNavy: "#173B52",
+  teal: "#58AAA7",
+  darkTeal: "#317E7B",
+  gold: "#F7AD3F",
+  lightTeal: "#EAF6F5",
+  white: "#FFFFFF",
+  background: "#F7FAFB",
+  muted: "#647B8B",
+  border: "#DCE7EC",
+};
 
 type PageStatus =
   | "loading"
@@ -72,27 +61,68 @@ type PageStatus =
   | "ready"
   | "error";
 
-/*
- * ============================================================
- * LOADING STATE
- * ============================================================
- */
+/* ============================================================
+   SHARED STYLES
+============================================================ */
+
+const pageStyle: React.CSSProperties = {
+  minHeight: "calc(100vh - 72px)",
+  background: BRAND.background,
+  padding: "48px 24px 72px",
+};
+
+const cardStyle: React.CSSProperties = {
+  background: BRAND.white,
+  border: `1px solid ${BRAND.border}`,
+  borderRadius: 18,
+  boxShadow: "0 8px 24px rgba(23,59,82,0.05)",
+};
+
+const primaryLinkStyle: React.CSSProperties = {
+  display: "inline-block",
+  padding: "11px 18px",
+  borderRadius: 11,
+  background: BRAND.darkTeal,
+  color: BRAND.white,
+  fontWeight: 800,
+  fontSize: 14,
+  textDecoration: "none",
+};
+
+const premiumBadgeStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  padding: "6px 11px",
+  borderRadius: 999,
+  background: BRAND.lightTeal,
+  color: BRAND.darkTeal,
+  fontSize: 11,
+  fontWeight: 800,
+  textTransform: "uppercase",
+  letterSpacing: "0.05em",
+};
+
+const informationPanelStyle: React.CSSProperties = {
+  marginTop: 24,
+  padding: 20,
+  borderRadius: 12,
+  background: BRAND.background,
+  border: `1px solid ${BRAND.border}`,
+};
+
+/* ============================================================
+   LOADING STATE
+============================================================ */
 
 function LoadingState() {
   return (
-    <main
-      style={{
-        minHeight: "calc(100vh - 72px)",
-        background: "#F8FAFC",
-        padding: "64px 24px",
-      }}
-    >
+    <main style={pageStyle}>
       <div
         style={{
-          maxWidth: "720px",
+          maxWidth: 720,
           margin: "0 auto",
           textAlign: "center",
-          color: "#64748B",
+          color: BRAND.muted,
           lineHeight: 1.7,
         }}
       >
@@ -102,37 +132,27 @@ function LoadingState() {
   );
 }
 
-/*
- * ============================================================
- * GUEST STATE
- * ============================================================
- */
+/* ============================================================
+   GUEST STATE
+============================================================ */
 
 function GuestState() {
   return (
-    <main
-      style={{
-        minHeight: "calc(100vh - 72px)",
-        background: "#F8FAFC",
-        padding: "64px 24px",
-      }}
-    >
+    <main style={pageStyle}>
       <div
         style={{
-          maxWidth: "680px",
+          ...cardStyle,
+          maxWidth: 680,
           margin: "0 auto",
-          padding: "32px",
-          borderRadius: "20px",
-          border: "1px solid #E2E8F0",
-          background: "#FFFFFF",
+          padding: 32,
           textAlign: "center",
         }}
       >
         <h1
           style={{
             margin: "0 0 12px",
-            color: "#0F172A",
-            fontSize: "28px",
+            color: BRAND.darkNavy,
+            fontSize: 28,
           }}
         >
           AI Progress Insights
@@ -141,26 +161,15 @@ function GuestState() {
         <p
           style={{
             margin: "0 auto 22px",
-            color: "#64748B",
+            color: BRAND.muted,
             lineHeight: 1.7,
           }}
         >
-          Sign in to view Progress Insights for your family's
-          Journey.
+          Sign in to view Progress Insights for your
+          family's Journey.
         </p>
 
-        <Link
-          href="/login"
-          style={{
-            display: "inline-block",
-            padding: "11px 17px",
-            borderRadius: "10px",
-            background: "#2563EB",
-            color: "#FFFFFF",
-            fontWeight: 800,
-            textDecoration: "none",
-          }}
-        >
+        <Link href="/login" style={primaryLinkStyle}>
           Log In
         </Link>
       </div>
@@ -168,53 +177,32 @@ function GuestState() {
   );
 }
 
-/*
- * ============================================================
- * UPGRADE STATE
- * ============================================================
- */
+/* ============================================================
+   UPGRADE STATE
+============================================================ */
 
 function UpgradeState() {
   return (
-    <main
-      style={{
-        minHeight: "calc(100vh - 72px)",
-        background: "#F8FAFC",
-        padding: "64px 24px",
-      }}
-    >
+    <main style={pageStyle}>
       <div
         style={{
-          maxWidth: "720px",
+          ...cardStyle,
+          maxWidth: 720,
           margin: "0 auto",
-          padding: "34px",
-          borderRadius: "22px",
-          border: "1px solid #DDD6FE",
-          background: "#FAF8FF",
+          padding: 34,
           textAlign: "center",
+          background: BRAND.white,
         }}
       >
-        <div
-          style={{
-            display: "inline-flex",
-            marginBottom: "12px",
-            padding: "5px 10px",
-            borderRadius: "999px",
-            background: "#EDE9FE",
-            color: "#6D28D9",
-            fontSize: "11px",
-            fontWeight: 800,
-            textTransform: "uppercase",
-          }}
-        >
-          Premium
+        <div style={premiumBadgeStyle}>
+          Autivoya Premium
         </div>
 
         <h1
           style={{
-            margin: "0 0 12px",
-            color: "#0F172A",
-            fontSize: "30px",
+            margin: "14px 0 12px",
+            color: BRAND.darkNavy,
+            fontSize: 30,
           }}
         >
           AI Progress Insights
@@ -223,26 +211,21 @@ function UpgradeState() {
         <p
           style={{
             margin: "0 auto",
-            maxWidth: "580px",
-            color: "#64748B",
+            maxWidth: 580,
+            color: BRAND.muted,
             lineHeight: 1.7,
           }}
         >
-          Compare your Journey with de-identified progress
-          patterns from families navigating a similar stage.
+          Compare your Journey with de-identified
+          progress patterns from families navigating
+          a similar stage.
         </p>
 
         <Link
           href="/pricing"
           style={{
-            display: "inline-block",
-            marginTop: "24px",
-            padding: "11px 18px",
-            borderRadius: "10px",
-            background: "#7C3AED",
-            color: "#FFFFFF",
-            fontWeight: 800,
-            textDecoration: "none",
+            ...primaryLinkStyle,
+            marginTop: 24,
           }}
         >
           View Premium
@@ -252,36 +235,26 @@ function UpgradeState() {
   );
 }
 
-/*
- * ============================================================
- * EMPTY STATE
- * ============================================================
- */
+/* ============================================================
+   EMPTY STATE
+============================================================ */
 
 function EmptyState() {
   return (
-    <main
-      style={{
-        minHeight: "calc(100vh - 72px)",
-        background: "#F8FAFC",
-        padding: "64px 24px",
-      }}
-    >
+    <main style={pageStyle}>
       <div
         style={{
-          maxWidth: "700px",
+          ...cardStyle,
+          maxWidth: 700,
           margin: "0 auto",
-          padding: "30px",
-          borderRadius: "20px",
-          border: "1px solid #E2E8F0",
-          background: "#FFFFFF",
+          padding: 30,
           textAlign: "center",
         }}
       >
         <h2
           style={{
             margin: "0 0 10px",
-            color: "#0F172A",
+            color: BRAND.darkNavy,
           }}
         >
           Start your family Journey first
@@ -290,25 +263,18 @@ function EmptyState() {
         <p
           style={{
             margin: "0 auto 20px",
-            color: "#64748B",
+            color: BRAND.muted,
             lineHeight: 1.65,
           }}
         >
-          Progress Insights use your child's current Journey to
-          identify the appropriate comparison group.
+          Progress Insights use your child's current
+          Journey to identify the appropriate
+          comparison group.
         </p>
 
         <Link
           href="/journey"
-          style={{
-            display: "inline-block",
-            padding: "10px 16px",
-            borderRadius: "10px",
-            background: "#2563EB",
-            color: "#FFFFFF",
-            fontWeight: 800,
-            textDecoration: "none",
-          }}
+          style={primaryLinkStyle}
         >
           Go to My Journey
         </Link>
@@ -317,27 +283,20 @@ function EmptyState() {
   );
 }
 
-/*
- * ============================================================
- * ERROR STATE
- * ============================================================
- */
+/* ============================================================
+   ERROR STATE
+============================================================ */
 
 function ErrorState() {
   return (
-    <main
-      style={{
-        minHeight: "calc(100vh - 72px)",
-        background: "#F8FAFC",
-        padding: "64px 24px",
-      }}
-    >
+    <main style={pageStyle}>
       <div
+        role="alert"
         style={{
-          maxWidth: "680px",
+          maxWidth: 680,
           margin: "0 auto",
-          padding: "28px",
-          borderRadius: "18px",
+          padding: 28,
+          borderRadius: 18,
           border: "1px solid #FECACA",
           background: "#FFF7F7",
           color: "#991B1B",
@@ -345,104 +304,64 @@ function ErrorState() {
           lineHeight: 1.6,
         }}
       >
-        We couldn't load your Progress Insights right now.
-        Please try again.
+        We couldn't load your Progress Insights
+        right now. Please try again.
       </div>
     </main>
   );
 }
 
-/*
- * ============================================================
- * PAGE
- * ============================================================
- */
+/* ============================================================
+   MAIN PAGE
+============================================================ */
 
 export default function ProgressInsightsPage() {
-  const {
-    plan,
-  } =
-    useAccountEntitlements();
+  const { plan } = useAccountEntitlements();
 
-  const [
-    status,
-    setStatus,
-  ] =
-    useState<PageStatus>(
-      "loading"
-    );
+  const [status, setStatus] =
+    useState<PageStatus>("loading");
 
-  const [
-    children,
-    setChildren,
-  ] =
-    useState<SavedChild[]>(
-      []
-    );
+  const [children, setChildren] =
+    useState<SavedChild[]>([]);
 
-  const [
-    selectedChildId,
-    setSelectedChildId,
-  ] =
+  const [selectedChildId, setSelectedChildId] =
     useState("");
 
-  const [
-    currentJourney,
-    setCurrentJourney,
-  ] =
-    useState<SavedJourney | null>(
-      null
-    );
+  const [currentJourney, setCurrentJourney] =
+    useState<SavedJourney | null>(null);
 
-  const [
-    insightResponse,
-    setInsightResponse,
-  ] =
+  const [insightResponse, setInsightResponse] =
     useState<PublicJourneyInsightResponse | null>(
       null
     );
 
-  const [
-    loadingChild,
-    setLoadingChild,
-  ] =
+  const [loadingChild, setLoadingChild] =
     useState(false);
 
-  /*
-   * ==========================================================
-   * PREMIUM ACCESS
-   * ==========================================================
-   */
+  /* ==========================================================
+     PREMIUM ACCESS
+  ========================================================== */
 
   const hasPremiumAccess =
     plan === "premium" ||
     plan === "premium_plus";
 
-  /*
-   * ==========================================================
-   * SELECTED CHILD
-   * ==========================================================
-   */
+  /* ==========================================================
+     SELECTED CHILD
+  ========================================================== */
 
-  const selectedChild =
-    useMemo(
-      () =>
-        children.find(
-          (child) =>
-            child.childId ===
-            selectedChildId
-        ) || null,
-      [
-        children,
-        selectedChildId,
-      ]
-    );
+  const selectedChild = useMemo(
+    () =>
+      children.find(
+        (child) =>
+          child.childId === selectedChildId
+      ) || null,
+    [children, selectedChildId]
+  );
 
-  /*
-   * ==========================================================
-   * LOAD INSIGHT FOR JOURNEY
-   * ==========================================================
-   */
+  /* ==========================================================
+     LOAD INSIGHT FOR JOURNEY
+  ========================================================== */
 
   async function loadInsight(
     child: SavedChild,
@@ -453,11 +372,9 @@ export default function ProgressInsightsPage() {
       return;
     }
 
-    const focus =
-      getJourneyInsightFocus(
-        child.familyProfile
-          .journeyStage || ""
-      );
+    const focus = getJourneyInsightFocus(
+      child.familyProfile.journeyStage || ""
+    );
 
     if (!focus) {
       setInsightResponse({
@@ -469,13 +386,10 @@ export default function ProgressInsightsPage() {
       return;
     }
 
-    const stageNumber =
-      Math.max(
-        1,
-        Math.floor(
-          journey.stageNumber || 1
-        )
-      );
+    const stageNumber = Math.max(
+      1,
+      Math.floor(journey.stageNumber || 1)
+    );
 
     const response =
       await getStageCompletionInsight(
@@ -486,196 +400,122 @@ export default function ProgressInsightsPage() {
         }
       );
 
-    setInsightResponse(
-      response
-    );
+    setInsightResponse(response);
   }
 
-  /*
-   * ==========================================================
-   * LOAD ACCOUNT + INITIAL CHILD
-   * ==========================================================
-   */
+  /* ==========================================================
+     LOAD ACCOUNT AND INITIAL CHILD
+  ========================================================== */
 
-  useEffect(
-    () => {
-      let cancelled =
-        false;
+  useEffect(() => {
+    let cancelled = false;
 
-      async function loadPage() {
-        setStatus(
-          "loading"
+    async function loadPage() {
+      setStatus("loading");
+
+      try {
+        const user = await getCurrentUser();
+
+        if (cancelled) return;
+
+        if (!user) {
+          setStatus("guest");
+          return;
+        }
+
+        if (!hasPremiumAccess) {
+          setStatus("free");
+          return;
+        }
+
+        const savedChildren =
+          await getSavedChildren(user.uid);
+
+        if (cancelled) return;
+
+        setChildren(savedChildren);
+
+        if (savedChildren.length === 0) {
+          setSelectedChildId("");
+          setCurrentJourney(null);
+          setInsightResponse(null);
+          setStatus("empty");
+          return;
+        }
+
+        /*
+         * getSavedChildren returns children
+         * with the most recently updated first.
+         */
+
+        const initialChild = savedChildren[0];
+
+        setSelectedChildId(
+          initialChild.childId
         );
 
-        try {
-          const user =
-            await getCurrentUser();
-
-          if (cancelled) {
-            return;
-          }
-
-          if (!user) {
-            setStatus(
-              "guest"
-            );
-
-            return;
-          }
-
-          if (!hasPremiumAccess) {
-            setStatus(
-              "free"
-            );
-
-            return;
-          }
-
-          const savedChildren =
-            await getSavedChildren(
-              user.uid
-            );
-
-          if (cancelled) {
-            return;
-          }
-
-          setChildren(
-            savedChildren
-          );
-
-          if (
-            savedChildren.length ===
-            0
-          ) {
-            setSelectedChildId(
-              ""
-            );
-
-            setCurrentJourney(
-              null
-            );
-
-            setInsightResponse(
-              null
-            );
-
-            setStatus(
-              "empty"
-            );
-
-            return;
-          }
-
-          /*
-           * getSavedChildren() already returns children with the
-           * most recently updated child first.
-           */
-
-          const initialChild =
-            savedChildren[0];
-
-          setSelectedChildId(
+        const journey =
+          await getCurrentJourney(
+            user.uid,
             initialChild.childId
           );
 
-          const journey =
-            await getCurrentJourney(
-              user.uid,
-              initialChild.childId
-            );
+        if (cancelled) return;
 
-          if (cancelled) {
-            return;
-          }
+        setCurrentJourney(journey);
 
-          setCurrentJourney(
-            journey
-          );
+        await loadInsight(
+          initialChild,
+          journey
+        );
 
-          await loadInsight(
-            initialChild,
-            journey
-          );
+        if (cancelled) return;
 
-          if (cancelled) {
-            return;
-          }
+        setStatus("ready");
+      } catch (error) {
+        console.error(
+          "Progress Insights load error:",
+          error
+        );
 
-          setStatus(
-            "ready"
-          );
-        } catch (error) {
-          console.error(
-            "Progress Insights load error:",
-            error
-          );
-
-          if (!cancelled) {
-            setStatus(
-              "error"
-            );
-          }
+        if (!cancelled) {
+          setStatus("error");
         }
       }
+    }
 
-      loadPage();
+    void loadPage();
 
-      return () => {
-        cancelled =
-          true;
-      };
-    },
-    [
-      hasPremiumAccess,
-    ]
-  );
+    return () => {
+      cancelled = true;
+    };
+  }, [hasPremiumAccess]);
 
-  /*
-   * ==========================================================
-   * CHANGE CHILD
-   * ==========================================================
-   */
+  /* ==========================================================
+     CHANGE CHILD
+  ========================================================== */
 
   async function handleChildChange(
     childId: string
   ) {
-    setSelectedChildId(
-      childId
-    );
-
-    setLoadingChild(
-      true
-    );
-
-    setInsightResponse(
-      null
-    );
+    setSelectedChildId(childId);
+    setLoadingChild(true);
+    setInsightResponse(null);
 
     try {
-      const user =
-        await getCurrentUser();
+      const user = await getCurrentUser();
 
       if (!user) {
-        setStatus(
-          "guest"
-        );
-
+        setStatus("guest");
         return;
       }
 
-      const child =
-        children.find(
-          (item) =>
-            item.childId ===
-            childId
-        );
+      const child = children.find(
+        (item) => item.childId === childId
+      );
 
       if (!child) {
-        setStatus(
-          "error"
-        );
-
+        setStatus("error");
         return;
       }
 
@@ -685,9 +525,7 @@ export default function ProgressInsightsPage() {
           childId
         );
 
-      setCurrentJourney(
-        journey
-      );
+      setCurrentJourney(journey);
 
       await loadInsight(
         child,
@@ -699,161 +537,92 @@ export default function ProgressInsightsPage() {
         error
       );
 
-      setStatus(
-        "error"
-      );
+      setStatus("error");
     } finally {
-      setLoadingChild(
-        false
-      );
+      setLoadingChild(false);
     }
   }
 
-  /*
-   * ==========================================================
-   * PAGE STATES
-   * ==========================================================
-   */
+  /* ==========================================================
+     PAGE STATES
+  ========================================================== */
 
-  if (
-    status === "loading"
-  ) {
-    return (
-      <LoadingState />
-    );
+  if (status === "loading") {
+    return <LoadingState />;
   }
 
-  if (
-    status === "guest"
-  ) {
-    return (
-      <GuestState />
-    );
+  if (status === "guest") {
+    return <GuestState />;
   }
 
-  if (
-    status === "free"
-  ) {
-    return (
-      <UpgradeState />
-    );
+  if (status === "free") {
+    return <UpgradeState />;
   }
 
-  if (
-    status === "empty"
-  ) {
-    return (
-      <EmptyState />
-    );
+  if (status === "empty") {
+    return <EmptyState />;
   }
 
-  if (
-    status === "error"
-  ) {
-    return (
-      <ErrorState />
-    );
+  if (status === "error") {
+    return <ErrorState />;
   }
 
-  /*
-   * ==========================================================
-   * CURRENT JOURNEY INFORMATION
-   * ==========================================================
-   */
+  /* ==========================================================
+     CURRENT JOURNEY INFORMATION
+  ========================================================== */
 
-  const stageNumber =
-    currentJourney
-      ? Math.max(
-          1,
-          Math.floor(
-            currentJourney.stageNumber ||
-              1
-          )
+  const stageNumber = currentJourney
+    ? Math.max(
+        1,
+        Math.floor(
+          currentJourney.stageNumber || 1
         )
-      : null;
+      )
+    : null;
 
-  const focus =
-    selectedChild
-      ? getJourneyInsightFocus(
-          selectedChild.familyProfile
-            .journeyStage || ""
-        )
-      : undefined;
+  const focus = selectedChild
+    ? getJourneyInsightFocus(
+        selectedChild.familyProfile
+          .journeyStage || ""
+      )
+    : undefined;
 
-  /*
-   * ==========================================================
-   * MAIN EXPERIENCE
-   * ==========================================================
-   */
+  /* ==========================================================
+     MAIN EXPERIENCE
+  ========================================================== */
 
   return (
-    <main
-      style={{
-        minHeight:
-          "calc(100vh - 72px)",
-        background:
-          "#F8FAFC",
-        padding:
-          "48px 24px 72px",
-      }}
-    >
+    <main style={pageStyle}>
       <div
         style={{
           width: "100%",
-          maxWidth: "960px",
+          maxWidth: 960,
           margin: "0 auto",
         }}
       >
-        {/* ==================================================
-            PAGE INTRODUCTION
-        =================================================== */}
+        {/* PAGE INTRODUCTION */}
 
         <section
           style={{
-            marginBottom: "28px",
+            marginBottom: 28,
           }}
         >
           <div
             style={{
-              display:
-                "inline-flex",
-              alignItems:
-                "center",
-              gap: "7px",
-              padding:
-                "6px 10px",
-              borderRadius:
-                "999px",
-              background:
-                "#DBEAFE",
-              color:
-                "#1D4ED8",
-              fontSize:
-                "11px",
-              fontWeight:
-                800,
-              textTransform:
-                "uppercase",
-              letterSpacing:
-                "0.05em",
-              marginBottom:
-                "16px",
+              ...premiumBadgeStyle,
+              marginBottom: 16,
             }}
           >
-            Premium
+            Autivoya Premium
           </div>
 
           <h1
             style={{
               margin: 0,
-              color:
-                "#0F172A",
-              fontSize:
-                "36px",
-              lineHeight:
-                1.15,
-              fontWeight:
-                850,
+              color: BRAND.darkNavy,
+              fontSize: 36,
+              lineHeight: 1.15,
+              fontWeight: 850,
             }}
           >
             AI Progress Insights
@@ -861,56 +630,39 @@ export default function ProgressInsightsPage() {
 
           <p
             style={{
-              margin:
-                "12px 0 0",
-              maxWidth:
-                "720px",
-              color:
-                "#64748B",
-              fontSize:
-                "16px",
-              lineHeight:
-                1.7,
+              margin: "12px 0 0",
+              maxWidth: 720,
+              color: BRAND.muted,
+              fontSize: 16,
+              lineHeight: 1.7,
             }}
           >
-            See how families navigating a similar point in their
-            Journey are progressing, using de-identified aggregate
+            See how families navigating a similar
+            point in their Journey are progressing,
+            using de-identified aggregate
             Journey activity.
           </p>
         </section>
 
-        {/* ==================================================
-            CHILD SELECTOR
-        =================================================== */}
+        {/* CHILD SELECTOR */}
 
         {children.length > 1 && (
           <section
             style={{
-              marginBottom:
-                "20px",
-              padding:
-                "18px 20px",
-              borderRadius:
-                "14px",
-              border:
-                "1px solid #E2E8F0",
-              background:
-                "#FFFFFF",
+              ...cardStyle,
+              marginBottom: 20,
+              padding: "18px 20px",
+              borderRadius: 14,
             }}
           >
             <label
               htmlFor="progress-insights-child"
               style={{
-                display:
-                  "block",
-                marginBottom:
-                  "8px",
-                color:
-                  "#334155",
-                fontSize:
-                  "13px",
-                fontWeight:
-                  800,
+                display: "block",
+                marginBottom: 8,
+                color: BRAND.darkNavy,
+                fontSize: 13,
+                fontWeight: 800,
               }}
             >
               View insights for
@@ -918,66 +670,43 @@ export default function ProgressInsightsPage() {
 
             <select
               id="progress-insights-child"
-              value={
-                selectedChildId
-              }
-              disabled={
-                loadingChild
-              }
-              onChange={(
-                event
-              ) =>
+              value={selectedChildId}
+              disabled={loadingChild}
+              onChange={(event) =>
                 handleChildChange(
-                  event.target
-                    .value
+                  event.target.value
                 )
               }
               style={{
-                width:
-                  "100%",
-                maxWidth:
-                  "420px",
-                padding:
-                  "11px 12px",
-                borderRadius:
-                  "10px",
+                width: "100%",
+                maxWidth: 420,
+                padding: "11px 12px",
+                borderRadius: 10,
                 border:
-                  "1px solid #CBD5E1",
-                background:
-                  "#FFFFFF",
-                color:
-                  "#0F172A",
-                fontSize:
-                  "14px",
+                  `1px solid ${BRAND.border}`,
+                background: BRAND.white,
+                color: BRAND.darkNavy,
+                fontSize: 14,
+                outlineColor: BRAND.teal,
               }}
             >
-              {children.map(
-                (child) => (
-                  <option
-                    key={
-                      child.childId
-                    }
-                    value={
-                      child.childId
-                    }
-                  >
-                    {child.familyProfile
-                      .childName ||
-                      "Child"}
-                  </option>
-                )
-              )}
+              {children.map((child) => (
+                <option
+                  key={child.childId}
+                  value={child.childId}
+                >
+                  {child.familyProfile
+                    .childName || "Child"}
+                </option>
+              ))}
             </select>
 
             {loadingChild && (
               <div
                 style={{
-                  marginTop:
-                    "8px",
-                  color:
-                    "#64748B",
-                  fontSize:
-                    "12px",
+                  marginTop: 8,
+                  color: BRAND.muted,
+                  fontSize: 12,
                 }}
               >
                 Loading insights...
@@ -986,46 +715,30 @@ export default function ProgressInsightsPage() {
           </section>
         )}
 
-        {/* ==================================================
-            INSIGHT CARD
-        =================================================== */}
+        {/* MAIN INSIGHT CARD */}
 
         <section
           style={{
-            background:
-              "#FFFFFF",
-            border:
-              "1px solid #E2E8F0",
-            borderRadius:
-              "18px",
-            padding:
-              "30px",
-            boxShadow:
-              "0 8px 24px rgba(15, 23, 42, 0.05)",
+            ...cardStyle,
+            padding: 30,
           }}
         >
+          {/* ICON */}
+
           <div
-            style={{
-              width:
-                "46px",
-              height:
-                "46px",
-              display:
-                "flex",
-              alignItems:
-                "center",
-              justifyContent:
-                "center",
-              borderRadius:
-                "13px",
-              background:
-                "#EFF6FF",
-              fontSize:
-                "22px",
-              marginBottom:
-                "18px",
-            }}
             aria-hidden="true"
+            style={{
+              width: 46,
+              height: 46,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: 13,
+              background: BRAND.lightTeal,
+              color: BRAND.darkTeal,
+              fontSize: 22,
+              marginBottom: 18,
+            }}
           >
             ✨
           </div>
@@ -1033,65 +746,40 @@ export default function ProgressInsightsPage() {
           <h2
             style={{
               margin: 0,
-              color:
-                "#0F172A",
-              fontSize:
-                "23px",
-              lineHeight:
-                1.3,
-              fontWeight:
-                800,
+              color: BRAND.darkNavy,
+              fontSize: 23,
+              lineHeight: 1.3,
+              fontWeight: 800,
             }}
           >
-            Families at a similar point in the Journey
+            Families at a similar point
+            in the Journey
           </h2>
 
           <p
             style={{
-              margin:
-                "10px 0 0",
-              color:
-                "#64748B",
-              fontSize:
-                "14px",
-              lineHeight:
-                1.7,
-              maxWidth:
-                "680px",
+              margin: "10px 0 0",
+              color: BRAND.muted,
+              fontSize: 14,
+              lineHeight: 1.7,
+              maxWidth: 680,
             }}
           >
-            These insights compare de-identified Journey activity
-            from families navigating the same Journey focus and
-            stage.
+            These insights compare de-identified
+            Journey activity from families
+            navigating the same Journey focus
+            and stage.
           </p>
 
-          {/* ================================================
-              NO CURRENT JOURNEY
-          ================================================= */}
+          {/* NO CURRENT JOURNEY */}
 
           {!currentJourney && (
-            <div
-              style={{
-                marginTop:
-                  "24px",
-                padding:
-                  "20px",
-                borderRadius:
-                  "12px",
-                background:
-                  "#F8FAFC",
-                border:
-                  "1px solid #E2E8F0",
-              }}
-            >
+            <div style={informationPanelStyle}>
               <div
                 style={{
-                  color:
-                    "#334155",
-                  fontSize:
-                    "14px",
-                  fontWeight:
-                    800,
+                  color: BRAND.darkNavy,
+                  fontSize: 14,
+                  fontWeight: 800,
                 }}
               >
                 No current Journey found
@@ -1099,112 +787,78 @@ export default function ProgressInsightsPage() {
 
               <div
                 style={{
-                  marginTop:
-                    "6px",
-                  color:
-                    "#64748B",
-                  fontSize:
-                    "13px",
-                  lineHeight:
-                    1.6,
+                  marginTop: 6,
+                  color: BRAND.muted,
+                  fontSize: 13,
+                  lineHeight: 1.6,
                 }}
               >
-                Start a Journey for this child before viewing
-                Progress Insights.
+                Start a Journey for this child
+                before viewing Progress Insights.
               </div>
             </div>
           )}
 
-          {/* ================================================
-              UNSUPPORTED COHORT
-          ================================================= */}
+          {/* UNSUPPORTED COMPARISON COHORT */}
 
-          {currentJourney &&
-            !focus && (
+          {currentJourney && !focus && (
+            <div style={informationPanelStyle}>
               <div
                 style={{
-                  marginTop:
-                    "24px",
-                  padding:
-                    "20px",
-                  borderRadius:
-                    "12px",
-                  background:
-                    "#F8FAFC",
-                  border:
-                    "1px solid #E2E8F0",
+                  color: BRAND.darkNavy,
+                  fontSize: 14,
+                  fontWeight: 800,
                 }}
               >
-                <div
-                  style={{
-                    color:
-                      "#334155",
-                    fontSize:
-                      "14px",
-                    fontWeight:
-                      800,
-                  }}
-                >
-                  This comparison isn't available yet
-                </div>
-
-                <div
-                  style={{
-                    marginTop:
-                      "6px",
-                    color:
-                      "#64748B",
-                    fontSize:
-                      "13px",
-                    lineHeight:
-                      1.6,
-                  }}
-                >
-                  We're continuing to expand the Journey categories
-                  supported by Progress Insights.
-                </div>
+                This comparison isn't available yet
               </div>
-            )}
 
-          {/* ================================================
-              AGGREGATE AVAILABLE
-          ================================================= */}
+              <div
+                style={{
+                  marginTop: 6,
+                  color: BRAND.muted,
+                  fontSize: 13,
+                  lineHeight: 1.6,
+                }}
+              >
+                We're continuing to expand
+                the Journey categories supported
+                by Progress Insights.
+              </div>
+            </div>
+          )}
+
+          {/* AGGREGATE DATA AVAILABLE */}
 
           {currentJourney &&
             focus &&
-            insightResponse
-              ?.available &&
-            insightResponse
-              .insight.type ===
+            insightResponse?.available &&
+            insightResponse.insight.type ===
               "stage_completion" && (
               <div
                 style={{
-                  marginTop:
-                    "24px",
+                  marginTop: 24,
                 }}
               >
                 <div
                   style={{
-                    padding:
-                      "24px",
-                    borderRadius:
-                      "16px",
+                    padding: 24,
+                    borderRadius: 16,
                     background:
-                      "#EFF6FF",
+                      BRAND.lightTeal,
                     border:
-                      "1px solid #BFDBFE",
+                      "1px solid #D1EAE8",
+                    borderLeft:
+                      `4px solid ${BRAND.teal}`,
                   }}
                 >
                   <div
                     style={{
                       color:
-                        "#1D4ED8",
-                      fontSize:
-                        "46px",
-                      lineHeight:
-                        1,
-                      fontWeight:
-                        850,
+                        BRAND.darkTeal,
+                      fontSize: 46,
+                      lineHeight: 1,
+                      fontWeight: 850,
                     }}
                   >
                     {
@@ -1217,19 +871,16 @@ export default function ProgressInsightsPage() {
 
                   <div
                     style={{
-                      marginTop:
-                        "10px",
+                      marginTop: 10,
                       color:
-                        "#1E3A8A",
-                      fontSize:
-                        "16px",
-                      fontWeight:
-                        800,
-                      lineHeight:
-                        1.5,
+                        BRAND.darkNavy,
+                      fontSize: 16,
+                      fontWeight: 800,
+                      lineHeight: 1.5,
                     }}
                   >
-                    of families in this comparison group completed
+                    of families in this
+                    comparison group completed
                     Journey Stage{" "}
                     {
                       insightResponse
@@ -1240,59 +891,39 @@ export default function ProgressInsightsPage() {
 
                   <div
                     style={{
-                      marginTop:
-                        "8px",
-                      color:
-                        "#64748B",
-                      fontSize:
-                        "13px",
-                      lineHeight:
-                        1.6,
+                      marginTop: 8,
+                      color: BRAND.muted,
+                      fontSize: 13,
+                      lineHeight: 1.6,
                     }}
                   >
-                    Based on de-identified aggregate activity from{" "}
+                    Based on de-identified
+                    aggregate activity from{" "}
                     {
                       insightResponse
                         .insight
                         .cohortSize
                     }{" "}
-                    families navigating a similar Journey focus
-                    and stage.
+                    families navigating a similar
+                    Journey focus and stage.
                   </div>
                 </div>
               </div>
             )}
 
-          {/* ================================================
-              INSUFFICIENT AGGREGATE DATA
-          ================================================= */}
+          {/* INSUFFICIENT AGGREGATE DATA */}
 
           {currentJourney &&
             focus &&
             insightResponse &&
             !insightResponse.available && (
-              <div
-                style={{
-                  marginTop:
-                    "24px",
-                  padding:
-                    "20px",
-                  borderRadius:
-                    "12px",
-                  background:
-                    "#F8FAFC",
-                  border:
-                    "1px solid #E2E8F0",
-                }}
-              >
+              <div style={informationPanelStyle}>
                 <div
                   style={{
                     color:
-                      "#334155",
-                    fontSize:
-                      "14px",
-                    fontWeight:
-                      800,
+                      BRAND.darkNavy,
+                    fontSize: 14,
+                    fontWeight: 800,
                   }}
                 >
                   We're still building this insight
@@ -1300,75 +931,57 @@ export default function ProgressInsightsPage() {
 
                 <div
                   style={{
-                    marginTop:
-                      "6px",
-                    color:
-                      "#64748B",
-                    fontSize:
-                      "13px",
-                    lineHeight:
-                      1.6,
+                    marginTop: 6,
+                    color: BRAND.muted,
+                    fontSize: 13,
+                    lineHeight: 1.6,
                   }}
                 >
-                  We only show comparisons after enough families
-                  are represented in the same Journey group. This
-                  helps protect family privacy and keeps the
-                  comparison meaningful.
+                  We only show comparisons after
+                  enough families are represented
+                  in the same Journey group. This
+                  helps protect family privacy
+                  and keeps the comparison meaningful.
                 </div>
               </div>
             )}
 
-          {/* ================================================
-              COHORT CONTEXT
-          ================================================= */}
+          {/* COMPARISON CONTEXT */}
 
           {currentJourney &&
             focus &&
             stageNumber && (
               <div
                 style={{
-                  marginTop:
-                    "18px",
-                  color:
-                    "#94A3B8",
-                  fontSize:
-                    "12px",
-                  lineHeight:
-                    1.6,
+                  marginTop: 18,
+                  color: BRAND.muted,
+                  fontSize: 12,
+                  lineHeight: 1.6,
                 }}
               >
-                Current comparison: Journey Stage{" "}
-                {stageNumber}
+                Current comparison:
+                Journey Stage {stageNumber}
               </div>
             )}
         </section>
 
-        {/* ==================================================
-            PRIVACY / CONTEXT
-        =================================================== */}
+        {/* PRIVACY INFORMATION */}
 
         <section
           style={{
-            marginTop:
-              "20px",
-            padding:
-              "18px 20px",
-            borderRadius:
-              "14px",
-            background:
-              "#F5F3FF",
+            marginTop: 20,
+            padding: "18px 20px",
+            borderRadius: 14,
+            background: BRAND.lightTeal,
             border:
-              "1px solid #DDD6FE",
+              "1px solid #D1EAE8",
           }}
         >
           <div
             style={{
-              color:
-                "#5B21B6",
-              fontSize:
-                "13px",
-              fontWeight:
-                800,
+              color: BRAND.darkTeal,
+              fontSize: 13,
+              fontWeight: 800,
             }}
           >
             About your Progress Insights
@@ -1376,46 +989,38 @@ export default function ProgressInsightsPage() {
 
           <p
             style={{
-              margin:
-                "6px 0 0",
-              color:
-                "#64748B",
-              fontSize:
-                "12px",
-              lineHeight:
-                1.6,
+              margin: "6px 0 0",
+              color: BRAND.muted,
+              fontSize: 12,
+              lineHeight: 1.6,
             }}
           >
-            Progress Insights use de-identified aggregate Journey
-            activity. Individual family activity is not shown.
-            Comparisons are only displayed when enough families
-            are represented to meet Myriad's privacy threshold.
-            These insights do not diagnose conditions, predict
-            outcomes, or replace professional guidance.
+            Progress Insights use de-identified
+            aggregate Journey activity. Individual
+            family activity is not shown.
+            Comparisons are only displayed when
+            enough families are represented to
+            meet Autivoya's privacy threshold.
+            These insights do not diagnose
+            conditions, predict outcomes,
+            or replace professional guidance.
           </p>
         </section>
 
-        {/* ==================================================
-            BACK TO JOURNEY
-        =================================================== */}
+        {/* BACK TO MY JOURNEY */}
 
         <div
           style={{
-            marginTop:
-              "28px",
+            marginTop: 28,
           }}
         >
           <Link
             href="/journey"
             style={{
-              color:
-                "#2563EB",
-              fontSize:
-                "14px",
-              fontWeight:
-                750,
-              textDecoration:
-                "none",
+              color: BRAND.darkTeal,
+              fontSize: 14,
+              fontWeight: 750,
+              textDecoration: "none",
             }}
           >
             ← Back to My Journey

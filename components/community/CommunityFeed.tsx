@@ -843,7 +843,7 @@ export default function CommunityFeed() {
                   "10px",
 
                 background:
-                  "#2563EB",
+                  "#204D6A",
 
                 color:
                   "#FFFFFF",
@@ -878,11 +878,8 @@ export default function CommunityFeed() {
                 border:
                   "1px solid #CBD5E1",
 
-                background:
-                  "#FFFFFF",
-
-                color:
-                  "#334155",
+                  background: "#F7AD3F",
+                  color: "#173B52",
 
                 fontSize:
                   "14px",
@@ -1037,10 +1034,10 @@ export default function CommunityFeed() {
                       "1px solid #BFDBFE",
 
                     background:
-                      "#EFF6FF",
+                    "#EAF6F5",
 
                     color:
-                      "#1D4ED8",
+                    "#204D6A",
 
                     fontSize:
                       "13px",
@@ -1084,7 +1081,7 @@ export default function CommunityFeed() {
                     "10px",
 
                   background:
-                    "#2563EB",
+                  "#204D6A",
 
                   color:
                     "#FFFFFF",
@@ -1130,13 +1127,13 @@ export default function CommunityFeed() {
                 "12px",
 
               background:
-                "#EFF6FF",
+              "#EAF6F5",
 
               border:
                 "1px solid #BFDBFE",
 
               color:
-                "#1E40AF",
+              "#204D6A",
 
               fontSize:
                 "13px",
@@ -1205,7 +1202,7 @@ export default function CommunityFeed() {
             <div
               style={{
                 color:
-                  "#2563EB",
+                "#204D6A",
 
                 fontSize:
                   "11px",
@@ -1427,10 +1424,10 @@ export default function CommunityFeed() {
                 "999px",
 
               background:
-                "#EFF6FF",
+              "#EAF6F5",
 
               color:
-                "#1D4ED8",
+              "#204D6A",
 
               fontSize:
                 "12px",
@@ -1833,7 +1830,7 @@ export default function CommunityFeed() {
                   "10px",
 
                 background:
-                  "#2563EB",
+                "#204D6A",
 
                 color:
                   "#FFFFFF",
@@ -1864,76 +1861,32 @@ export default function CommunityFeed() {
  */
 
 function CommunityHeader() {
-
   return (
     <header>
-      <div
-        style={{
-          color:
-            "#2563EB",
-
-          fontSize:
-            "12px",
-
-          fontWeight:
-            800,
-
-          letterSpacing:
-            "0.08em",
-
-          textTransform:
-            "uppercase",
-
-          marginBottom:
-            "7px",
-        }}
-      >
-        Myriad Autism Journey
-      </div>
-
-
       <h1
         style={{
           margin: 0,
-
-          color:
-            "#0F172A",
-
-          fontSize:
-            "40px",
-
-          lineHeight:
-            1.15,
-
-          fontWeight:
-            850,
+          color: "#204D6A",
+          fontSize: "34px",
+          lineHeight: 1.2,
+          fontWeight: 800,
+          letterSpacing: "-0.02em",
         }}
       >
-        Community
+        Autivoya Community
       </h1>
-
 
       <p
         style={{
-          maxWidth:
-            "760px",
-
-          margin:
-            "12px 0 0",
-
-          color:
-            "#64748B",
-
-          fontSize:
-            "17px",
-
-          lineHeight:
-            1.65,
+          maxWidth: "760px",
+          margin: "14px 0 0",
+          color: "#64748B",
+          fontSize: "17px",
+          lineHeight: 1.65,
         }}
       >
-        Explore conversations, experiences,
-        and encouragement from families
-        navigating the autism journey.
+        Explore conversations, experiences, and encouragement
+        from families navigating the autism journey.
       </p>
     </header>
   );
@@ -2011,10 +1964,10 @@ function CommunityPostCard({
               "999px",
 
             background:
-              "#EFF6FF",
+            "#EAF6F5",
 
             color:
-              "#2563EB",
+            "#204D6A",
 
             fontSize:
               "10px",
@@ -2187,7 +2140,7 @@ function CommunityPostCard({
           }
           style={{
             color:
-              "#2563EB",
+            "#204D6A",
 
             fontSize:
               "13px",

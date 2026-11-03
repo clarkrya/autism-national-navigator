@@ -1,8 +1,23 @@
-.section {
+
+/*
+ * ============================================================
+ * AUTIVOYA — CALL TO ACTION
+ * ============================================================
+ *
+ * Navy: #204D6A
+ * Teal: #58AAA7
+ * Gold: #F7AD3F
+ *
+ * Preserves existing layout and responsive behavior.
+ * ============================================================
+ */
+
+ .section {
   background: linear-gradient(
     135deg,
-    #2563eb 0%,
-    #14b8a6 100%
+    #204d6a 0%,
+    #286d7b 55%,
+    #58aaa7 100%
   );
 
   padding: 100px 24px;
@@ -10,41 +25,48 @@
 
 .wrapper {
   max-width: 900px;
-
   margin: 0 auto;
-
   text-align: center;
-
   color: #ffffff;
 }
 
 .title {
   font-size: 50px;
-
   font-weight: 800;
-
   line-height: 1.15;
-
+  color: #ffffff;
   margin: 0 0 24px;
 }
 
 .text {
   font-size: 21px;
-
   line-height: 1.75;
-
-  color: rgba(255, 255, 255, 0.92);
-
+  color: rgba(255, 255, 255, 0.95);
   max-width: 760px;
-
   margin: 0 auto 36px;
 }
 
 .button {
   display: inline-block;
-
   text-decoration: none;
 }
+
+/*
+ * Supporting text beneath the CTA.
+ *
+ * Overrides the existing inline gray color so the
+ * text remains readable on the gradient background.
+ */
+
+.wrapper > p:last-child {
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+/*
+ * ============================================================
+ * TABLET
+ * ============================================================
+ */
 
 @media (max-width: 900px) {
   .section {
@@ -57,10 +79,15 @@
 
   .text {
     font-size: 19px;
-
     line-height: 1.7;
   }
 }
+
+/*
+ * ============================================================
+ * MOBILE
+ * ============================================================
+ */
 
 @media (max-width: 600px) {
   .section {
@@ -73,5 +100,9 @@
 
   .text {
     font-size: 18px;
+  }
+
+  .button {
+    max-width: 100%;
   }
 }

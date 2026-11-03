@@ -774,7 +774,7 @@ export default function NavigatorPage() {
 
         setNotice(
           data?.error ||
-          "Ask Your Navigator requires a Premium subscription."
+          "Ask Your Autivoya Navigator requires a Premium subscription."
         );
 
         return;
@@ -854,7 +854,7 @@ export default function NavigatorPage() {
     ) {
 
       console.error(
-        "Unable to ask Navigator:",
+        "Unable to Ask Autivoya Navigator:",
         error
       );
 
@@ -1013,7 +1013,7 @@ export default function NavigatorPage() {
                 1.15,
             }}
           >
-            Ask Your Navigator
+            Ask Your Autivoya Navigator
           </h1>
 
 
@@ -1231,7 +1231,7 @@ export default function NavigatorPage() {
                 "#0F172A",
             }}
           >
-            Meet Your Navigator
+            Meet Your Autivoya Navigator
           </h1>
 
 
@@ -1252,7 +1252,7 @@ export default function NavigatorPage() {
           >
             Ask questions about your journey, get help preparing
             for conversations and meetings, and receive guidance
-            informed by the information you have saved in Myriad.
+            informed by the information you have saved in Autivoya.
           </p>
 
 
@@ -1498,35 +1498,28 @@ export default function NavigatorPage() {
                 }}
               >
 
-                <div
-                  style={{
-                    width:
-                      "42px",
-
-                    height:
-                      "42px",
-
-                    borderRadius:
-                      "12px",
-
-                    background:
-                      "#EFF6FF",
-
-                    display:
-                      "flex",
-
-                    alignItems:
-                      "center",
-
-                    justifyContent:
-                      "center",
-
-                    fontSize:
-                      "22px",
-                  }}
-                >
-                  🧭
-                </div>
+<div
+  style={{
+    width: "48px",
+    height: "48px",
+    borderRadius: "12px",
+    background: "#FFFFFF",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  }}
+>
+  <img
+    src="/autivoya-mark.png"
+    alt="Autivoya"
+    style={{
+      width: "46px",
+      height: "46px",
+      objectFit: "contain",
+    }}
+  />
+</div>
 
 
                 <div>
@@ -1549,8 +1542,7 @@ export default function NavigatorPage() {
                         "uppercase",
                     }}
                   >
-                    Myriad Premium
-                  </div>
+Autivoya Premium                  </div>
 
 
                   <h1
@@ -1568,7 +1560,7 @@ export default function NavigatorPage() {
                         1.2,
                     }}
                   >
-                    Ask Your Navigator
+                    Ask Your Autivoya Navigator
                   </h1>
 
                 </div>
@@ -1703,7 +1695,7 @@ export default function NavigatorPage() {
                     "5px",
                 }}
               >
-                Navigator Context
+                Autivoya Navigator Context
               </div>
 
 
@@ -2444,7 +2436,7 @@ export default function NavigatorPage() {
                           750,
                       }}
                     >
-                      Conversation with Navigator
+                     Conversation with Autivoya Navigator
                     </div>
 
 
@@ -2897,7 +2889,7 @@ export default function NavigatorPage() {
                     0,
                 }}
               >
-                Ask your Navigator
+                Ask Your Autivoya Navigator
               </label>
 
 
@@ -3111,7 +3103,7 @@ export default function NavigatorPage() {
                         ? "Loading..."
                         : submitting
                           ? "Sending..."
-                          : "Ask Navigator"
+                          : "Ask Autivoya Navigator"
                   }
                 </button>
 

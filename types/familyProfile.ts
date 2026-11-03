@@ -1,6 +1,6 @@
-export interface FamilyProfile {
 
-  childId: string;
+export interface FamilyProfile {
+  childId?: string;
 
   childName: string;
 
@@ -17,5 +17,4 @@ export interface FamilyProfile {
   insurance: string;
 
   notes: string;
-
 }

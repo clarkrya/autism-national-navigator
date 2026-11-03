@@ -985,30 +985,21 @@ export default function JourneyBuilder() {
           };
 
 
-    if (
-      !familyProfile
-        .childId
-    ) {
-      setFamilyProfile(
-        profileForGeneration
-      );
+   
+if (!familyProfile.childId) {
+  setFamilyProfile(
+    profileForGeneration
+  );
 
+  setSelectedChildId(
+    profileForGeneration.childId ?? ""
+  );
+}
 
-      setSelectedChildId(
-        profileForGeneration
-          .childId
-      );
-    }
+setIsGenerating(true);
 
+setError(null);
 
-    setIsGenerating(
-      true
-    );
-
-
-    setError(
-      null
-    );
 
 
     try {
@@ -2605,12 +2596,13 @@ export default function JourneyBuilder() {
             PAST JOURNEYS
         ==================================================== */}
 
-        <PastJourneys
-          childId={
-            familyProfile
-              .childId
-          }
-        />
+        
+{familyProfile.childId && (
+  <PastJourneys
+    childId={familyProfile.childId}
+  />
+)}
+
 
 
         {/* ===================================================

@@ -1,12 +1,17 @@
+
 "use client";
 
 import Link from "next/link";
-
 import {
   useCallback,
   useEffect,
   useMemo,
   useState,
+} from "react";
+import type {
+  CSSProperties,
+  FormEvent,
+  ReactNode,
 } from "react";
 
 import FamilyOrganizerWorkspaceSelector from "../../../components/familyOrganizer/FamilyOrganizerWorkspaceSelector";
@@ -29,112 +34,81 @@ import type {
 
 /*
  * ============================================================
- * SUPPORT TEAM
+ * AUTIVOYA — SUPPORT TEAM
  * ============================================================
  *
  * Organizes professionals and other contacts supporting the
  * selected child.
  *
  * Support Team contacts do NOT automatically receive access
- * to Myriad or the child's shared Family Organizer workspace.
+ * to Autivoya or the child's shared Family Organizer workspace.
+ *
+ * Existing repository calls and workspace access are preserved.
  * ============================================================
  */
+
+const BRAND = {
+  navy: "#204D6A",
+  darkNavy: "#173B52",
+  teal: "#58AAA7",
+  darkTeal: "#278482",
+  gold: "#F7AD3F",
+  lightTeal: "#EAF6F5",
+  background: "#F7FAFB",
+  white: "#FFFFFF",
+  muted: "#647B8B",
+  border: "#DCE7EC",
+};
 
 const SUPPORT_TEAM_CATEGORIES: {
   value: FamilyOrganizerSupportTeamCategory;
   label: string;
 }[] = [
-  {
-    value: "medical",
-    label: "Medical",
-  },
-  {
-    value: "therapy",
-    label: "Therapy",
-  },
-  {
-    value: "school",
-    label: "School",
-  },
-  {
-    value: "insurance",
-    label: "Insurance",
-  },
-  {
-    value: "advocacy",
-    label: "Advocacy",
-  },
-  {
-    value: "care_coordination",
-    label: "Care Coordination",
-  },
-  {
-    value: "community",
-    label: "Community",
-  },
-  {
-    value: "other",
-    label: "Other",
-  },
+  { value: "medical", label: "Medical" },
+  { value: "therapy", label: "Therapy" },
+  { value: "school", label: "School" },
+  { value: "insurance", label: "Insurance" },
+  { value: "advocacy", label: "Advocacy" },
+  { value: "care_coordination", label: "Care Coordination" },
+  { value: "community", label: "Community" },
+  { value: "other", label: "Other" },
 ];
 
 /*
- * ============================================================
  * FORM
- * ============================================================
  */
 
 interface SupportTeamFormState {
   name: string;
-
   title: string;
-
   organization: string;
-
-  category:
-    FamilyOrganizerSupportTeamCategory;
-
+  category: FamilyOrganizerSupportTeamCategory;
   email: string;
-
   phone: string;
-
   notes: string;
 }
 
-function getEmptyForm():
-  SupportTeamFormState {
+function getEmptyForm(): SupportTeamFormState {
   return {
     name: "",
-
     title: "",
-
     organization: "",
-
-    category:
-      "medical",
-
+    category: "medical",
     email: "",
-
     phone: "",
-
     notes: "",
   };
 }
 
 /*
- * ============================================================
  * HELPERS
- * ============================================================
  */
 
 function getErrorMessage(
   error: unknown,
   fallback: string
 ): string {
-  if (
-    error instanceof Error &&
-    error.message.trim()
-  ) {
+  if (error instanceof Error && error.message.trim()) {
     return error.message;
   }
 
@@ -142,323 +116,230 @@ function getErrorMessage(
 }
 
 function getCategoryLabel(
-  category:
-    FamilyOrganizerSupportTeamCategory
+  category: FamilyOrganizerSupportTeamCategory
 ): string {
   return (
     SUPPORT_TEAM_CATEGORIES.find(
-      (item) =>
-        item.value ===
-        category
-    )?.label ??
-    "Other"
+      (item) => item.value === category
+    )?.label ?? "Other"
   );
 }
 
 /*
- * ============================================================
+ * SHARED STYLES
+ */
+
+const styles: Record<string, CSSProperties> = {
+  card: {
+    background: BRAND.white,
+    border: `1px solid ${BRAND.border}`,
+    borderRadius: 18,
+    padding: 26,
+    marginBottom: 18,
+    boxShadow: "0 8px 24px rgba(23,59,82,0.04)",
+  },
+  heading: {
+    margin: 0,
+    color: BRAND.darkNavy,
+    fontSize: 20,
+    fontWeight: 800,
+  },
+  button: {
+    padding: "11px 17px",
+    border: "none",
+    borderRadius: 10,
+    background: BRAND.darkTeal,
+    color: BRAND.white,
+    fontSize: 13,
+    fontWeight: 800,
+    cursor: "pointer",
+  },
+  secondaryButton: {
+    padding: "7px 10px",
+    borderRadius: 8,
+    border: `1px solid ${BRAND.border}`,
+    background: BRAND.white,
+    color: BRAND.darkTeal,
+    fontSize: 11,
+    fontWeight: 800,
+    cursor: "pointer",
+  },
+  body: {
+    color: BRAND.muted,
+    fontSize: 13,
+    lineHeight: 1.65,
+  },
+  link: {
+    color: BRAND.darkTeal,
+    fontSize: 14,
+    fontWeight: 750,
+    textDecoration: "none",
+  },
+};
+
+/*
  * PAGE
- * ============================================================
  */
 
 export default function FamilyOrganizerSupportTeamPage() {
   const {
     currentUser,
     authReady,
-    loading:
-      loadingWorkspaces,
-    error:
-      workspaceError,
+    loading: loadingWorkspaces,
+    error: workspaceError,
     workspaces,
     selectedWorkspace,
     selectWorkspace,
-  } =
-    useFamilyOrganizerWorkspace();
+  } = useFamilyOrganizerWorkspace();
 
-  const [
-    members,
-    setMembers,
-  ] = useState<
+  const [members, setMembers] = useState<
     FamilyOrganizerSupportTeamMember[]
   >([]);
 
-  const [
-    loadingMembers,
-    setLoadingMembers,
-  ] = useState(false);
+  const [loadingMembers, setLoadingMembers] =
+    useState(false);
 
-  const [
-    supportTeamError,
-    setSupportTeamError,
-  ] = useState("");
+  const [supportTeamError, setSupportTeamError] =
+    useState("");
 
-  const [
-    form,
-    setForm,
-  ] =
-    useState<SupportTeamFormState>(
-      getEmptyForm()
-    );
+  const [form, setForm] =
+    useState<SupportTeamFormState>(getEmptyForm());
 
-  const [
-    editingMemberId,
-    setEditingMemberId,
-  ] = useState<
-    string | null
-  >(null);
+  const [editingMemberId, setEditingMemberId] =
+    useState<string | null>(null);
 
-  const [
-    saving,
-    setSaving,
-  ] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const [
-    deletingMemberId,
-    setDeletingMemberId,
-  ] = useState("");
+  const [deletingMemberId, setDeletingMemberId] =
+    useState("");
 
-  const [
-    formError,
-    setFormError,
-  ] = useState("");
-
-  const [
-    successMessage,
-    setSuccessMessage,
-  ] = useState("");
+  const [formError, setFormError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
 
   /*
-   * ==========================================================
    * LOAD SUPPORT TEAM
-   * ==========================================================
    */
 
-  const loadMembers =
-    useCallback(
-      async () => {
-        if (
-          !currentUser ||
-          !selectedWorkspace
-        ) {
-          setMembers(
-            []
-          );
+  const loadMembers = useCallback(async () => {
+    if (!currentUser || !selectedWorkspace) {
+      setMembers([]);
+      return;
+    }
 
-          return;
-        }
+    try {
+      setLoadingMembers(true);
+      setSupportTeamError("");
 
-        try {
-          setLoadingMembers(
-            true
-          );
+      const loadedMembers =
+        await getFamilyOrganizerSupportTeam(
+          currentUser.uid,
+          selectedWorkspace.ownerUserId,
+          selectedWorkspace.childId
+        );
 
-          setSupportTeamError(
-            ""
-          );
+      setMembers(loadedMembers);
+    } catch (error) {
+      console.error(
+        "Unable to load Family Organizer Support Team:",
+        error
+      );
 
-          const loadedMembers =
-            await getFamilyOrganizerSupportTeam(
-              currentUser.uid,
-              selectedWorkspace.ownerUserId,
-              selectedWorkspace.childId
-            );
+      setMembers([]);
 
-          setMembers(
-            loadedMembers
-          );
-        } catch (error) {
-          console.error(
-            "Unable to load Family Organizer Support Team:",
-            error
-          );
-
-          setMembers(
-            []
-          );
-
-          setSupportTeamError(
-            getErrorMessage(
-              error,
-              "We couldn't load the Support Team right now."
-            )
-          );
-        } finally {
-          setLoadingMembers(
-            false
-          );
-        }
-      },
-      [
-        currentUser,
-        selectedWorkspace,
-      ]
-    );
+      setSupportTeamError(
+        getErrorMessage(
+          error,
+          "We couldn't load the Support Team right now."
+        )
+      );
+    } finally {
+      setLoadingMembers(false);
+    }
+  }, [currentUser, selectedWorkspace]);
 
   useEffect(() => {
     void loadMembers();
-  }, [
-    loadMembers,
-  ]);
+  }, [loadMembers]);
 
   /*
-   * ==========================================================
    * RESET WHEN WORKSPACE CHANGES
-   * ==========================================================
    */
 
   useEffect(() => {
-    setForm(
-      getEmptyForm()
-    );
-
-    setEditingMemberId(
-      null
-    );
-
-    setFormError(
-      ""
-    );
-
-    setSuccessMessage(
-      ""
-    );
-
-    setSupportTeamError(
-      ""
-    );
+    setForm(getEmptyForm());
+    setEditingMemberId(null);
+    setFormError("");
+    setSuccessMessage("");
+    setSupportTeamError("");
   }, [
     selectedWorkspace?.ownerUserId,
     selectedWorkspace?.childId,
   ]);
 
   /*
-   * ==========================================================
    * SORT MEMBERS
-   * ==========================================================
    */
 
-  const sortedMembers =
-    useMemo(
-      () =>
-        [...members].sort(
-          (a, b) => {
-            const categoryCompare =
-              getCategoryLabel(
-                a.category
-              ).localeCompare(
-                getCategoryLabel(
-                  b.category
-                )
-              );
+  const sortedMembers = useMemo(
+    () =>
+      [...members].sort((a, b) => {
+        const categoryCompare = getCategoryLabel(
+          a.category
+        ).localeCompare(getCategoryLabel(b.category));
 
-            if (
-              categoryCompare !==
-              0
-            ) {
-              return categoryCompare;
-            }
+        if (categoryCompare !== 0) {
+          return categoryCompare;
+        }
 
-            return a.name.localeCompare(
-              b.name
-            );
-          }
-        ),
-      [members]
-    );
+        return a.name.localeCompare(b.name);
+      }),
+    [members]
+  );
 
   /*
-   * ==========================================================
    * UPDATE FORM
-   * ==========================================================
    */
 
-  function updateForm<
-    K extends keyof SupportTeamFormState
-  >(
+  function updateForm<K extends keyof SupportTeamFormState>(
     key: K,
-    value:
-      SupportTeamFormState[K]
+    value: SupportTeamFormState[K]
   ) {
-    setForm(
-      (current) => ({
-        ...current,
-        [key]:
-          value,
-      })
-    );
+    setForm((current) => ({
+      ...current,
+      [key]: value,
+    }));
 
-    setFormError(
-      ""
-    );
-
-    setSuccessMessage(
-      ""
-    );
+    setFormError("");
+    setSuccessMessage("");
   }
 
   function resetForm() {
-    setForm(
-      getEmptyForm()
-    );
-
-    setEditingMemberId(
-      null
-    );
-
-    setFormError(
-      ""
-    );
+    setForm(getEmptyForm());
+    setEditingMemberId(null);
+    setFormError("");
   }
 
   /*
-   * ==========================================================
    * EDIT
-   * ==========================================================
    */
 
   function beginEditing(
-    member:
-      FamilyOrganizerSupportTeamMember
+    member: FamilyOrganizerSupportTeamMember
   ) {
-    setEditingMemberId(
-      member.id
-    );
+    setEditingMemberId(member.id);
 
     setForm({
-      name:
-        member.name,
-
-      title:
-        member.title ??
-        "",
-
-      organization:
-        member.organization ??
-        "",
-
-      category:
-        member.category,
-
-      email:
-        member.email ??
-        "",
-
-      phone:
-        member.phone ??
-        "",
-
-      notes:
-        member.notes ??
-        "",
+      name: member.name,
+      title: member.title ?? "",
+      organization: member.organization ?? "",
+      category: member.category,
+      email: member.email ?? "",
+      phone: member.phone ?? "",
+      notes: member.notes ?? "",
     });
 
-    setFormError(
-      ""
-    );
-
-    setSuccessMessage(
-      ""
-    );
+    setFormError("");
+    setSuccessMessage("");
 
     window.scrollTo({
       top: 0,
@@ -467,122 +348,57 @@ export default function FamilyOrganizerSupportTeamPage() {
   }
 
   /*
-   * ==========================================================
    * SAVE
-   * ==========================================================
    */
 
   async function handleSubmit(
-    event:
-      React.FormEvent<HTMLFormElement>
+    event: FormEvent<HTMLFormElement>
   ) {
     event.preventDefault();
 
-    if (
-      !currentUser ||
-      !selectedWorkspace
-    ) {
+    if (!currentUser || !selectedWorkspace) {
       return;
     }
 
-    const name =
-      form.name.trim();
+    const name = form.name.trim();
 
     if (!name) {
       setFormError(
         "Enter the Support Team member's name."
       );
-
       return;
     }
 
     try {
-      setSaving(
-        true
-      );
+      setSaving(true);
+      setFormError("");
+      setSuccessMessage("");
 
-      setFormError(
-        ""
-      );
+      const memberData = {
+        currentUserId: currentUser.uid,
+        ownerUserId: selectedWorkspace.ownerUserId,
+        childId: selectedWorkspace.childId,
+        name,
+        title: form.title,
+        organization: form.organization,
+        category: form.category,
+        email: form.email,
+        phone: form.phone,
+        notes: form.notes,
+      };
 
-      setSuccessMessage(
-        ""
-      );
-
-      if (
-        editingMemberId
-      ) {
-        await updateFamilyOrganizerSupportTeamMember(
-          {
-            currentUserId:
-              currentUser.uid,
-
-            ownerUserId:
-              selectedWorkspace.ownerUserId,
-
-            childId:
-              selectedWorkspace.childId,
-
-            memberId:
-              editingMemberId,
-
-            name,
-
-            title:
-              form.title,
-
-            organization:
-              form.organization,
-
-            category:
-              form.category,
-
-            email:
-              form.email,
-
-            phone:
-              form.phone,
-
-            notes:
-              form.notes,
-          }
-        );
+      if (editingMemberId) {
+        await updateFamilyOrganizerSupportTeamMember({
+          ...memberData,
+          memberId: editingMemberId,
+        });
 
         setSuccessMessage(
           "Support Team member updated."
         );
       } else {
         await createFamilyOrganizerSupportTeamMember(
-          {
-            currentUserId:
-              currentUser.uid,
-
-            ownerUserId:
-              selectedWorkspace.ownerUserId,
-
-            childId:
-              selectedWorkspace.childId,
-
-            name,
-
-            title:
-              form.title,
-
-            organization:
-              form.organization,
-
-            category:
-              form.category,
-
-            email:
-              form.email,
-
-            phone:
-              form.phone,
-
-            notes:
-              form.notes,
-          }
+          memberData
         );
 
         setSuccessMessage(
@@ -590,13 +406,8 @@ export default function FamilyOrganizerSupportTeamPage() {
         );
       }
 
-      setForm(
-        getEmptyForm()
-      );
-
-      setEditingMemberId(
-        null
-      );
+      setForm(getEmptyForm());
+      setEditingMemberId(null);
 
       await loadMembers();
     } catch (error) {
@@ -612,65 +423,39 @@ export default function FamilyOrganizerSupportTeamPage() {
         )
       );
     } finally {
-      setSaving(
-        false
-      );
+      setSaving(false);
     }
   }
 
   /*
-   * ==========================================================
    * DELETE
-   * ==========================================================
    */
 
-  async function handleDelete(
-    memberId: string
-  ) {
-    if (
-      !currentUser ||
-      !selectedWorkspace
-    ) {
+  async function handleDelete(memberId: string) {
+    if (!currentUser || !selectedWorkspace) {
       return;
     }
 
-    const confirmed =
-      window.confirm(
-        "Remove this person from the Support Team?"
-      );
+    const confirmed = window.confirm(
+      "Remove this person from the Support Team?"
+    );
 
     if (!confirmed) {
       return;
     }
 
     try {
-      setDeletingMemberId(
-        memberId
-      );
+      setDeletingMemberId(memberId);
+      setSupportTeamError("");
 
-      setSupportTeamError(
-        ""
-      );
+      await deleteFamilyOrganizerSupportTeamMember({
+        currentUserId: currentUser.uid,
+        ownerUserId: selectedWorkspace.ownerUserId,
+        childId: selectedWorkspace.childId,
+        memberId,
+      });
 
-      await deleteFamilyOrganizerSupportTeamMember(
-        {
-          currentUserId:
-            currentUser.uid,
-
-          ownerUserId:
-            selectedWorkspace.ownerUserId,
-
-          childId:
-            selectedWorkspace.childId,
-
-          memberId,
-        }
-      );
-
-      if (
-        editingMemberId ===
-        memberId
-      ) {
+      if (editingMemberId === memberId) {
         resetForm();
       }
 
@@ -688,73 +473,55 @@ export default function FamilyOrganizerSupportTeamPage() {
         )
       );
     } finally {
-      setDeletingMemberId(
-        ""
-      );
+      setDeletingMemberId("");
     }
   }
 
   /*
-   * ==========================================================
    * MEMBER CARD
-   * ==========================================================
    */
 
   function renderMember(
-    member:
-      FamilyOrganizerSupportTeamMember
+    member: FamilyOrganizerSupportTeamMember
   ) {
     return (
       <article
         key={member.id}
         style={{
-          padding:
-            "20px",
-          border:
-            "1px solid #E2E8F0",
-          borderRadius:
-            "14px",
-          background:
-            "#FFFFFF",
+          padding: 20,
+          border: `1px solid ${BRAND.border}`,
+          borderRadius: 14,
+          background: BRAND.white,
         }}
       >
         <div
           style={{
             display: "flex",
-            justifyContent:
-              "space-between",
-            alignItems:
-              "flex-start",
-            gap: "18px",
-            flexWrap:
-              "wrap",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: 18,
+            flexWrap: "wrap",
           }}
         >
           <div
             style={{
               flex: 1,
-              minWidth:
-                "220px",
+              minWidth: 220,
             }}
           >
             <div
               style={{
-                display:
-                  "flex",
-                alignItems:
-                  "center",
-                gap: "8px",
-                flexWrap:
-                  "wrap",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                flexWrap: "wrap",
               }}
             >
               <h3
                 style={{
                   margin: 0,
-                  color:
-                    "#0F172A",
-                  fontSize:
-                    "17px",
+                  color: BRAND.darkNavy,
+                  fontSize: 17,
                   fontWeight: 800,
                 }}
               >
@@ -763,49 +530,33 @@ export default function FamilyOrganizerSupportTeamPage() {
 
               <span
                 style={{
-                  padding:
-                    "4px 8px",
-                  borderRadius:
-                    "999px",
-                  background:
-                    "#EFF6FF",
-                  color:
-                    "#1D4ED8",
-                  fontSize:
-                    "9px",
+                  padding: "4px 8px",
+                  borderRadius: 999,
+                  background: BRAND.lightTeal,
+                  color: BRAND.darkTeal,
+                  fontSize: 9,
                   fontWeight: 850,
-                  textTransform:
-                    "uppercase",
-                  letterSpacing:
-                    "0.04em",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.04em",
                 }}
               >
-                {getCategoryLabel(
-                  member.category
-                )}
+                {getCategoryLabel(member.category)}
               </span>
             </div>
 
-            {member.title ||
-            member.organization ? (
+            {member.title || member.organization ? (
               <div
                 style={{
-                  marginTop:
-                    "7px",
-                  color:
-                    "#475569",
-                  fontSize:
-                    "13px",
+                  marginTop: 7,
+                  color: BRAND.navy,
+                  fontSize: 13,
                   fontWeight: 650,
                 }}
               >
                 {member.title}
-
-                {member.title &&
-                member.organization
+                {member.title && member.organization
                   ? " • "
                   : ""}
-
                 {member.organization}
               </div>
             ) : null}
@@ -813,22 +564,17 @@ export default function FamilyOrganizerSupportTeamPage() {
             {member.phone ? (
               <div
                 style={{
-                  marginTop:
-                    "9px",
-                  color:
-                    "#64748B",
-                  fontSize:
-                    "12px",
+                  marginTop: 9,
+                  color: BRAND.muted,
+                  fontSize: 12,
                 }}
               >
                 Phone:{" "}
                 <a
                   href={`tel:${member.phone}`}
                   style={{
-                    color:
-                      "#2563EB",
-                    textDecoration:
-                      "none",
+                    color: BRAND.darkTeal,
+                    textDecoration: "none",
                     fontWeight: 700,
                   }}
                 >
@@ -840,22 +586,17 @@ export default function FamilyOrganizerSupportTeamPage() {
             {member.email ? (
               <div
                 style={{
-                  marginTop:
-                    "6px",
-                  color:
-                    "#64748B",
-                  fontSize:
-                    "12px",
+                  marginTop: 6,
+                  color: BRAND.muted,
+                  fontSize: 12,
                 }}
               >
                 Email:{" "}
                 <a
                   href={`mailto:${member.email}`}
                   style={{
-                    color:
-                      "#2563EB",
-                    textDecoration:
-                      "none",
+                    color: BRAND.darkTeal,
+                    textDecoration: "none",
                     fontWeight: 700,
                   }}
                 >
@@ -867,15 +608,11 @@ export default function FamilyOrganizerSupportTeamPage() {
             {member.notes ? (
               <div
                 style={{
-                  marginTop:
-                    "10px",
-                  color:
-                    "#64748B",
-                  fontSize:
-                    "12px",
+                  marginTop: 10,
+                  color: BRAND.muted,
+                  fontSize: 12,
                   lineHeight: 1.6,
-                  whiteSpace:
-                    "pre-wrap",
+                  whiteSpace: "pre-wrap",
                 }}
               >
                 {member.notes}
@@ -886,77 +623,43 @@ export default function FamilyOrganizerSupportTeamPage() {
           <div
             style={{
               display: "flex",
-              gap: "8px",
+              gap: 8,
               flexShrink: 0,
             }}
           >
             <button
               type="button"
-              onClick={() =>
-                beginEditing(
-                  member
-                )
-              }
-              style={{
-                padding:
-                  "7px 10px",
-                borderRadius:
-                  "8px",
-                border:
-                  "1px solid #CBD5E1",
-                background:
-                  "#FFFFFF",
-                color:
-                  "#334155",
-                fontSize:
-                  "11px",
-                fontWeight: 800,
-                cursor:
-                  "pointer",
-              }}
+              onClick={() => beginEditing(member)}
+              style={styles.secondaryButton}
             >
               Edit
             </button>
 
             <button
               type="button"
-              disabled={
-                deletingMemberId ===
-                member.id
-              }
+              disabled={deletingMemberId === member.id}
               onClick={() => {
-                void handleDelete(
-                  member.id
-                );
+                void handleDelete(member.id);
               }}
               style={{
-                padding:
-                  "7px 10px",
-                borderRadius:
-                  "8px",
-                border:
-                  "1px solid #FECACA",
-                background:
-                  "#FFFFFF",
-                color:
-                  "#B91C1C",
-                fontSize:
-                  "11px",
+                padding: "7px 10px",
+                borderRadius: 8,
+                border: "1px solid #FECACA",
+                background: BRAND.white,
+                color: "#B91C1C",
+                fontSize: 11,
                 fontWeight: 800,
                 cursor:
-                  deletingMemberId ===
-                  member.id
+                  deletingMemberId === member.id
                     ? "not-allowed"
                     : "pointer",
                 opacity:
-                  deletingMemberId ===
-                  member.id
+                  deletingMemberId === member.id
                     ? 0.6
                     : 1,
               }}
             >
-              {deletingMemberId ===
-              member.id
+              {deletingMemberId === member.id
                 ? "Removing..."
                 : "Remove"}
             </button>
@@ -967,70 +670,49 @@ export default function FamilyOrganizerSupportTeamPage() {
   }
 
   /*
-   * ==========================================================
    * PAGE
-   * ==========================================================
    */
 
   return (
     <main
       style={{
-        minHeight:
-          "calc(100vh - 72px)",
-        background:
-          "#F8FAFC",
-        padding:
-          "48px 24px 72px",
+        minHeight: "calc(100vh - 72px)",
+        background: BRAND.background,
+        padding: "48px 24px 72px",
       }}
     >
       <div
         style={{
           width: "100%",
-          maxWidth:
-            "1000px",
-          margin:
-            "0 auto",
+          maxWidth: 1000,
+          margin: "0 auto",
         }}
       >
-        <section
-          style={{
-            marginBottom:
-              "28px",
-          }}
-        >
+        {/* PAGE INTRODUCTION */}
+
+        <section style={{ marginBottom: 28 }}>
           <div
             style={{
-              display:
-                "inline-flex",
-              padding:
-                "6px 10px",
-              borderRadius:
-                "999px",
-              background:
-                "#DBEAFE",
-              color:
-                "#1D4ED8",
-              fontSize:
-                "11px",
+              display: "inline-flex",
+              padding: "6px 10px",
+              borderRadius: 999,
+              background: BRAND.lightTeal,
+              color: BRAND.darkTeal,
+              fontSize: 11,
               fontWeight: 800,
-              textTransform:
-                "uppercase",
-              letterSpacing:
-                "0.05em",
-              marginBottom:
-                "16px",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              marginBottom: 16,
             }}
           >
-            Family Organizer
+            Autivoya Family Organizer
           </div>
 
           <h1
             style={{
               margin: 0,
-              color:
-                "#0F172A",
-              fontSize:
-                "36px",
+              color: BRAND.darkNavy,
+              fontSize: 36,
               lineHeight: 1.15,
               fontWeight: 850,
             }}
@@ -1040,91 +722,48 @@ export default function FamilyOrganizerSupportTeamPage() {
 
           <p
             style={{
-              margin:
-                "12px 0 0",
-              maxWidth:
-                "760px",
-              color:
-                "#64748B",
-              fontSize:
-                "16px",
+              margin: "12px 0 0",
+              maxWidth: 760,
+              color: BRAND.muted,
+              fontSize: 16,
               lineHeight: 1.7,
             }}
           >
-            Keep doctors,
-            specialists,
-            therapists, school
-            staff, advocates,
-            insurance contacts,
-            care coordinators,
-            and other important
-            people organized in
-            one place.
+            Keep doctors, specialists, therapists, school
+            staff, advocates, insurance contacts, care
+            coordinators, and other important people
+            organized in one place.
           </p>
         </section>
 
+        {/* AUTHENTICATION */}
+
         {!authReady ? (
-          <section
-            style={{
-              background:
-                "#FFFFFF",
-              border:
-                "1px solid #E2E8F0",
-              borderRadius:
-                "18px",
-              padding:
-                "26px",
-            }}
-          >
-            Loading Support Team...
+          <section style={styles.card}>
+            <div style={styles.body}>
+              Loading Support Team...
+            </div>
           </section>
         ) : null}
 
-        {authReady &&
-        !currentUser ? (
-          <section
-            style={{
-              background:
-                "#FFFFFF",
-              border:
-                "1px solid #E2E8F0",
-              borderRadius:
-                "18px",
-              padding:
-                "26px",
-            }}
-          >
-            <h2
-              style={{
-                margin: 0,
-                fontSize:
-                  "20px",
-              }}
-            >
-              Sign in to use
-              Support Team
+        {authReady && !currentUser ? (
+          <section style={styles.card}>
+            <h2 style={styles.heading}>
+              Sign in to use Support Team
             </h2>
+
+            <p style={styles.body}>
+              Sign in to your Autivoya account to organize
+              your child's Support Team contacts.
+            </p>
 
             <Link
               href="/login"
               style={{
-                display:
-                  "inline-flex",
-                marginTop:
-                  "16px",
-                padding:
-                  "10px 15px",
-                borderRadius:
-                  "9px",
-                background:
-                  "#2563EB",
-                color:
-                  "#FFFFFF",
-                fontSize:
-                  "12px",
-                fontWeight: 800,
-                textDecoration:
-                  "none",
+                ...styles.button,
+                display: "inline-flex",
+                marginTop: 12,
+                textDecoration: "none",
               }}
             >
               Sign In
@@ -1132,143 +771,90 @@ export default function FamilyOrganizerSupportTeamPage() {
           </section>
         ) : null}
 
-        {authReady &&
-        currentUser ? (
+        {authReady && currentUser ? (
           <>
-            <section
-              style={{
-                background:
-                  "#FFFFFF",
-                border:
-                  "1px solid #E2E8F0",
-                borderRadius:
-                  "16px",
-                padding:
-                  "20px",
-                marginBottom:
-                  "18px",
-              }}
-            >
+            {/* CHILD WORKSPACE SELECTOR */}
+
+            <section style={styles.card}>
               {loadingWorkspaces ? (
-                <div>
+                <div style={styles.body}>
                   Loading children...
                 </div>
               ) : null}
 
-              {!loadingWorkspaces &&
-              workspaceError ? (
-                <div
-                  style={{
-                    color:
-                      "#B91C1C",
-                    fontSize:
-                      "12px",
-                  }}
-                >
+              {!loadingWorkspaces && workspaceError ? (
+                <Message type="error">
                   {workspaceError}
-                </div>
+                </Message>
               ) : null}
 
               {!loadingWorkspaces &&
               !workspaceError &&
-              workspaces.length >
-                0 ? (
+              workspaces.length > 0 ? (
                 <FamilyOrganizerWorkspaceSelector
-                  workspaces={
-                    workspaces
-                  }
-                  selectedWorkspace={
-                    selectedWorkspace
-                  }
-                  onSelect={
-                    selectWorkspace
-                  }
+                  workspaces={workspaces}
+                  selectedWorkspace={selectedWorkspace}
+                  onSelect={selectWorkspace}
                 />
               ) : null}
 
               {!loadingWorkspaces &&
               !workspaceError &&
-              workspaces.length ===
-                0 ? (
-                <div
-                  style={{
-                    color:
-                      "#64748B",
-                    fontSize:
-                      "13px",
-                  }}
-                >
-                  No child workspace
-                  is available yet.
+              workspaces.length === 0 ? (
+                <div style={styles.body}>
+                  No child workspace is available yet.
                 </div>
               ) : null}
             </section>
 
             {selectedWorkspace ? (
               <>
+                {/* SELECTED CHILD BANNER */}
+
                 <section
                   style={{
                     background:
-                      "linear-gradient(135deg, #EFF6FF 0%, #F5F3FF 100%)",
-                    border:
-                      "1px solid #DBEAFE",
-                    borderRadius:
-                      "16px",
-                    padding:
-                      "20px 22px",
-                    marginBottom:
-                      "18px",
+                      "linear-gradient(135deg, #EAF6F5 0%, #F7FAFB 100%)",
+                    border: "1px solid #CFE7E5",
+                    borderRadius: 16,
+                    padding: "20px 22px",
+                    marginBottom: 18,
                   }}
                 >
                   <div
                     style={{
-                      display:
-                        "flex",
-                      justifyContent:
-                        "space-between",
-                      alignItems:
-                        "center",
-                      gap:
-                        "14px",
-                      flexWrap:
-                        "wrap",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 14,
+                      flexWrap: "wrap",
                     }}
                   >
                     <div>
                       <div
                         style={{
-                          color:
-                            "#1E3A8A",
-                          fontSize:
-                            "16px",
+                          color: BRAND.navy,
+                          fontSize: 16,
                           fontWeight: 800,
                         }}
                       >
-                        {
-                          selectedWorkspace.childName
-                        }
-                        &apos;s Support
-                        Team
+                        {selectedWorkspace.childName}
+                        &apos;s Support Team
                       </div>
 
                       <div
                         style={{
-                          marginTop:
-                            "5px",
-                          color:
-                            "#64748B",
-                          fontSize:
-                            "12px",
+                          marginTop: 5,
+                          color: BRAND.muted,
+                          fontSize: 12,
                           lineHeight: 1.6,
                         }}
                       >
-                        These are
-                        organizational
-                        contacts only.
-                        Adding someone
-                        here does not
-                        give them access
-                        to Myriad.
+                        These are organizational contacts
+                        only. Adding someone here does not
+                        give them access to Autivoya or the
+                        child's shared Family Organizer
+                        workspace.
                       </div>
                     </div>
 
@@ -1276,69 +862,36 @@ export default function FamilyOrganizerSupportTeamPage() {
                     "family_member" ? (
                       <span
                         style={{
-                          padding:
-                            "5px 9px",
-                          borderRadius:
-                            "999px",
-                          background:
-                            "#FFFFFF",
-                          border:
-                            "1px solid #DDD6FE",
-                          color:
-                            "#6D28D9",
-                          fontSize:
-                            "9px",
+                          padding: "5px 9px",
+                          borderRadius: 999,
+                          background: BRAND.white,
+                          border: "1px solid #CFE7E5",
+                          color: BRAND.darkTeal,
+                          fontSize: 9,
                           fontWeight: 850,
-                          textTransform:
-                            "uppercase",
-                          letterSpacing:
-                            "0.05em",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.05em",
                         }}
                       >
-                        Shared Family
-                        Access
+                        Shared Family Access
                       </span>
                     ) : null}
                   </div>
                 </section>
 
-                <section
-                  style={{
-                    background:
-                      "#FFFFFF",
-                    border:
-                      "1px solid #E2E8F0",
-                    borderRadius:
-                      "18px",
-                    padding:
-                      "26px",
-                    marginBottom:
-                      "18px",
-                  }}
-                >
+                {/* ADD / EDIT CONTACT */}
+
+                <section style={styles.card}>
                   <div
                     style={{
-                      display:
-                        "flex",
-                      justifyContent:
-                        "space-between",
-                      alignItems:
-                        "center",
-                      gap:
-                        "12px",
-                      flexWrap:
-                        "wrap",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 12,
+                      flexWrap: "wrap",
                     }}
                   >
-                    <h2
-                      style={{
-                        margin: 0,
-                        fontSize:
-                          "20px",
-                        color:
-                          "#0F172A",
-                      }}
-                    >
+                    <h2 style={styles.heading}>
                       {editingMemberId
                         ? "Edit Support Team Member"
                         : "Add Support Team Member"}
@@ -1347,19 +900,13 @@ export default function FamilyOrganizerSupportTeamPage() {
                     {editingMemberId ? (
                       <button
                         type="button"
-                        onClick={
-                          resetForm
-                        }
+                        onClick={resetForm}
                         style={{
-                          border:
-                            "none",
-                          background:
-                            "transparent",
-                          color:
-                            "#2563EB",
+                          border: "none",
+                          background: "transparent",
+                          color: BRAND.darkTeal,
                           fontWeight: 800,
-                          cursor:
-                            "pointer",
+                          cursor: "pointer",
                         }}
                       >
                         Cancel Edit
@@ -1368,116 +915,68 @@ export default function FamilyOrganizerSupportTeamPage() {
                   </div>
 
                   <form
-                    onSubmit={
-                      handleSubmit
-                    }
-                    style={{
-                      marginTop:
-                        "20px",
-                    }}
+                    onSubmit={handleSubmit}
+                    style={{ marginTop: 20 }}
                   >
                     <div
                       style={{
-                        display:
-                          "grid",
+                        display: "grid",
                         gridTemplateColumns:
                           "repeat(auto-fit, minmax(220px, 1fr))",
-                        gap:
-                          "14px",
+                        gap: 14,
                       }}
                     >
                       <Field
                         label="Name"
-                        value={
-                          form.name
-                        }
+                        value={form.name}
                         required
                         placeholder="Name"
-                        onChange={(
-                          value
-                        ) =>
-                          updateForm(
-                            "name",
-                            value
-                          )
+                        onChange={(value) =>
+                          updateForm("name", value)
                         }
                       />
 
                       <Field
                         label="Title / Role"
-                        value={
-                          form.title
-                        }
+                        value={form.title}
                         placeholder="e.g. Speech Therapist"
-                        onChange={(
-                          value
-                        ) =>
-                          updateForm(
-                            "title",
-                            value
-                          )
+                        onChange={(value) =>
+                          updateForm("title", value)
                         }
                       />
 
                       <Field
                         label="Organization"
-                        value={
-                          form.organization
-                        }
+                        value={form.organization}
                         placeholder="Optional"
-                        onChange={(
-                          value
-                        ) =>
-                          updateForm(
-                            "organization",
-                            value
-                          )
+                        onChange={(value) =>
+                          updateForm("organization", value)
                         }
                       />
 
                       <div>
-                        <label
-                          style={
-                            labelStyle
-                          }
-                        >
+                        <label style={labelStyle}>
                           Category
                         </label>
 
                         <select
-                          value={
-                            form.category
-                          }
-                          onChange={(
-                            event
-                          ) =>
+                          value={form.category}
+                          onChange={(event) =>
                             updateForm(
                               "category",
-                              event
-                                .target
-                                .value as
-                                FamilyOrganizerSupportTeamCategory
+                              event.target
+                                .value as FamilyOrganizerSupportTeamCategory
                             )
                           }
-                          style={
-                            inputStyle
-                          }
+                          style={inputStyle}
                         >
                           {SUPPORT_TEAM_CATEGORIES.map(
-                            (
-                              category
-                            ) => (
+                            (category) => (
                               <option
-                                key={
-                                  category.value
-                                }
-                                value={
-                                  category.value
-                                }
+                                key={category.value}
+                                value={category.value}
                               >
-                                {
-                                  category.label
-                                }
+                                {category.label}
                               </option>
                             )
                           )}
@@ -1486,126 +985,70 @@ export default function FamilyOrganizerSupportTeamPage() {
 
                       <Field
                         label="Phone"
-                        value={
-                          form.phone
-                        }
+                        value={form.phone}
                         type="tel"
                         placeholder="Optional"
-                        onChange={(
-                          value
-                        ) =>
-                          updateForm(
-                            "phone",
-                            value
-                          )
+                        onChange={(value) =>
+                          updateForm("phone", value)
                         }
                       />
 
                       <Field
                         label="Email"
-                        value={
-                          form.email
-                        }
+                        value={form.email}
                         type="email"
                         placeholder="Optional"
-                        onChange={(
-                          value
-                        ) =>
-                          updateForm(
-                            "email",
-                            value
-                          )
+                        onChange={(value) =>
+                          updateForm("email", value)
                         }
                       />
                     </div>
 
-                    <div
-                      style={{
-                        marginTop:
-                          "16px",
-                      }}
-                    >
-                      <label
-                        style={
-                          labelStyle
-                        }
-                      >
+                    <div style={{ marginTop: 16 }}>
+                      <label style={labelStyle}>
                         Notes
                       </label>
 
                       <textarea
-                        value={
-                          form.notes
-                        }
-                        onChange={(
-                          event
-                        ) =>
+                        value={form.notes}
+                        onChange={(event) =>
                           updateForm(
                             "notes",
-                            event
-                              .target
-                              .value
+                            event.target.value
                           )
                         }
                         rows={4}
                         placeholder="Optional notes"
                         style={{
                           ...inputStyle,
-                          resize:
-                            "vertical",
-                          fontFamily:
-                            "inherit",
+                          resize: "vertical",
+                          fontFamily: "inherit",
                         }}
                       />
                     </div>
 
                     {formError ? (
-                      <Message
-                        type="error"
-                      >
+                      <Message type="error">
                         {formError}
                       </Message>
                     ) : null}
 
                     {successMessage ? (
-                      <Message
-                        type="success"
-                      >
-                        {
-                          successMessage
-                        }
+                      <Message type="success">
+                        {successMessage}
                       </Message>
                     ) : null}
 
                     <button
                       type="submit"
-                      disabled={
-                        saving
-                      }
+                      disabled={saving}
                       style={{
-                        marginTop:
-                          "18px",
-                        padding:
-                          "11px 17px",
-                        border:
-                          "none",
-                        borderRadius:
-                          "10px",
-                        background:
-                          "#2563EB",
-                        color:
-                          "#FFFFFF",
-                        fontSize:
-                          "13px",
-                        fontWeight: 800,
-                        cursor:
-                          saving
-                            ? "not-allowed"
-                            : "pointer",
-                        opacity:
-                          saving
-                            ? 0.65
-                            : 1,
+                        ...styles.button,
+                        marginTop: 18,
+                        cursor: saving
+                          ? "not-allowed"
+                          : "pointer",
+                        opacity: saving ? 0.65 : 1,
                       }}
                     >
                       {saving
@@ -1617,58 +1060,31 @@ export default function FamilyOrganizerSupportTeamPage() {
                   </form>
                 </section>
 
-                <section
-                  style={{
-                    background:
-                      "#FFFFFF",
-                    border:
-                      "1px solid #E2E8F0",
-                    borderRadius:
-                      "18px",
-                    padding:
-                      "26px",
-                  }}
-                >
+                {/* CONTACT DIRECTORY */}
+
+                <section style={styles.card}>
                   <div
                     style={{
-                      display:
-                        "flex",
-                      justifyContent:
-                        "space-between",
-                      alignItems:
-                        "center",
-                      gap:
-                        "12px",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 12,
                     }}
                   >
-                    <h2
-                      style={{
-                        margin: 0,
-                        color:
-                          "#0F172A",
-                        fontSize:
-                          "20px",
-                      }}
-                    >
+                    <h2 style={styles.heading}>
                       Support Team
                     </h2>
 
-                    {members.length >
-                    0 ? (
+                    {members.length > 0 ? (
                       <span
                         style={{
-                          color:
-                            "#64748B",
-                          fontSize:
-                            "12px",
+                          color: BRAND.muted,
+                          fontSize: 12,
                           fontWeight: 700,
                         }}
                       >
-                        {
-                          members.length
-                        }{" "}
-                        {members.length ===
-                        1
+                        {members.length}{" "}
+                        {members.length === 1
                           ? "contact"
                           : "contacts"}
                       </span>
@@ -1678,97 +1094,62 @@ export default function FamilyOrganizerSupportTeamPage() {
                   {loadingMembers ? (
                     <div
                       style={{
-                        marginTop:
-                          "16px",
-                        color:
-                          "#64748B",
-                        fontSize:
-                          "12px",
+                        ...styles.body,
+                        marginTop: 16,
                       }}
                     >
-                      Loading Support
-                      Team...
+                      Loading Support Team...
                     </div>
                   ) : null}
 
                   {!loadingMembers &&
-                  sortedMembers.length ===
-                    0 ? (
+                  sortedMembers.length === 0 ? (
                     <div
                       style={{
-                        marginTop:
-                          "16px",
-                        padding:
-                          "20px",
-                        borderRadius:
-                          "12px",
-                        background:
-                          "#F8FAFC",
-                        color:
-                          "#64748B",
-                        fontSize:
-                          "12px",
+                        marginTop: 16,
+                        padding: 20,
+                        borderRadius: 12,
+                        background: BRAND.lightTeal,
+                        color: BRAND.navy,
+                        fontSize: 12,
                         lineHeight: 1.6,
                       }}
                     >
-                      No Support Team
-                      contacts have
-                      been added yet.
+                      No Support Team contacts have been
+                      added yet.
                     </div>
                   ) : null}
 
                   {!loadingMembers &&
-                  sortedMembers.length >
-                    0 ? (
+                  sortedMembers.length > 0 ? (
                     <div
                       style={{
-                        display:
-                          "grid",
-                        gap:
-                          "12px",
-                        marginTop:
-                          "18px",
+                        display: "grid",
+                        gap: 12,
+                        marginTop: 18,
                       }}
                     >
-                      {sortedMembers.map(
-                        renderMember
-                      )}
+                      {sortedMembers.map(renderMember)}
                     </div>
                   ) : null}
 
                   {supportTeamError ? (
-                    <Message
-                      type="error"
-                    >
-                      {
-                        supportTeamError
-                      }
+                    <Message type="error">
+                      {supportTeamError}
                     </Message>
                   ) : null}
                 </section>
               </>
             ) : null}
 
-            <div
-              style={{
-                marginTop:
-                  "28px",
-              }}
-            >
+            {/* BACK NAVIGATION */}
+
+            <div style={{ marginTop: 28 }}>
               <Link
                 href="/family-organizer"
-                style={{
-                  color:
-                    "#2563EB",
-                  fontSize:
-                    "14px",
-                  fontWeight: 750,
-                  textDecoration:
-                    "none",
-                }}
+                style={styles.link}
               >
-                ← Back to Family
-                Organizer
+                ← Back to Family Organizer
               </Link>
             </div>
           </>
@@ -1779,23 +1160,15 @@ export default function FamilyOrganizerSupportTeamPage() {
 }
 
 /*
- * ============================================================
  * FIELD
- * ============================================================
  */
 
 interface FieldProps {
   label: string;
-
   value: string;
-
-  onChange:
-    (value: string) => void;
-
+  onChange: (value: string) => void;
   placeholder?: string;
-
   type?: string;
-
   required?: boolean;
 }
 
@@ -1809,81 +1182,54 @@ function Field({
 }: FieldProps) {
   return (
     <div>
-      <label
-        style={
-          labelStyle
-        }
-      >
+      <label style={labelStyle}>
         {label}
       </label>
 
       <input
         type={type}
         value={value}
-        required={
-          required
+        required={required}
+        placeholder={placeholder}
+        onChange={(event) =>
+          onChange(event.target.value)
         }
-        placeholder={
-          placeholder
-        }
-        onChange={(
-          event
-        ) =>
-          onChange(
-            event.target.value
-          )
-        }
-        style={
-          inputStyle
-        }
+        style={inputStyle}
       />
     </div>
   );
 }
 
 /*
- * ============================================================
  * MESSAGE
- * ============================================================
  */
 
 function Message({
   type,
   children,
 }: {
-  type:
-    | "error"
-    | "success";
-
-  children:
-    React.ReactNode;
+  type: "error" | "success";
+  children: ReactNode;
 }) {
-  const isError =
-    type === "error";
+  const isError = type === "error";
 
   return (
     <div
+      role={isError ? "alert" : "status"}
       style={{
-        marginTop:
-          "14px",
-        padding:
-          "11px 13px",
-        borderRadius:
-          "9px",
-        background:
-          isError
-            ? "#FEF2F2"
-            : "#F0FDF4",
-        border:
-          isError
-            ? "1px solid #FECACA"
-            : "1px solid #BBF7D0",
-        color:
-          isError
-            ? "#B91C1C"
-            : "#166534",
-        fontSize:
-          "12px",
+        marginTop: 14,
+        padding: "11px 13px",
+        borderRadius: 9,
+        background: isError
+          ? "#FEF2F2"
+          : BRAND.lightTeal,
+        border: isError
+          ? "1px solid #FECACA"
+          : "1px solid #C9E7E4",
+        color: isError
+          ? "#B91C1C"
+          : BRAND.darkTeal,
+        fontSize: 12,
       }}
     >
       {children}
@@ -1892,29 +1238,24 @@ function Message({
 }
 
 /*
- * ============================================================
- * STYLES
- * ============================================================
+ * FIELD STYLES
  */
 
-const labelStyle:
-  React.CSSProperties = {
-    display: "block",
-    color: "#334155",
-    fontSize: "12px",
-    fontWeight: 800,
-    marginBottom: "7px",
-  };
+const labelStyle: CSSProperties = {
+  display: "block",
+  color: BRAND.navy,
+  fontSize: 12,
+  fontWeight: 800,
+  marginBottom: 7,
+};
 
-const inputStyle:
-  React.CSSProperties = {
-    width: "100%",
-    boxSizing: "border-box",
-    padding: "10px 12px",
-    borderRadius: "9px",
-    border:
-      "1px solid #CBD5E1",
-    background: "#FFFFFF",
-    color: "#0F172A",
-    fontSize: "14px",
-  };
+const inputStyle: CSSProperties = {
+  width: "100%",
+  boxSizing: "border-box",
+  padding: "10px 12px",
+  borderRadius: 9,
+  border: `1px solid ${BRAND.border}`,
+  background: BRAND.white,
+  color: BRAND.darkNavy,
+  fontSize: 14,
+};

@@ -1,4 +1,19 @@
+
 import styles from "./styles/RoadmapTimeline.module.css";
+
+/*
+ * ============================================================
+ * AUTIVOYA — ROADMAP TIMELINE
+ * ============================================================
+ *
+ * Displays five areas of family support.
+ *
+ * Preserves existing layout, CSS classes,
+ * and roadmap categories.
+ *
+ * Updates outdated branding to Autivoya.
+ * ============================================================
+ */
 
 const roadmap = [
   {
@@ -36,8 +51,9 @@ export default function RoadmapTimeline() {
         </h2>
 
         <p className={styles.intro}>
-          Your family may need support across several areas at the same
-          time. These areas are not steps you need to complete in order.
+          Your family may need support across several areas at the
+          same time. These areas are not steps you need to complete
+          in order.
         </p>
       </div>
 
@@ -63,13 +79,15 @@ export default function RoadmapTimeline() {
         ))}
       </div>
 
+      {/* IMPORTANT INFORMATION */}
+
       <div className={styles.disclaimer}>
         <h3 className={styles.disclaimerTitle}>
           Important Information
         </h3>
 
         <p className={styles.disclaimerText}>
-          Myriad Autism Journey provides educational information and
+          Autivoya provides educational information and
           personalized guidance to help families navigate available
           resources and next steps. It is not a substitute for
           professional medical advice, diagnosis, or treatment. For
