@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   deploy:
@@ -15,6 +16,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/679493052595/locations/global/workloadIdentityPools/autivoya-github-pool/providers/github-actions
+          service_account: autivoya-github-deploy@autism-journey-navigator.iam.gserviceaccount.com
+          create_credentials_file: true
+          export_environment_variables: true
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -36,5 +45,3 @@ jobs:
 
       - name: Deploy Firebase Functions
         run: firebase deploy --only functions --project autism-journey-navigator --non-interactive
-        env:
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-credentials.json
