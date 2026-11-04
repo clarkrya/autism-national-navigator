@@ -1,13 +1,30 @@
+
 import Link from "next/link";
+import Image from "next/image";
 
 import Button from "../ui/Button";
 
 import styles from "./styles/Hero.module.css";
 
+/*
+ * ============================================================
+ * AUTIVOYA — HOMEPAGE HERO
+ * ============================================================
+ *
+ * Preserves:
+ * - Existing homepage layout
+ * - Journey Builder navigation
+ * - Shared Button component
+ * - Existing family illustration
+ * - Responsive styling through Hero.module.css
+ * ============================================================
+ */
+
 export default function Hero() {
   return (
     <section className={styles.hero}>
-<div className={styles.wrapper}>        {/* LEFT COLUMN */}
+      <div className={styles.wrapper}>
+        {/* LEFT COLUMN */}
 
         <div className={styles.content}>
           <div className={styles.eyebrow}>
@@ -21,10 +38,10 @@ export default function Hero() {
           </h1>
 
           <p className={styles.description}>
-            Personalized guidance, trusted recommendations,
-            and a step-by-step roadmap designed to help
-            your family move forward with clarity and
-            confidence.
+            Every journey is unique. Autivoya provides
+            personalized guidance, trusted resources, and
+            a step-by-step roadmap to help your family
+            move forward with clarity and confidence.
           </p>
 
           <div className={styles.buttonRow}>
@@ -34,9 +51,9 @@ export default function Hero() {
                 textDecoration: "none",
               }}
             >
-              <Button>
-                Start My Family Journey
-              </Button>
+              <Button variant="gold">
+  Start My Family Journey
+</Button>
             </Link>
           </div>
 
@@ -44,8 +61,10 @@ export default function Hero() {
             style={{
               marginTop: "14px",
               marginBottom: 0,
-              color: "#64748B",
+              color: "#FFFFFF",
+              opacity: 0.9,
               fontSize: "14px",
+              lineHeight: 1.5,
             }}
           >
             Start building your journey — no account required.
@@ -69,12 +88,16 @@ export default function Hero() {
         {/* RIGHT COLUMN */}
 
         <div className={styles.imageArea}>
-  <img
-    src="/images/hero-family.png"
-    alt="Parent and child walking along a path with signs representing understanding, planning, action, and thriving"
-    className={styles.heroImage}
-  />
-</div>
+          <Image
+            src="/images/hero-family.png"
+            alt="Parent and child walking along a path with signs representing understanding, planning, action, and thriving"
+            className={styles.heroImage}
+            width={800}
+            height={600}
+            priority
+            sizes="(max-width: 768px) 100vw, 50vw"
+          />
+        </div>
       </div>
     </section>
   );

@@ -1,35 +1,53 @@
-import { NextResponse } from "next/server";
+import {
+  NextResponse,
+} from "next/server";
 
 import type {
   CommunityCategory,
 } from "../../../../lib/communityTypes";
 
 import {
+  getAuthenticatedFirestoreDocument,
   requirePremium,
-} from "../../../../lib/serverSubscription";
-
-import {
-  adminDb,
-} from "../../../../lib/firebaseAdmin";
-
+} from "../../../../lib/serverSubscriptionAuth";
 
 /*
  * ============================================================
  * COMMUNITY POSTS API
  * ============================================================
  *
- * Premium-only Community post creation.
+ * Community access model:
  *
- * NOTE:
+ * Guest:
+ *   No Community access.
  *
- * Premium Community participation is currently being held
- * for a later development phase while the Free experience
- * is prepared for user testing.
+ * Free:
+ *   Read-only.
  *
- * This route remains available for future Premium work and
- * is kept build-safe for Vercel deployment.
+ * Premium / Premium+:
+ *   May create posts and participate.
+ *
+ * Authentication:
+ *   Firebase ID token supplied by the browser.
+ *
+ * Firestore access:
+ *   Firebase REST API using the authenticated user's ID token.
+ *
+ * No Firebase Admin SDK.
+ *
+ * Firestore Security Rules still apply.
  * ============================================================
  */
+
+
+/*
+ * ============================================================
+ * COLLECTION
+ * ============================================================
+ */
+
+const COMMUNITY_POSTS_COLLECTION =
+  "communityPosts";
 
 
 /*
@@ -70,8 +88,25 @@ type CreatePostRequest = {
   category?: unknown;
 
   isAnonymous?: unknown;
+};
 
-  isPremiumOnly?: unknown;
+
+/*
+ * ============================================================
+ * FIRESTORE REST RESPONSE
+ * ============================================================
+ */
+
+type FirestoreCreateResponse = {
+  name?: string;
+
+  error?: {
+    code?: number;
+
+    message?: string;
+
+    status?: string;
+  };
 };
 
 
@@ -105,6 +140,59 @@ function getCleanString(
 
 }
 
+/*
+ * ============================================================
+ * COMMUNITY DISPLAY NAME
+ * ============================================================
+ *
+ * Reads the authenticated member's Community profile:
+ *
+ * users/{uid}/communityProfile/current
+ *
+ * Anonymous posts never expose this name.
+ * ============================================================
+ */
+
+async function getCommunityDisplayName(
+  uid: string,
+  idToken: string
+): Promise<string> {
+
+  const profile =
+    await getAuthenticatedFirestoreDocument(
+      `users/${uid}/communityProfile/current`,
+      idToken
+    );
+
+
+  if (
+    !profile
+  ) {
+
+    return "Community Member";
+
+  }
+
+
+  const displayName =
+    getCleanString(
+      profile.displayName,
+      80
+    );
+
+
+  if (
+    !displayName
+  ) {
+
+    return "Community Member";
+
+  }
+
+
+  return displayName;
+
+}
 
 /*
  * ============================================================
@@ -129,6 +217,406 @@ function isCommunityCategory(
 
 /*
  * ============================================================
+ * FIREBASE ID TOKEN
+ * ============================================================
+ */
+
+function getFirebaseIdToken(
+  request: Request
+): string {
+
+  const authorization =
+    request.headers.get(
+      "authorization"
+    );
+
+
+  if (
+    !authorization ||
+    !authorization
+      .toLowerCase()
+      .startsWith(
+        "bearer "
+      )
+  ) {
+
+    throw new Error(
+      "AUTH_REQUIRED"
+    );
+
+  }
+
+
+  const idToken =
+    authorization
+      .slice(7)
+      .trim();
+
+
+  if (
+    !idToken
+  ) {
+
+    throw new Error(
+      "AUTH_REQUIRED"
+    );
+
+  }
+
+
+  return idToken;
+
+}
+
+
+/*
+ * ============================================================
+ * FIREBASE PROJECT ID
+ * ============================================================
+ */
+
+function getFirebaseProjectId():
+  string {
+
+  const projectId =
+    process.env
+      .NEXT_PUBLIC_FIREBASE_PROJECT_ID ||
+    process.env
+      .FIREBASE_ADMIN_PROJECT_ID;
+
+
+  if (
+    !projectId
+  ) {
+
+    console.error(
+      "Firebase project ID is not configured."
+    );
+
+
+    throw new Error(
+      "FIREBASE_CONFIG_MISSING"
+    );
+
+  }
+
+
+  return projectId;
+
+}
+
+
+/*
+ * ============================================================
+ * CREATE FIRESTORE DOCUMENT
+ * ============================================================
+ */
+
+async function createCommunityPostDocument(
+  idToken: string,
+
+  data: {
+    authorId: string;
+
+    authorDisplayName: string;
+
+    title: string;
+
+    body: string;
+
+    category: CommunityCategory;
+
+    isAnonymous: boolean;
+
+    status: string;
+
+    moderationStatus: string;
+
+    replyCount: number;
+
+    reactionCount: number;
+
+    reportCount: number;
+
+    isFeatured: boolean;
+
+    isNavigatorSupported: boolean;
+
+    createdAt: number;
+
+    updatedAt: number;
+  }
+): Promise<string> {
+
+  const projectId =
+    getFirebaseProjectId();
+
+
+  /*
+   * ----------------------------------------------------------
+   * FIRESTORE REST CREATE DOCUMENT
+   * ----------------------------------------------------------
+   *
+   * POSTing to:
+   *
+   *   .../documents/communityPosts
+   *
+   * creates a new document in the communityPosts collection
+   * with an automatically generated Firestore document ID.
+   * ----------------------------------------------------------
+   */
+
+  const endpoint =
+    `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(
+      projectId
+    )}/databases/(default)/documents/${COMMUNITY_POSTS_COLLECTION}`;
+
+
+  const response =
+    await fetch(
+      endpoint,
+      {
+        method:
+          "POST",
+
+        headers: {
+          Authorization:
+            `Bearer ${idToken}`,
+
+          "Content-Type":
+            "application/json",
+        },
+
+        body:
+          JSON.stringify({
+            fields: {
+
+              authorId: {
+                stringValue:
+                  data.authorId,
+              },
+
+              authorDisplayName: {
+                stringValue:
+                  data.authorDisplayName,
+              },
+
+              title: {
+                stringValue:
+                  data.title,
+              },
+
+              body: {
+                stringValue:
+                  data.body,
+              },
+
+              category: {
+                stringValue:
+                  data.category,
+              },
+
+              isAnonymous: {
+                booleanValue:
+                  data.isAnonymous,
+              },
+
+              status: {
+                stringValue:
+                  data.status,
+              },
+
+              moderationStatus: {
+                stringValue:
+                  data.moderationStatus,
+              },
+
+              replyCount: {
+                integerValue:
+                  String(
+                    data.replyCount
+                  ),
+              },
+
+              reactionCount: {
+                integerValue:
+                  String(
+                    data.reactionCount
+                  ),
+              },
+
+              reportCount: {
+                integerValue:
+                  String(
+                    data.reportCount
+                  ),
+              },
+
+              isFeatured: {
+                booleanValue:
+                  data.isFeatured,
+              },
+
+              isNavigatorSupported: {
+                booleanValue:
+                  data.isNavigatorSupported,
+              },
+
+              createdAt: {
+                integerValue:
+                  String(
+                    data.createdAt
+                  ),
+              },
+
+              updatedAt: {
+                integerValue:
+                  String(
+                    data.updatedAt
+                  ),
+              },
+
+            },
+          }),
+      }
+    );
+
+
+  let result:
+    FirestoreCreateResponse;
+
+
+  try {
+
+    result =
+      await response.json() as
+        FirestoreCreateResponse;
+
+  } catch {
+
+    throw new Error(
+      "FIRESTORE_INVALID_RESPONSE"
+    );
+
+  }
+
+
+  /*
+   * ----------------------------------------------------------
+   * AUTH FAILURE
+   * ----------------------------------------------------------
+   */
+
+  if (
+    response.status ===
+    401
+  ) {
+
+    throw new Error(
+      "AUTH_INVALID"
+    );
+
+  }
+
+
+  /*
+   * ----------------------------------------------------------
+   * FIRESTORE RULES DENIED WRITE
+   * ----------------------------------------------------------
+   */
+
+  if (
+    response.status ===
+    403
+  ) {
+
+    console.error(
+      "Firestore denied Community post creation:",
+      result.error
+    );
+
+
+    throw new Error(
+      "FIRESTORE_PERMISSION_DENIED"
+    );
+
+  }
+
+
+  /*
+   * ----------------------------------------------------------
+   * OTHER FIRESTORE FAILURE
+   * ----------------------------------------------------------
+   */
+
+  if (
+    !response.ok
+  ) {
+
+    console.error(
+      "Firestore Community post creation failed:",
+      {
+        status:
+          response.status,
+
+        error:
+          result.error,
+      }
+    );
+
+
+    throw new Error(
+      "FIRESTORE_WRITE_FAILED"
+    );
+
+  }
+
+
+  /*
+   * ----------------------------------------------------------
+   * DOCUMENT ID
+   * ----------------------------------------------------------
+   */
+
+  const documentName =
+    result.name;
+
+
+  if (
+    !documentName
+  ) {
+
+    throw new Error(
+      "FIRESTORE_INVALID_RESPONSE"
+    );
+
+  }
+
+
+  const postId =
+    documentName
+      .split("/")
+      .pop();
+
+
+  if (
+    !postId
+  ) {
+
+    throw new Error(
+      "FIRESTORE_INVALID_RESPONSE"
+    );
+
+  }
+
+
+  return postId;
+
+}
+
+
+/*
+ * ============================================================
  * POST
  * ============================================================
  */
@@ -141,19 +629,38 @@ export async function POST(
 
     /*
      * ========================================================
-     * STEP 1 — REQUIRE PREMIUM
+     * STEP 1 — REQUIRE PREMIUM / PREMIUM+
      * ========================================================
+     *
+     * Uses the same REST-based server authorization module
+     * already used by Ask Your Navigator.
      */
 
     const account =
-      await requirePremium(
-        request
-      );
+  await requirePremium(
+    request
+  );
+
+
+/*
+ * ========================================================
+ * STEP 2 — USE VERIFIED FIREBASE USER TOKEN
+ * ========================================================
+ *
+ * requirePremium() has already verified the Firebase
+ * request and returns the authenticated user's ID token.
+ *
+ * Reusing that token avoids reading request.headers again
+ * after asynchronous authorization work.
+ */
+
+const idToken =
+  account.idToken;
 
 
     /*
      * ========================================================
-     * STEP 2 — READ REQUEST BODY
+     * STEP 3 — READ REQUEST BODY
      * ========================================================
      */
 
@@ -185,7 +692,7 @@ export async function POST(
 
     /*
      * ========================================================
-     * STEP 3 — VALIDATE TITLE
+     * STEP 4 — VALIDATE TITLE
      * ========================================================
      */
 
@@ -197,7 +704,8 @@ export async function POST(
 
 
     if (
-      title.length < 3
+      title.length <
+      3
     ) {
 
       return NextResponse.json(
@@ -216,7 +724,7 @@ export async function POST(
 
     /*
      * ========================================================
-     * STEP 4 — VALIDATE BODY
+     * STEP 5 — VALIDATE MESSAGE
      * ========================================================
      */
 
@@ -228,7 +736,8 @@ export async function POST(
 
 
     if (
-      postBody.length < 5
+      postBody.length <
+      5
     ) {
 
       return NextResponse.json(
@@ -247,7 +756,7 @@ export async function POST(
 
     /*
      * ========================================================
-     * STEP 5 — VALIDATE CATEGORY
+     * STEP 6 — VALIDATE CATEGORY
      * ========================================================
      */
 
@@ -273,28 +782,37 @@ export async function POST(
 
     /*
      * ========================================================
-     * STEP 6 — ANONYMOUS OPTION
+     * STEP 7 — ANONYMOUS OPTION
      * ========================================================
      */
 
     const isAnonymous =
-      body.isAnonymous === true;
+      body.isAnonymous ===
+      true;
 
+/*
+ * ========================================================
+ * COMMUNITY IDENTITY
+ * ========================================================
+ */
 
-    /*
-     * ========================================================
-     * STEP 7 — PREMIUM-ONLY OPTION
-     * ========================================================
-     */
-
-    const isPremiumOnly =
-      body.isPremiumOnly === true;
-
-
+const authorDisplayName =
+  isAnonymous
+    ? "Anonymous"
+    : await getCommunityDisplayName(
+        account.uid,
+        idToken
+      );
     /*
      * ========================================================
      * STEP 8 — SERVER-CONTROLLED VALUES
      * ========================================================
+     *
+     * Posts are published immediately so the author can see
+     * the conversation after submission.
+     *
+     * moderationStatus remains available for future moderation
+     * workflows.
      */
 
     const now =
@@ -303,80 +821,59 @@ export async function POST(
 
     /*
      * ========================================================
-     * STEP 9 — FIRESTORE WRITE
+     * STEP 9 — FIRESTORE REST WRITE
      * ========================================================
-     *
-     * The existing Community repository defines the intended
-     * posts collection as:
-     *
-     *   community / posts
-     *
-     * The Admin SDK does not support chaining .collection()
-     * from a CollectionReference.
-     *
-     * Use the collection path directly instead.
-     *
-     * This preserves the existing logical collection name
-     * used throughout the Community code.
      */
 
-    const postsCollection =
-      adminDb.collection(
-        "community/posts"
+    const postId =
+      await createCommunityPostDocument(
+        idToken,
+        {
+
+          authorId:
+            account.uid,
+
+            authorDisplayName,
+
+          title,
+
+          body:
+            postBody,
+
+          category:
+            body.category,
+
+          isAnonymous,
+
+          status:
+            "published",
+
+          moderationStatus:
+            "not_reviewed",
+
+          replyCount:
+            0,
+
+          reactionCount:
+            0,
+
+          reportCount:
+            0,
+
+          isFeatured:
+            false,
+
+          isNavigatorSupported:
+            false,
+
+          createdAt:
+            now,
+
+          updatedAt:
+            now,
+
+        }
       );
-
-
-    const postReference =
-      await postsCollection.add({
-
-        authorId:
-          account.uid,
-
-        authorDisplayName:
-          isAnonymous
-            ? "Anonymous"
-            : "Community Member",
-
-        title,
-
-        body:
-          postBody,
-
-        category:
-          body.category,
-
-        isAnonymous,
-
-        status:
-          "pending_review",
-
-        moderationStatus:
-          "not_reviewed",
-
-        replyCount:
-          0,
-
-        reactionCount:
-          0,
-
-        reportCount:
-          0,
-
-        isFeatured:
-          false,
-
-        isPremiumOnly,
-
-        isNavigatorSupported:
-          false,
-
-        createdAt:
-          now,
-
-        updatedAt:
-          now,
-
-      });
 
 
     /*
@@ -390,11 +887,10 @@ export async function POST(
         success:
           true,
 
-        postId:
-          postReference.id,
+        postId,
 
         status:
-          "pending_review",
+          "published",
 
         plan:
           account.plan,
@@ -425,7 +921,7 @@ export async function POST(
       return NextResponse.json(
         {
           error:
-            "You must be logged in to participate in the community.",
+            "You must be logged in to participate in the Community.",
         },
         {
           status:
@@ -482,6 +978,58 @@ export async function POST(
         {
           status:
             403,
+        }
+      );
+
+    }
+
+
+    /*
+     * ========================================================
+     * FIRESTORE SECURITY RULES
+     * ========================================================
+     */
+
+    if (
+      error instanceof Error &&
+      error.message ===
+        "FIRESTORE_PERMISSION_DENIED"
+    ) {
+
+      return NextResponse.json(
+        {
+          error:
+            "Your account does not currently have permission to create a Community post.",
+        },
+        {
+          status:
+            403,
+        }
+      );
+
+    }
+
+
+    /*
+     * ========================================================
+     * FIREBASE CONFIGURATION
+     * ========================================================
+     */
+
+    if (
+      error instanceof Error &&
+      error.message ===
+        "FIREBASE_CONFIG_MISSING"
+    ) {
+
+      return NextResponse.json(
+        {
+          error:
+            "The Community service is not configured correctly.",
+        },
+        {
+          status:
+            500,
         }
       );
 

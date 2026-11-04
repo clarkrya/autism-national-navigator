@@ -1,3 +1,4 @@
+
 "use client";
 
 import Link from "next/link";
@@ -8,53 +9,32 @@ import {
   type SubscriptionPlan,
 } from "../../lib/subscriptionTypes";
 
-
 /*
  * ============================================================
- * PRICING PAGE
+ * AUTIVOYA PRICING PAGE
  * ============================================================
  *
- * Myriad Autism Journey
+ * Pricing is currently informational.
+ * Payment processing is not yet connected.
  *
- * This is currently a PRODUCT / MARKETING page.
+ * Existing plan definitions, features, prices, and
+ * signup destinations are preserved.
  *
- * Stripe is NOT connected yet.
- *
- * Upgrade buttons currently lead to the signup/login flow
- * while preserving the Pricing page as the return destination.
- *
- * Once Stripe is implemented, these buttons can launch the
- * appropriate checkout session.
+ * Tester access redemption remains available through
+ * its existing backend, but is no longer shown here.
  * ============================================================
  */
 
+const planOrder: SubscriptionPlan[] = [
+  "free",
+  "premium",
+  "premium_plus",
+];
 
-/*
- * ============================================================
- * PLAN ORDER
- * ============================================================
- */
+const pricingReturnTo = "/pricing";
 
-const planOrder:
-  SubscriptionPlan[] = [
-    "free",
-    "premium",
-    "premium_plus",
-  ];
-
-
-/*
- * ============================================================
- * DISPLAY HELPERS
- * ============================================================
- */
-
-function getFeatureLabel(
-  feature: string
-): string {
-
+function getFeatureLabel(feature: string): string {
   switch (feature) {
-
     case "initial_journey":
       return "Personalized autism journey";
 
@@ -68,13 +48,13 @@ function getFeatureLabel(
       return "Journey History";
 
     case "community_read":
-      return "Read the community";
+      return "Read community posts";
 
     case "community_participate":
-      return "Participate in the community";
+      return "Post in the Community";
 
     case "ask_navigator":
-      return "Ask Your Navigator";
+      return "Ask Your Autivoya Navigator";
 
     case "advanced_resources":
       return "Advanced personalized resources";
@@ -96,935 +76,432 @@ function getFeatureLabel(
 
     default:
       return feature;
-
   }
-
 }
-
-
-/*
- * ============================================================
- * PLAN DESCRIPTION
- * ============================================================
- */
 
 function getPlanDescription(
   plan: SubscriptionPlan
 ): string {
-
-  return PLAN_DEFINITIONS[
-    plan
-  ].shortDescription;
-
+  return PLAN_DEFINITIONS[plan].shortDescription;
 }
-
-
-/*
- * ============================================================
- * MONTHLY PRICE
- * ============================================================
- */
 
 function getMonthlyPrice(
   plan: SubscriptionPlan
 ): string {
-
   return formatPlanPrice(
-    PLAN_DEFINITIONS[
-      plan
-    ].monthlyPriceCents
+    PLAN_DEFINITIONS[plan].monthlyPriceCents
   );
-
 }
 
-
-/*
- * ============================================================
- * RETURN TO PRICING
- * ============================================================
- */
-
-const pricingReturnTo =
-  "/pricing";
-
-
-/*
- * ============================================================
- * PRICING PAGE
- * ============================================================
- */
-
 export default function PricingPage() {
-
   return (
-
     <main
       style={{
-        minHeight:
-          "100vh",
-
+        minHeight: "100vh",
         background:
           "linear-gradient(180deg, #F8FAFC 0%, #FFFFFF 55%, #F8FAFC 100%)",
-
-        padding:
-          "70px 24px 100px",
+        padding: "70px 24px 100px",
       }}
     >
-
-      {/* ======================================================
-          HERO
-      ======================================================= */}
+      {/* ================================================
+          PAGE HEADING
+      ================================================= */}
 
       <section
         style={{
-          maxWidth:
-            "850px",
-
-          margin:
-            "0 auto",
-
-          textAlign:
-            "center",
-
-          marginBottom:
-            "55px",
+          maxWidth: "850px",
+          margin: "0 auto 55px",
+          textAlign: "center",
         }}
       >
-
-        <div
-          style={{
-            display:
-              "inline-flex",
-
-            alignItems:
-              "center",
-
-            padding:
-              "8px 13px",
-
-            borderRadius:
-              "999px",
-
-            background:
-              "#EFF6FF",
-
-            border:
-              "1px solid #BFDBFE",
-
-            color:
-              "#2563EB",
-
-            fontSize:
-              "12px",
-
-            fontWeight:
-              800,
-
-            letterSpacing:
-              "0.05em",
-
-            textTransform:
-              "uppercase",
-
-            marginBottom:
-              "18px",
-          }}
-        >
-          Myriad Autism Journey
-        </div>
-
-
         <h1
           style={{
-            margin:
-              0,
-
-            color:
-              "#0F172A",
-
-            fontSize:
-              "48px",
-
-            lineHeight:
-              1.1,
-
-            fontWeight:
-              850,
+            margin: 0,
+            color: "#173B52",
+            fontSize: "48px",
+            lineHeight: 1.1,
+            fontWeight: 850,
           }}
         >
-          Choose the support that
-          fits your journey.
+          Choose the support that fits your journey.
         </h1>
-
 
         <p
           style={{
-            maxWidth:
-              "720px",
-
-            margin:
-              "18px auto 0",
-
-            color:
-              "#64748B",
-
-            fontSize:
-              "18px",
-
-            lineHeight:
-              1.7,
+            maxWidth: "720px",
+            margin: "18px auto 0",
+            color: "#64748B",
+            fontSize: "18px",
+            lineHeight: 1.7,
           }}
         >
-          Start with the tools you need today
-          and choose more personalized support
-          as your family's journey evolves.
+          Start with the tools you need today and choose
+          more personalized support as your family's
+          journey evolves.
         </p>
-
 
         <div
           style={{
-            marginTop:
-              "15px",
-
-            color:
-              "#475569",
-
-            fontSize:
-              "16px",
-
-            fontStyle:
-              "italic",
+            marginTop: "15px",
+            color: "#475569",
+            fontSize: "16px",
+            fontStyle: "italic",
           }}
         >
-          Embracing the countless ways we thrive.
+          Every journey is unique. Every step matters.
         </div>
-
       </section>
 
-
-      {/* ======================================================
-          PLANS
-      ======================================================= */}
+      {/* ================================================
+          PRICING PLANS
+      ================================================= */}
 
       <section
         style={{
-          maxWidth:
-            "1180px",
-
-          margin:
-            "0 auto",
-
-          display:
-            "grid",
-
+          maxWidth: "1180px",
+          margin: "0 auto",
+          display: "grid",
           gridTemplateColumns:
             "repeat(auto-fit, minmax(290px, 1fr))",
-
-          gap:
-            "22px",
-
-          alignItems:
-            "stretch",
+          gap: "22px",
+          alignItems: "stretch",
         }}
       >
+        {planOrder.map((planOption) => {
+          const definition =
+            PLAN_DEFINITIONS[planOption];
 
-        {planOrder.map(
-          (plan) => {
+          const isPremium =
+            planOption === "premium";
 
-            const definition =
-              PLAN_DEFINITIONS[
-                plan
-              ];
+          const isPremiumPlus =
+            planOption === "premium_plus";
 
+          return (
+            <section
+              key={planOption}
+              style={{
+                position: "relative",
+                display: "flex",
+                flexDirection: "column",
+                padding: "30px",
+                borderRadius: "22px",
+                border: isPremium
+                  ? "2px solid #2563EB"
+                  : "1px solid #E2E8F0",
+                background: "#FFFFFF",
+                boxShadow: isPremium
+                  ? "0 16px 35px rgba(37, 99, 235, 0.12)"
+                  : "0 8px 24px rgba(15, 23, 42, 0.05)",
+              }}
+            >
+              {/* PLAN BADGE */}
 
-            const isPremium =
-              plan ===
-              "premium";
+              {definition.badge && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "-13px",
+                    left: "50%",
+                    transform: "translateX(-50%)",
+                    padding: "6px 12px",
+                    borderRadius: "999px",
+                    background: "#2563EB",
+                    color: "#FFFFFF",
+                    fontSize: "11px",
+                    fontWeight: 800,
+                    whiteSpace: "nowrap",
+                    letterSpacing: "0.04em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  {definition.badge}
+                </div>
+              )}
 
+              {/* PLAN NAME */}
 
-            const isPremiumPlus =
-              plan ===
-              "premium_plus";
-
-
-            return (
-
-              <section
-                key={
-                  plan
-                }
-
+              <div
                 style={{
-                  position:
-                    "relative",
-
-                  display:
-                    "flex",
-
-                  flexDirection:
-                    "column",
-
-                  padding:
-                    "30px",
-
-                  borderRadius:
-                    "22px",
-
-                  border:
-                    isPremium
-                      ? "2px solid #2563EB"
-                      : "1px solid #E2E8F0",
-
-                  background:
-                    "#FFFFFF",
-
-                  boxShadow:
-                    isPremium
-                      ? "0 16px 35px rgba(37, 99, 235, 0.12)"
-                      : "0 8px 24px rgba(15, 23, 42, 0.05)",
+                  color: "#2563EB",
+                  fontSize: "12px",
+                  fontWeight: 800,
+                  letterSpacing: "0.07em",
+                  textTransform: "uppercase",
+                  marginBottom: "8px",
                 }}
               >
+                {definition.name}
+              </div>
 
-                {/* ==========================================
-                    BADGE
-                =========================================== */}
+              <h2
+                style={{
+                  margin: 0,
+                  color: "#0F172A",
+                  fontSize: "29px",
+                  lineHeight: 1.2,
+                  fontWeight: 800,
+                }}
+              >
+                {definition.name}
+              </h2>
 
-                {definition.badge && (
+              <p
+                style={{
+                  margin: "10px 0 0",
+                  minHeight: "50px",
+                  color: "#64748B",
+                  fontSize: "14px",
+                  lineHeight: 1.55,
+                }}
+              >
+                {getPlanDescription(planOption)}
+              </p>
 
-                  <div
-                    style={{
-                      position:
-                        "absolute",
+              {/* MONTHLY PRICE */}
 
-                      top:
-                        "-13px",
-
-                      left:
-                        "50%",
-
-                      transform:
-                        "translateX(-50%)",
-
-                      padding:
-                        "6px 12px",
-
-                      borderRadius:
-                        "999px",
-
-                      background:
-                        "#2563EB",
-
-                      color:
-                        "#FFFFFF",
-
-                      fontSize:
-                        "11px",
-
-                      fontWeight:
-                        800,
-
-                      whiteSpace:
-                        "nowrap",
-
-                      letterSpacing:
-                        "0.04em",
-
-                      textTransform:
-                        "uppercase",
-                    }}
-                  >
-                    {definition.badge}
-                  </div>
-
-                )}
-
-
-                {/* ==========================================
-                    PLAN NAME
-                =========================================== */}
-
-                <div
+              <div
+                style={{
+                  marginTop: "24px",
+                  display: "flex",
+                  alignItems: "baseline",
+                  gap: "6px",
+                }}
+              >
+                <span
                   style={{
-                    color:
-                      "#2563EB",
-
-                    fontSize:
-                      "12px",
-
-                    fontWeight:
-                      800,
-
-                    letterSpacing:
-                      "0.07em",
-
-                    textTransform:
-                      "uppercase",
-
-                    marginBottom:
-                      "8px",
+                    color: "#0F172A",
+                    fontSize: "38px",
+                    fontWeight: 850,
+                    lineHeight: 1,
                   }}
                 >
-                  {definition.name}
-                </div>
+                  {getMonthlyPrice(planOption)}
+                </span>
 
-
-                <h2
-                  style={{
-                    margin:
-                      0,
-
-                    color:
-                      "#0F172A",
-
-                    fontSize:
-                      "29px",
-
-                    lineHeight:
-                      1.2,
-
-                    fontWeight:
-                      800,
-                  }}
-                >
-                  {definition.name}
-                </h2>
-
-
-                <p
-                  style={{
-                    margin:
-                      "10px 0 0",
-
-                    minHeight:
-                      "50px",
-
-                    color:
-                      "#64748B",
-
-                    fontSize:
-                      "14px",
-
-                    lineHeight:
-                      1.55,
-                  }}
-                >
-                  {getPlanDescription(
-                    plan
-                  )}
-                </p>
-
-
-                {/* ==========================================
-                    PRICE
-                =========================================== */}
-
-                <div
-                  style={{
-                    marginTop:
-                      "24px",
-
-                    display:
-                      "flex",
-
-                    alignItems:
-                      "baseline",
-
-                    gap:
-                      "6px",
-                  }}
-                >
-
+                {planOption !== "free" && (
                   <span
                     style={{
-                      color:
-                        "#0F172A",
-
-                      fontSize:
-                        "38px",
-
-                      fontWeight:
-                        850,
-
-                      lineHeight:
-                        1,
+                      color: "#94A3B8",
+                      fontSize: "13px",
                     }}
                   >
-                    {
-                      getMonthlyPrice(
-                        plan
-                      )
-                    }
+                    / month
                   </span>
-
-
-                  {plan !==
-                    "free" && (
-
-                    <span
-                      style={{
-                        color:
-                          "#94A3B8",
-
-                        fontSize:
-                          "13px",
-                      }}
-                    >
-                      / month
-                    </span>
-
-                  )}
-
-                </div>
-
-
-                {/* ==========================================
-                    ANNUAL PRICE
-                =========================================== */}
-
-                {definition.annualPriceCents !==
-                  null && (
-
-                  <div
-                    style={{
-                      marginTop:
-                        "7px",
-
-                      color:
-                        "#64748B",
-
-                      fontSize:
-                        "12px",
-                    }}
-                  >
-                    Annual plan:
-                    {" "}
-                    {
-                      formatPlanPrice(
-                        definition
-                          .annualPriceCents
-                      )
-                    }
-                  </div>
-
                 )}
+              </div>
 
+              {/* ANNUAL PRICE */}
 
-                {/* ==========================================
-                    ACTION
-                =========================================== */}
-
+              {definition.annualPriceCents !== null && (
                 <div
                   style={{
-                    marginTop:
-                      "25px",
+                    marginTop: "7px",
+                    color: "#64748B",
+                    fontSize: "12px",
                   }}
                 >
-
-                  {plan ===
-                    "free" ? (
-
-                    <Link
-                      href="/journey"
-
-                      style={{
-                        display:
-                          "block",
-
-                        textAlign:
-                          "center",
-
-                        padding:
-                          "13px 18px",
-
-                        borderRadius:
-                          "10px",
-
-                        border:
-                          "1px solid #CBD5E1",
-
-                        background:
-                          "#FFFFFF",
-
-                        color:
-                          "#0F172A",
-
-                        fontSize:
-                          "14px",
-
-                        fontWeight:
-                          800,
-
-                        textDecoration:
-                          "none",
-                      }}
-                    >
-                      Start Free
-                    </Link>
-
-                  ) : (
-
-                    <Link
-                      href={
-                        `/signup?returnTo=${encodeURIComponent(
-                          pricingReturnTo
-                        )}`
-                      }
-
-                      style={{
-                        display:
-                          "block",
-
-                        textAlign:
-                          "center",
-
-                        padding:
-                          "13px 18px",
-
-                        borderRadius:
-                          "10px",
-
-                        border:
-                          "none",
-
-                        background:
-                          isPremium
-                            ? "#2563EB"
-                            : "#0F766E",
-
-                        color:
-                          "#FFFFFF",
-
-                        fontSize:
-                          "14px",
-
-                        fontWeight:
-                          800,
-
-                        textDecoration:
-                          "none",
-
-                        boxSizing:
-                          "border-box",
-                      }}
-                    >
-                      {
-                        isPremium
-                          ? "Upgrade to Premium"
-                          : "Upgrade to Premium+"
-                      }
-                    </Link>
-
+                  Annual plan:{" "}
+                  {formatPlanPrice(
+                    definition.annualPriceCents
                   )}
-
                 </div>
+              )}
 
+              {/* PLAN ACTION */}
 
-                {/* ==========================================
-                    FEATURES
-                =========================================== */}
+              <div style={{ marginTop: "25px" }}>
+                {planOption === "free" ? (
+                  <Link
+                    href="/journey"
+                    style={{
+                      display: "block",
+                      textAlign: "center",
+                      padding: "13px 18px",
+                      borderRadius: "10px",
+                      border: "1px solid #CBD5E1",
+                      background: "#FFFFFF",
+                      color: "#0F172A",
+                      fontSize: "14px",
+                      fontWeight: 800,
+                      textDecoration: "none",
+                    }}
+                  >
+                    Start Free
+                  </Link>
+                ) : (
+                  <Link
+                    href={`/signup?returnTo=${encodeURIComponent(
+                      pricingReturnTo
+                    )}`}
+                    style={{
+                      display: "block",
+                      textAlign: "center",
+                      padding: "13px 18px",
+                      borderRadius: "10px",
+                      border: "none",
+                      background: isPremium
+                        ? "#2563EB"
+                        : "#0F766E",
+                      color: "#FFFFFF",
+                      fontSize: "14px",
+                      fontWeight: 800,
+                      textDecoration: "none",
+                      boxSizing: "border-box",
+                    }}
+                  >
+                    {isPremium
+                      ? "Upgrade to Premium"
+                      : "Upgrade to Premium+"}
+                  </Link>
+                )}
+              </div>
+
+              {/* INCLUDED FEATURES */}
+
+              <div
+                style={{
+                  marginTop: "28px",
+                  paddingTop: "24px",
+                  borderTop: "1px solid #E2E8F0",
+                  flex: 1,
+                }}
+              >
+                <div
+                  style={{
+                    color: "#334155",
+                    fontSize: "13px",
+                    fontWeight: 800,
+                    marginBottom: "14px",
+                  }}
+                >
+                  What's included
+                </div>
 
                 <div
                   style={{
-                    marginTop:
-                      "28px",
-
-                    paddingTop:
-                      "24px",
-
-                    borderTop:
-                      "1px solid #E2E8F0",
-
-                    flex:
-                      1,
+                    display: "grid",
+                    gap: "11px",
                   }}
                 >
+                  {definition.features.map((feature) => (
+                    <div
+                      key={feature}
+                      style={{
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: "9px",
+                        color: "#475569",
+                        fontSize: "14px",
+                        lineHeight: 1.45,
+                      }}
+                    >
+                      <span
+                        style={{
+                          color: isPremiumPlus
+                            ? "#0F766E"
+                            : "#059669",
+                          fontWeight: 900,
+                          marginTop: "1px",
+                        }}
+                      >
+                        ✓
+                      </span>
 
-                  <div
-                    style={{
-                      color:
-                        "#334155",
-
-                      fontSize:
-                        "13px",
-
-                      fontWeight:
-                        800,
-
-                      marginBottom:
-                        "14px",
-                    }}
-                  >
-                    What's included
-                  </div>
-
-
-                  <div
-                    style={{
-                      display:
-                        "grid",
-
-                      gap:
-                        "11px",
-                    }}
-                  >
-
-                    {definition.features.map(
-                      (
-                        feature
-                      ) => (
-
-                        <div
-                          key={
-                            feature
-                          }
-
-                          style={{
-                            display:
-                              "flex",
-
-                            alignItems:
-                              "flex-start",
-
-                            gap:
-                              "9px",
-
-                            color:
-                              "#475569",
-
-                            fontSize:
-                              "14px",
-
-                            lineHeight:
-                              1.45,
-                          }}
-                        >
-
-                          <span
-                            style={{
-                              color:
-                                isPremiumPlus
-                                  ? "#0F766E"
-                                  : "#059669",
-
-                              fontWeight:
-                                900,
-
-                              marginTop:
-                                "1px",
-                            }}
-                          >
-                            ✓
-                          </span>
-
-
-                          <span>
-                            {
-                              getFeatureLabel(
-                                feature
-                              )
-                            }
-                          </span>
-
-                        </div>
-
-                      )
-                    )}
-
-                  </div>
-
+                      <span>
+                        {getFeatureLabel(feature)}
+                      </span>
+                    </div>
+                  ))}
                 </div>
-
-              </section>
-
-            );
-
-          }
-        )}
-
+              </div>
+            </section>
+          );
+        })}
       </section>
 
-
-      {/* ======================================================
+      {/* ================================================
           VALUE MESSAGE
-      ======================================================= */}
+      ================================================= */}
 
       <section
         style={{
-          maxWidth:
-            "900px",
-
-          margin:
-            "60px auto 0",
-
-          padding:
-            "30px",
-
-          borderRadius:
-            "20px",
-
-          background:
-            "#F8FAFC",
-
-          border:
-            "1px solid #E2E8F0",
-
-          textAlign:
-            "center",
+          maxWidth: "900px",
+          margin: "60px auto 0",
+          padding: "30px",
+          borderRadius: "20px",
+          background: "#F8FAFC",
+          border: "1px solid #E2E8F0",
+          textAlign: "center",
         }}
       >
-
         <h2
           style={{
-            margin:
-              0,
-
-            color:
-              "#0F172A",
-
-            fontSize:
-              "25px",
-
-            fontWeight:
-              800,
+            margin: 0,
+            color: "#0F172A",
+            fontSize: "25px",
+            fontWeight: 800,
           }}
         >
           Your family's journey can evolve.
         </h2>
 
-
         <p
           style={{
-            margin:
-              "10px auto 0",
-
-            maxWidth:
-              "680px",
-
-            color:
-              "#64748B",
-
-            fontSize:
-              "15px",
-
-            lineHeight:
-              1.65,
+            margin: "10px auto 0",
+            maxWidth: "680px",
+            color: "#64748B",
+            fontSize: "15px",
+            lineHeight: 1.65,
           }}
         >
-          Start with the free journey and move
-          into additional support when it becomes
-          useful for your family. Your plan should
-          meet you where you are.
+          Start with the free journey and move into
+          additional support when it becomes useful
+          for your family. Your plan should meet
+          you where you are.
         </p>
-
       </section>
 
-
-      {/* ======================================================
+      {/* ================================================
           FOOTER NAVIGATION
-      ======================================================= */}
+      ================================================= */}
 
       <div
         style={{
-          maxWidth:
-            "900px",
-
-          margin:
-            "30px auto 0",
-
-          display:
-            "flex",
-
-          justifyContent:
-            "center",
-
-          gap:
-            "18px",
-
-          flexWrap:
-            "wrap",
+          maxWidth: "900px",
+          margin: "30px auto 0",
+          display: "flex",
+          justifyContent: "center",
+          gap: "18px",
+          flexWrap: "wrap",
         }}
       >
-
         <Link
           href="/journey"
-
           style={{
-            color:
-              "#64748B",
-
-            fontSize:
-              "13px",
-
-            fontWeight:
-              700,
-
-            textDecoration:
-              "none",
+            color: "#64748B",
+            fontSize: "13px",
+            fontWeight: 700,
+            textDecoration: "none",
           }}
         >
           ← Back to My Journey
         </Link>
 
-
         <Link
-          href={
-            `/login?returnTo=${encodeURIComponent(
-              pricingReturnTo
-            )}`
-          }
-
+          href={`/login?returnTo=${encodeURIComponent(
+            pricingReturnTo
+          )}`}
           style={{
-            color:
-              "#2563EB",
-
-            fontSize:
-              "13px",
-
-            fontWeight:
-              700,
-
-            textDecoration:
-              "none",
+            color: "#2563EB",
+            fontSize: "13px",
+            fontWeight: 700,
+            textDecoration: "none",
           }}
         >
           Log In
         </Link>
-
       </div>
-
-
-      {/* ======================================================
-          DISCLAIMER
-      ======================================================= */}
-
-      <p
-        style={{
-          maxWidth:
-            "850px",
-
-          margin:
-            "40px auto 0",
-
-          textAlign:
-            "center",
-
-          color:
-            "#94A3B8",
-
-          fontSize:
-            "11px",
-
-          lineHeight:
-            1.5,
-        }}
-      >
-        Premium pricing shown here is preliminary and may change
-        before launch. Payment processing and subscription
-        activation are not yet connected.
-      </p>
-
     </main>
-
   );
-
 }

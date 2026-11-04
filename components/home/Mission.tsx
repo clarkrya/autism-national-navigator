@@ -1,4 +1,16 @@
+
 import styles from "./styles/Mission.module.css";
+
+/*
+ * ============================================================
+ * AUTIVOYA — OUR MISSION
+ * ============================================================
+ *
+ * Brand-focused mission statement.
+ *
+ * Preserves existing component structure and CSS classes.
+ * ============================================================
+ */
 
 export default function Mission() {
   return (
@@ -9,21 +21,24 @@ export default function Mission() {
         </h2>
 
         <p className={styles.text}>
-          Every autism journey is unique. Our mission is
-          to help families navigate each stage with
-          confidence by providing{" "}
+          At Autivoya, we believe every journey is unique
+          and every step matters. Our mission is to help
+          families navigate the uncertainties of autism
+          with clarity, confidence, and support. Through{" "}
           <span className={styles.highlight}>
             personalized guidance
           </span>
           ,{" "}
           <span className={styles.highlight}>
-            trusted information
+            trusted resources
           </span>
           , and a{" "}
           <span className={styles.highlight}>
-            clear roadmap
-          </span>{" "}
-          for what comes next.
+            clear, actionable roadmap
+          </span>
+          , we empower families to make informed decisions,
+          celebrate progress, and move forward at their
+          own pace.
         </p>
       </div>
     </section>

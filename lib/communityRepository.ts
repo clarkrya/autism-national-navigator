@@ -1,12 +1,13 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   limit,
   orderBy,
   query,
   where,
-  getDoc,
+  type QueryConstraint,
 } from "firebase/firestore";
 
 import {
@@ -14,10 +15,13 @@ import {
 } from "./firebase";
 
 import type {
-  CommunityPost,
-  CommunityReply,
-  CommunityProfile,
+  CommunityCategory,
+  CommunityContentStatus,
   CommunityFeedFilters,
+  CommunityModerationStatus,
+  CommunityPost,
+  CommunityProfile,
+  CommunityReply,
 } from "./communityTypes";
 
 
@@ -26,51 +30,123 @@ import type {
  * COMMUNITY REPOSITORY
  * ============================================================
  *
- * Client-side Community data access.
+ * Client-side Community READ access.
  *
  * Firestore:
  *
- * community/
- *   posts/{postId}
- *   replies/{replyId}
+ * communityPosts/{postId}
+ *
+ * communityReplies/{replyId}
+ *
+ * communityReactions/{reactionId}
  *
  * users/
  *   {userId}/
  *     communityProfile/current
  *
- * IMPORTANT
+ * IMPORTANT:
  *
- * This repository is intentionally READ-FOCUSED.
+ * Community writes are intentionally NOT handled here.
  *
- * Community writes are handled through protected server-side
- * API routes.
- *
- * The server verifies:
- *
- * - Firebase authentication
- * - Subscription status
- * - Premium/Premium+ entitlement
- *
- * This prevents users from bypassing the UI and writing
- * directly to Firestore.
- *
+ * Posts, replies, reactions, reports, and moderation actions
+ * should go through protected server-side API routes.
  *
  * PRODUCT ACCESS
  *
  * Guest:
- *   No Community access
+ *   - No Community access
  *
  * Free:
- *   Read published Community content
+ *   - Read published Community content
+ *   - Read reaction counts
  *
  * Premium:
- *   Read + participate
+ *   - Read + participate
  *
  * Premium+:
- *   Read + participate
+ *   - Read + participate
  *
+ * Community is one shared space.
+ *
+ * Premium controls participation rather than visibility of
+ * ordinary published Community conversations.
+ *
+ * FIREBASE ARCHITECTURE
+ *
+ * Reads:
+ *   Firebase client Firestore SDK + Firestore Security Rules.
+ *
+ * Writes:
+ *   Protected Next.js API routes using Firebase ID token
+ *   authentication and Firestore REST.
+ *
+ * Firebase Admin is NOT used by Community request-time APIs.
  * ============================================================
  */
+
+
+/*
+ * ============================================================
+ * REACTION TYPES
+ * ============================================================
+ */
+
+export type CommunityReactionTargetType =
+  | "post"
+  | "reply";
+
+
+export type CommunityReactionType =
+  "helpful";
+
+
+export interface CommunityReaction {
+
+  id: string;
+
+  userId: string;
+
+  targetType:
+    CommunityReactionTargetType;
+
+  targetId: string;
+
+  type:
+    CommunityReactionType;
+
+  createdAt: number;
+
+  updatedAt: number;
+
+}
+
+
+export interface CommunityReactionSummary {
+
+  count: number;
+
+  currentUserReacted:
+    boolean;
+
+}
+
+
+/*
+ * ============================================================
+ * COLLECTION NAMES
+ * ============================================================
+ */
+
+const COMMUNITY_POSTS_COLLECTION =
+  "communityPosts";
+
+
+const COMMUNITY_REPLIES_COLLECTION =
+  "communityReplies";
+
+
+const COMMUNITY_REACTIONS_COLLECTION =
+  "communityReactions";
 
 
 /*
@@ -83,8 +159,7 @@ function getPostsCollection() {
 
   return collection(
     db,
-    "community",
-    "posts"
+    COMMUNITY_POSTS_COLLECTION
   );
 
 }
@@ -94,8 +169,47 @@ function getRepliesCollection() {
 
   return collection(
     db,
-    "community",
-    "replies"
+    COMMUNITY_REPLIES_COLLECTION
+  );
+
+}
+
+
+function getReactionsCollection() {
+
+  return collection(
+    db,
+    COMMUNITY_REACTIONS_COLLECTION
+  );
+
+}
+
+
+/*
+ * ============================================================
+ * POST REFERENCE
+ * ============================================================
+ */
+
+function getPostRef(
+  postId: string
+) {
+
+  if (
+    !postId
+  ) {
+
+    throw new Error(
+      "A post ID is required."
+    );
+
+  }
+
+
+  return doc(
+    db,
+    COMMUNITY_POSTS_COLLECTION,
+    postId
   );
 
 }
@@ -111,7 +225,9 @@ function getCommunityProfileRef(
   userId: string
 ) {
 
-  if (!userId) {
+  if (
+    !userId
+  ) {
 
     throw new Error(
       "A user ID is required."
@@ -127,6 +243,386 @@ function getCommunityProfileRef(
     "communityProfile",
     "current"
   );
+
+}
+
+
+/*
+ * ============================================================
+ * DATA NORMALIZATION
+ * ============================================================
+ */
+
+function isCommunityCategory(
+  value: unknown
+): value is CommunityCategory {
+
+  return (
+    value === "general" ||
+    value === "newly_diagnosed" ||
+    value === "school" ||
+    value === "therapy" ||
+    value === "insurance" ||
+    value === "financial_support" ||
+    value === "parent_support" ||
+    value === "teen_transition" ||
+    value === "adult_transition" ||
+    value === "siblings_family" ||
+    value === "success_stories" ||
+    value === "questions" ||
+    value === "other"
+  );
+
+}
+
+
+function normalizeCommunityCategory(
+  value: unknown
+): CommunityCategory {
+
+  return isCommunityCategory(
+    value
+  )
+    ? value
+    : "general";
+
+}
+
+
+function normalizeContentStatus(
+  value: unknown
+): CommunityContentStatus {
+
+  if (
+    value === "published" ||
+    value === "hidden" ||
+    value === "removed" ||
+    value === "pending_review"
+  ) {
+
+    return value;
+
+  }
+
+
+  return "hidden";
+
+}
+
+
+function normalizeModerationStatus(
+  value: unknown
+): CommunityModerationStatus {
+
+  if (
+    value === "not_reviewed" ||
+    value === "reviewed" ||
+    value === "flagged" ||
+    value === "removed"
+  ) {
+
+    return value;
+
+  }
+
+
+  return "not_reviewed";
+
+}
+
+
+function normalizeReactionTargetType(
+  value: unknown
+): CommunityReactionTargetType | null {
+
+  if (
+    value === "post" ||
+    value === "reply"
+  ) {
+
+    return value;
+
+  }
+
+
+  return null;
+
+}
+
+
+/*
+ * ============================================================
+ * NORMALIZE POST
+ * ============================================================
+ */
+
+function normalizeCommunityPost(
+  postId: string,
+  data: Record<string, any>
+): CommunityPost {
+
+  return {
+
+    id:
+      postId,
+
+    authorId:
+      typeof data.authorId ===
+      "string"
+        ? data.authorId
+        : "",
+
+    authorDisplayName:
+      typeof data.authorDisplayName ===
+      "string"
+        ? data.authorDisplayName
+        : "Community Member",
+
+    title:
+      typeof data.title ===
+      "string"
+        ? data.title
+        : "",
+
+    body:
+      typeof data.body ===
+      "string"
+        ? data.body
+        : "",
+
+    category:
+      normalizeCommunityCategory(
+        data.category
+      ),
+
+    isAnonymous:
+      data.isAnonymous ===
+      true,
+
+    status:
+      normalizeContentStatus(
+        data.status
+      ),
+
+    moderationStatus:
+      normalizeModerationStatus(
+        data.moderationStatus
+      ),
+
+    replyCount:
+      typeof data.replyCount ===
+      "number"
+        ? data.replyCount
+        : 0,
+
+    reactionCount:
+      typeof data.reactionCount ===
+      "number"
+        ? data.reactionCount
+        : 0,
+
+    reportCount:
+      typeof data.reportCount ===
+      "number"
+        ? data.reportCount
+        : 0,
+
+    isFeatured:
+      data.isFeatured ===
+      true,
+
+    isNavigatorSupported:
+      data.isNavigatorSupported ===
+      true,
+
+    createdAt:
+      typeof data.createdAt ===
+      "number"
+        ? data.createdAt
+        : 0,
+
+    updatedAt:
+      typeof data.updatedAt ===
+      "number"
+        ? data.updatedAt
+        : 0,
+
+  };
+
+}
+
+
+/*
+ * ============================================================
+ * NORMALIZE REPLY
+ * ============================================================
+ */
+
+function normalizeCommunityReply(
+  replyId: string,
+  postId: string,
+  data: Record<string, any>
+): CommunityReply {
+
+  return {
+
+    id:
+      replyId,
+
+    postId:
+      typeof data.postId ===
+      "string"
+        ? data.postId
+        : postId,
+
+    authorId:
+      typeof data.authorId ===
+      "string"
+        ? data.authorId
+        : "",
+
+    authorDisplayName:
+      typeof data.authorDisplayName ===
+      "string"
+        ? data.authorDisplayName
+        : "Community Member",
+
+    body:
+      typeof data.body ===
+      "string"
+        ? data.body
+        : "",
+
+    isAnonymous:
+      data.isAnonymous ===
+      true,
+
+    status:
+      normalizeContentStatus(
+        data.status
+      ),
+
+    moderationStatus:
+      normalizeModerationStatus(
+        data.moderationStatus
+      ),
+
+    reactionCount:
+      typeof data.reactionCount ===
+      "number"
+        ? data.reactionCount
+        : 0,
+
+    reportCount:
+      typeof data.reportCount ===
+      "number"
+        ? data.reportCount
+        : 0,
+
+    createdAt:
+      typeof data.createdAt ===
+      "number"
+        ? data.createdAt
+        : 0,
+
+    updatedAt:
+      typeof data.updatedAt ===
+      "number"
+        ? data.updatedAt
+        : 0,
+
+  };
+
+}
+
+
+/*
+ * ============================================================
+ * NORMALIZE REACTION
+ * ============================================================
+ */
+
+function normalizeCommunityReaction(
+  reactionId: string,
+  data: Record<string, any>
+): CommunityReaction | null {
+
+  const targetType =
+    normalizeReactionTargetType(
+      data.targetType
+    );
+
+
+  if (
+    !targetType
+  ) {
+
+    return null;
+
+  }
+
+
+  if (
+    typeof data.userId !==
+      "string" ||
+    !data.userId
+  ) {
+
+    return null;
+
+  }
+
+
+  if (
+    typeof data.targetId !==
+      "string" ||
+    !data.targetId
+  ) {
+
+    return null;
+
+  }
+
+
+  if (
+    data.type !==
+    "helpful"
+  ) {
+
+    return null;
+
+  }
+
+
+  return {
+
+    id:
+      reactionId,
+
+    userId:
+      data.userId,
+
+    targetType,
+
+    targetId:
+      data.targetId,
+
+    type:
+      "helpful",
+
+    createdAt:
+      typeof data.createdAt ===
+      "number"
+        ? data.createdAt
+        : 0,
+
+    updatedAt:
+      typeof data.updatedAt ===
+      "number"
+        ? data.updatedAt
+        : 0,
+
+  };
 
 }
 
@@ -167,8 +663,8 @@ export async function getCommunityProfile(
 
 
   return {
-    userId:
-      userId,
+
+    userId,
 
     displayName:
       typeof data.displayName ===
@@ -192,14 +688,81 @@ export async function getCommunityProfile(
       typeof data.createdAt ===
       "number"
         ? data.createdAt
-        : Date.now(),
+        : 0,
 
     updatedAt:
       typeof data.updatedAt ===
       "number"
         ? data.updatedAt
-        : Date.now(),
+        : 0,
+
   };
+
+}
+
+
+/*
+ * ============================================================
+ * GET COMMUNITY POST
+ * ============================================================
+ *
+ * Loads one Community conversation.
+ *
+ * Only published posts are returned to ordinary Community
+ * readers.
+ * ============================================================
+ */
+
+export async function getCommunityPost(
+  postId: string
+): Promise<CommunityPost | null> {
+
+  if (
+    !postId
+  ) {
+
+    throw new Error(
+      "A post ID is required."
+    );
+
+  }
+
+
+  const snapshot =
+    await getDoc(
+      getPostRef(
+        postId
+      )
+    );
+
+
+  if (
+    !snapshot.exists()
+  ) {
+
+    return null;
+
+  }
+
+
+  const post =
+    normalizeCommunityPost(
+      snapshot.id,
+      snapshot.data()
+    );
+
+
+  if (
+    post.status !==
+    "published"
+  ) {
+
+    return null;
+
+  }
+
+
+  return post;
 
 }
 
@@ -209,17 +772,12 @@ export async function getCommunityProfile(
  * GET COMMUNITY POSTS
  * ============================================================
  *
- * Returns published Community posts.
+ * Returns only published Community posts.
  *
- * IMPORTANT
+ * There is no Premium-only content filter.
  *
- * Free users must query with:
- *
- *   premiumOnly === false
- *
- * Premium users can query without that restriction.
- *
- * Firestore Security Rules remain the actual security boundary.
+ * Free, Premium, and Premium+ readers all read from the same
+ * published Community feed.
  * ============================================================
  */
 
@@ -227,14 +785,9 @@ export async function getCommunityPosts(
   filters?: CommunityFeedFilters
 ): Promise<CommunityPost[]> {
 
-  const constraints = [];
+  const constraints:
+    QueryConstraint[] = [];
 
-
-  /*
-   * ----------------------------------------------------------
-   * ONLY PUBLISHED CONTENT
-   * ----------------------------------------------------------
-   */
 
   constraints.push(
     where(
@@ -244,12 +797,6 @@ export async function getCommunityPosts(
     )
   );
 
-
-  /*
-   * ----------------------------------------------------------
-   * CATEGORY
-   * ----------------------------------------------------------
-   */
 
   if (
     filters?.category
@@ -266,40 +813,6 @@ export async function getCommunityPosts(
   }
 
 
-  /*
-   * ----------------------------------------------------------
-   * PREMIUM FILTER
-   * ----------------------------------------------------------
-   *
-   * For Free users the caller should explicitly pass:
-   *
-   * premiumOnly: false
-   *
-   * This is required because Firestore rules must be able to
-   * determine that the query cannot return Premium-only posts.
-   */
-
-  if (
-    filters?.premiumOnly !== undefined
-  ) {
-
-    constraints.push(
-      where(
-        "isPremiumOnly",
-        "==",
-        filters.premiumOnly
-      )
-    );
-
-  }
-
-
-  /*
-   * ----------------------------------------------------------
-   * ORDER
-   * ----------------------------------------------------------
-   */
-
   constraints.push(
     orderBy(
       "createdAt",
@@ -307,12 +820,6 @@ export async function getCommunityPosts(
     )
   );
 
-
-  /*
-   * ----------------------------------------------------------
-   * RESULT LIMIT
-   * ----------------------------------------------------------
-   */
 
   const maximumResults =
     filters?.limit &&
@@ -331,12 +838,6 @@ export async function getCommunityPosts(
   );
 
 
-  /*
-   * ----------------------------------------------------------
-   * QUERY
-   * ----------------------------------------------------------
-   */
-
   const postsQuery =
     query(
       getPostsCollection(),
@@ -350,102 +851,14 @@ export async function getCommunityPosts(
     );
 
 
-  /*
-   * ----------------------------------------------------------
-   * MAP RESULTS
-   * ----------------------------------------------------------
-   */
-
   return snapshot.docs.map(
     (
       postDocument
-    ) => {
-
-      const data =
-        postDocument.data();
-
-
-      return {
-        id:
-          postDocument.id,
-
-        authorId:
-          typeof data.authorId ===
-          "string"
-            ? data.authorId
-            : "",
-
-        authorDisplayName:
-          typeof data.authorDisplayName ===
-          "string"
-            ? data.authorDisplayName
-            : "Community Member",
-
-        title:
-          typeof data.title ===
-          "string"
-            ? data.title
-            : "",
-
-        body:
-          typeof data.body ===
-          "string"
-            ? data.body
-            : "",
-
-        category:
-          data.category,
-
-        isAnonymous:
-          data.isAnonymous === true,
-
-        status:
-          data.status,
-
-        moderationStatus:
-          data.moderationStatus,
-
-        replyCount:
-          typeof data.replyCount ===
-          "number"
-            ? data.replyCount
-            : 0,
-
-        reactionCount:
-          typeof data.reactionCount ===
-          "number"
-            ? data.reactionCount
-            : 0,
-
-        reportCount:
-          typeof data.reportCount ===
-          "number"
-            ? data.reportCount
-            : 0,
-
-        isFeatured:
-          data.isFeatured === true,
-
-        isPremiumOnly:
-          data.isPremiumOnly === true,
-
-        isNavigatorSupported:
-          data.isNavigatorSupported === true,
-
-        createdAt:
-          typeof data.createdAt ===
-          "number"
-            ? data.createdAt
-            : 0,
-
-        updatedAt:
-          typeof data.updatedAt ===
-          "number"
-            ? data.updatedAt
-            : 0,
-      };
-
-    }
+    ) =>
+      normalizeCommunityPost(
+        postDocument.id,
+        postDocument.data()
+      )
   );
 
 }
@@ -456,10 +869,13 @@ export async function getCommunityPosts(
  * GET COMMUNITY REPLIES
  * ============================================================
  *
- * Only published replies are returned.
+ * Returns published replies for one Community post.
  *
- * The Firestore rules determine whether the authenticated
- * reader is allowed to access the content.
+ * All authenticated Community members may read published
+ * replies.
+ *
+ * Premium controls the ability to create replies, not the
+ * ability to read published replies.
  * ============================================================
  */
 
@@ -510,75 +926,180 @@ export async function getCommunityReplies(
   return snapshot.docs.map(
     (
       replyDocument
+    ) =>
+      normalizeCommunityReply(
+        replyDocument.id,
+        postId,
+        replyDocument.data()
+      )
+  );
+
+}
+
+
+/*
+ * ============================================================
+ * GET COMMUNITY REACTIONS
+ * ============================================================
+ *
+ * Reads Helpful reactions for one published Community target.
+ *
+ * Free, Premium, and Premium+ authenticated users may read
+ * reactions under the current Firestore rules.
+ *
+ * Reaction writes remain protected by:
+ *
+ * /api/community/reactions
+ * ============================================================
+ */
+
+export async function getCommunityReactions(
+  targetType:
+    CommunityReactionTargetType,
+
+  targetId: string
+): Promise<CommunityReaction[]> {
+
+  if (
+    targetType !==
+      "post" &&
+    targetType !==
+      "reply"
+  ) {
+
+    throw new Error(
+      "A valid Community reaction target type is required."
+    );
+
+  }
+
+
+  if (
+    !targetId
+  ) {
+
+    throw new Error(
+      "A Community reaction target ID is required."
+    );
+
+  }
+
+
+  const reactionsQuery =
+    query(
+      getReactionsCollection(),
+
+      where(
+        "targetType",
+        "==",
+        targetType
+      ),
+
+      where(
+        "targetId",
+        "==",
+        targetId
+      ),
+
+      where(
+        "type",
+        "==",
+        "helpful"
+      )
+    );
+
+
+  const snapshot =
+    await getDocs(
+      reactionsQuery
+    );
+
+
+  const reactions:
+    CommunityReaction[] = [];
+
+
+  snapshot.docs.forEach(
+    (
+      reactionDocument
     ) => {
 
-      const data =
-        replyDocument.data();
+      const reaction =
+        normalizeCommunityReaction(
+          reactionDocument.id,
+          reactionDocument.data()
+        );
 
 
-      return {
-        id:
-          replyDocument.id,
+      if (
+        reaction
+      ) {
 
-        postId:
-          typeof data.postId ===
-          "string"
-            ? data.postId
-            : postId,
+        reactions.push(
+          reaction
+        );
 
-        authorId:
-          typeof data.authorId ===
-          "string"
-            ? data.authorId
-            : "",
-
-        authorDisplayName:
-          typeof data.authorDisplayName ===
-          "string"
-            ? data.authorDisplayName
-            : "Community Member",
-
-        body:
-          typeof data.body ===
-          "string"
-            ? data.body
-            : "",
-
-        isAnonymous:
-          data.isAnonymous === true,
-
-        status:
-          data.status,
-
-        moderationStatus:
-          data.moderationStatus,
-
-        reactionCount:
-          typeof data.reactionCount ===
-          "number"
-            ? data.reactionCount
-            : 0,
-
-        reportCount:
-          typeof data.reportCount ===
-          "number"
-            ? data.reportCount
-            : 0,
-
-        createdAt:
-          typeof data.createdAt ===
-          "number"
-            ? data.createdAt
-            : 0,
-
-        updatedAt:
-          typeof data.updatedAt ===
-          "number"
-            ? data.updatedAt
-            : 0,
-      };
+      }
 
     }
   );
+
+
+  return reactions;
+
+}
+
+
+/*
+ * ============================================================
+ * GET COMMUNITY REACTION SUMMARY
+ * ============================================================
+ *
+ * Gives the UI exactly what it needs:
+ *
+ * - total Helpful count
+ * - whether the current signed-in user already reacted
+ *
+ * currentUserId may be omitted when only a count is needed.
+ * ============================================================
+ */
+
+export async function getCommunityReactionSummary(
+  targetType:
+    CommunityReactionTargetType,
+
+  targetId: string,
+
+  currentUserId?: string | null
+): Promise<CommunityReactionSummary> {
+
+  const reactions =
+    await getCommunityReactions(
+      targetType,
+      targetId
+    );
+
+
+  const currentUserReacted =
+    Boolean(
+      currentUserId &&
+      reactions.some(
+        (
+          reaction
+        ) =>
+          reaction.userId ===
+          currentUserId
+      )
+    );
+
+
+  return {
+
+    count:
+      reactions.length,
+
+    currentUserReacted,
+
+  };
 
 }

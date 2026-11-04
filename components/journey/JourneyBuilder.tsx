@@ -1,91 +1,86 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
 import {
-  doc,
-  getDoc,
-} from "firebase/firestore";
+  useEffect,
+  useState,
+} from "react";
 
-import type { FamilyProfile } from "../../types/familyProfile";
-import type { PersonalizedJourney } from "../../lib/ai/journeyTypes";
+import type {
+  FamilyProfile,
+} from "../../types/familyProfile";
+
+import type {
+  PersonalizedJourney,
+} from "../../lib/ai/journeyTypes";
 
 import {
   auth,
-  db,
 } from "../../lib/firebase";
 
 import {
   watchAuthState,
 } from "../../lib/auth";
 
+import {
+  archiveCurrentJourney,
+  deleteChildJourneyData,
+  getCurrentJourney,
+  getLegacyCurrentJourney,
+  getSavedChildren,
+  saveCurrentJourney,
+  type SavedChild,
+} from "../../lib/journeyRepository";
+
+import {
+  getLegacyJourneyHistory,
+  saveJourneyStage,
+} from "../../lib/journeyHistory";
+
 import Welcome from "./Welcome";
-import ChildName from "./ChildName";
-import ChildAge from "./ChildAge";
-import StateSelector from "./StateSelector";
-import JourneyStage from "./JourneyStage";
-import Supports from "./Supports";
-import Priority from "./Priority";
-import ProgressBar from "./ProgressBar";
 import GeneratingJourney from "./GeneratingJourney";
 import JourneyDashboard from "./JourneyDashboard";
+import JourneyHistory from "./JourneyHistory";
+import PastJourneys from "./PastJourneys";
+
+import JourneyQuestionnaire from "../journey-builder/JourneyQuestionnaire";
+import AddingChildBanner from "../journey-builder/AddingChildBanner";
+import ChildJourneyControls from "../journey-builder/ChildJourneyControls";
+import StartNewJourneyModal from "../journey-builder/StartNewJourneyModal";
+import RemoveChildModal from "../journey-builder/RemoveChildModal";
 
 
-export default function JourneyBuilder() {
+/*
+ * ============================================================
+ * CHILD ID
+ * ============================================================
+ */
 
-  /*
-   * ============================================================
-   * QUESTIONNAIRE
-   * ============================================================
-   *
-   * The questionnaire has exactly 7 questions.
-   *
-   * Question 7 = Insurance
-   */
+function createChildId() {
+  if (
+    typeof window !== "undefined" &&
+    typeof window.crypto !== "undefined" &&
+    typeof window.crypto.randomUUID === "function"
+  ) {
+    return window.crypto.randomUUID();
+  }
 
-  const totalQuestions = 7;
-
-
-  /*
-   * ============================================================
-   * BASIC STATE
-   * ============================================================
-   */
-
-  const [step, setStep] =
-    useState(0);
-
-  const [isGenerating, setIsGenerating] =
-    useState(false);
-
-  const [error, setError] =
-    useState<string | null>(null);
+  return `child-${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2, 10)}`;
+}
 
 
-  /*
-   * ============================================================
-   * PERSONALIZED JOURNEY
-   * ============================================================
-   */
+/*
+ * ============================================================
+ * BLANK PROFILE
+ * ============================================================
+ */
 
-  const [
-    personalizedJourney,
-    setPersonalizedJourney,
-  ] = useState<PersonalizedJourney | null>(
-    null
-  );
-
-
-  /*
-   * ============================================================
-   * FAMILY PROFILE
-   * ============================================================
-   */
-
-  const [
-    familyProfile,
-    setFamilyProfile,
-  ] = useState<FamilyProfile>({
+function createBlankProfile(
+  childId: string = ""
+): FamilyProfile {
+  return {
+    childId,
     childName: "",
     childAge: "",
     state: "",
@@ -94,311 +89,612 @@ export default function JourneyBuilder() {
     priority: "",
     insurance: "",
     notes: "",
-  });
+  };
+}
+
+
+/*
+ * ============================================================
+ * PREVIOUS CHILD SNAPSHOT
+ * ============================================================
+ */
+
+type PreviousChildSnapshot = {
+  childId: string;
+  familyProfile: FamilyProfile;
+  journey: PersonalizedJourney;
+};
+
+
+/*
+ * ============================================================
+ * COMPONENT
+ * ============================================================
+ */
+
+export default function JourneyBuilder() {
+  const totalQuestions =
+    7;
 
 
   /*
-   * ============================================================
-   * AUTH / SAVED JOURNEY STATE
-   * ============================================================
-   *
-   * We need to wait for Firebase to tell us whether the user
-   * is logged in before deciding whether to:
-   *
-   *   1. Show the questionnaire
-   *   2. Load a saved journey
-   *
-   * This prevents a returning user from briefly seeing the
-   * questionnaire while Firebase restores their session.
+   * ==========================================================
+   * QUESTIONNAIRE / GENERATION STATE
+   * ==========================================================
+   */
+
+  const [
+    step,
+    setStep,
+  ] = useState(
+    0
+  );
+
+  const [
+    isGenerating,
+    setIsGenerating,
+  ] = useState(
+    false
+  );
+
+  const [
+    error,
+    setError,
+  ] = useState<
+    string | null
+  >(
+    null
+  );
+
+
+  /*
+   * ==========================================================
+   * START NEW JOURNEY STATE
+   * ==========================================================
+   */
+
+  const [
+    showStartNewJourneyConfirm,
+    setShowStartNewJourneyConfirm,
+  ] = useState(
+    false
+  );
+
+  const [
+    startingNewJourney,
+    setStartingNewJourney,
+  ] = useState(
+    false
+  );
+
+  const [
+    journeyActionError,
+    setJourneyActionError,
+  ] = useState<
+    string | null
+  >(
+    null
+  );
+
+
+  /*
+   * ==========================================================
+   * REMOVE CHILD STATE
+   * ==========================================================
+   */
+
+  const [
+    showRemoveChildConfirm,
+    setShowRemoveChildConfirm,
+  ] = useState(
+    false
+  );
+
+  const [
+    removingChild,
+    setRemovingChild,
+  ] = useState(
+    false
+  );
+
+  const [
+    removeChildError,
+    setRemoveChildError,
+  ] = useState<
+    string | null
+  >(
+    null
+  );
+
+
+  /*
+   * ==========================================================
+   * ADD ANOTHER CHILD STATE
+   * ==========================================================
+   */
+
+  const [
+    addingChildDraft,
+    setAddingChildDraft,
+  ] = useState(
+    false
+  );
+
+  const [
+    previousChildSnapshot,
+    setPreviousChildSnapshot,
+  ] = useState<
+    PreviousChildSnapshot | null
+  >(
+    null
+  );
+
+
+  /*
+   * ==========================================================
+   * JOURNEY / PROFILE STATE
+   * ==========================================================
+   */
+
+  const [
+    personalizedJourney,
+    setPersonalizedJourney,
+  ] = useState<
+    PersonalizedJourney | null
+  >(
+    null
+  );
+
+  const [
+    familyProfile,
+    setFamilyProfile,
+  ] = useState<FamilyProfile>(
+    createBlankProfile()
+  );
+
+
+  /*
+   * ==========================================================
+   * SAVED JOURNEY STATE
+   * ==========================================================
    */
 
   const [
     checkingSavedJourney,
     setCheckingSavedJourney,
-  ] = useState(true);
-
+  ] = useState(
+    true
+  );
 
   const [
     savedJourneyLoaded,
     setSavedJourneyLoaded,
-  ] = useState(false);
+  ] = useState(
+    false
+  );
+
+  const [
+    savedChildren,
+    setSavedChildren,
+  ] = useState<
+    SavedChild[]
+  >(
+    []
+  );
+
+  const [
+    selectedChildId,
+    setSelectedChildId,
+  ] = useState(
+    ""
+  );
 
 
   /*
-   * ============================================================
-   * CHECK FOR SAVED JOURNEY
-   * ============================================================
-   *
-   * This runs whenever Firebase authentication changes.
-   *
-   * Logged in:
-   *
-   *   Check:
-   *
-   *   users/{uid}/journeys/current
-   *
-   * Logged out:
-   *
-   *   Show the normal questionnaire.
+   * ==========================================================
+   * JOURNEY HISTORY REFRESH
+   * ==========================================================
    */
 
-  useEffect(() => {
+  const [
+    journeyHistoryRefreshKey,
+    setJourneyHistoryRefreshKey,
+  ] = useState(
+    0
+  );
 
-    const unsubscribe =
-      watchAuthState(
-        async (user) => {
 
-          /*
-           * ----------------------------------------------------
-           * NO USER
-           * ----------------------------------------------------
-           *
-           * There is no saved account journey to load.
-           *
-           * The visitor can use the free questionnaire.
-           */
+  /*
+   * ==========================================================
+   * LOAD ACCOUNT / SAVED JOURNEY
+   * ==========================================================
+   */
 
-          if (!user) {
+  useEffect(
+    () => {
+      const unsubscribe =
+        watchAuthState(
+          async (
+            user
+          ) => {
+            if (
+              !user
+            ) {
+              setSavedChildren(
+                []
+              );
+
+              setSelectedChildId(
+                ""
+              );
+
+              setSavedJourneyLoaded(
+                false
+              );
+
+              setAddingChildDraft(
+                false
+              );
+
+              setPreviousChildSnapshot(
+                null
+              );
+
+              setCheckingSavedJourney(
+                false
+              );
+
+              return;
+            }
+
 
             setCheckingSavedJourney(
-              false
-            );
-
-            setSavedJourneyLoaded(
-              false
-            );
-
-            return;
-          }
-
-
-          /*
-           * ----------------------------------------------------
-           * USER IS LOGGED IN
-           * ----------------------------------------------------
-           */
-
-          setCheckingSavedJourney(
-            true
-          );
-
-
-          try {
-
-            const journeyRef =
-              doc(
-                db,
-                "users",
-                user.uid,
-                "journeys",
-                "current"
-              );
-
-
-            const journeySnapshot =
-              await getDoc(
-                journeyRef
-              );
-
-
-            /*
-             * --------------------------------------------------
-             * NO SAVED JOURNEY
-             * --------------------------------------------------
-             *
-             * This is a new account.
-             *
-             * Allow the user to start the questionnaire.
-             */
-
-            if (
-              !journeySnapshot.exists()
-            ) {
-
-              setSavedJourneyLoaded(
-                false
-              );
-
-              setCheckingSavedJourney(
-                false
-              );
-
-              return;
-            }
-
-
-            /*
-             * --------------------------------------------------
-             * SAVED JOURNEY FOUND
-             * --------------------------------------------------
-             */
-
-            const savedData =
-              journeySnapshot.data();
-
-
-              const savedProfile = (
-                savedData?.familyProfile
-              ) as FamilyProfile | undefined;
-              
-              const savedJourney = (
-                savedData?.journey
-              ) as PersonalizedJourney | undefined;
-
-            /*
-             * --------------------------------------------------
-             * BASIC VALIDATION
-             * --------------------------------------------------
-             *
-             * Make sure both pieces exist before attempting
-             * to restore the dashboard.
-             */
-
-            if (
-              !savedProfile ||
-              !savedJourney
-            ) {
-
-              console.warn(
-                "Saved journey exists but is incomplete."
-              );
-
-
-              setSavedJourneyLoaded(
-                false
-              );
-
-              setCheckingSavedJourney(
-                false
-              );
-
-              return;
-            }
-
-
-            /*
-             * --------------------------------------------------
-             * RESTORE PROFILE
-             * --------------------------------------------------
-             */
-
-            setFamilyProfile(
-              savedProfile
-            );
-
-
-            /*
-             * --------------------------------------------------
-             * RESTORE JOURNEY
-             * --------------------------------------------------
-             */
-
-            setPersonalizedJourney(
-              savedJourney
-            );
-
-
-            /*
-             * --------------------------------------------------
-             * MARK AS LOADED
-             * --------------------------------------------------
-             */
-
-            setSavedJourneyLoaded(
               true
             );
 
-          } catch (error) {
 
-            console.error(
-              "Unable to load saved journey:",
-              error
-            );
+            try {
+              let children =
+                await getSavedChildren(
+                  user.uid
+                );
 
 
-            /*
-             * Do not prevent the family from using
-             * the free questionnaire if loading fails.
-             */
+              /*
+               * --------------------------------------------------
+               * CHILD-SPECIFIC CURRENT JOURNEYS
+               * --------------------------------------------------
+               */
 
-            setSavedJourneyLoaded(
-              false
-            );
+              if (
+                children.length >
+                0
+              ) {
+                for (
+                  const child
+                  of children
+                ) {
+                  const savedJourney =
+                    await getCurrentJourney(
+                      user.uid,
+                      child.childId
+                    );
 
-          } finally {
 
-            setCheckingSavedJourney(
-              false
-            );
+                  if (
+                    !savedJourney
+                  ) {
+                    continue;
+                  }
 
+
+                  setSavedChildren(
+                    children
+                  );
+
+
+                  setSelectedChildId(
+                    child.childId
+                  );
+
+
+                  setFamilyProfile({
+                    ...savedJourney
+                      .familyProfile,
+
+                    childId:
+                      savedJourney
+                        .familyProfile
+                        .childId ||
+                      child.childId,
+                  });
+
+
+                  setPersonalizedJourney(
+                    savedJourney
+                      .journey
+                  );
+
+
+                  setSavedJourneyLoaded(
+                    true
+                  );
+
+
+                  setAddingChildDraft(
+                    false
+                  );
+
+
+                  setPreviousChildSnapshot(
+                    null
+                  );
+
+
+                  return;
+                }
+              }
+
+
+              /*
+               * --------------------------------------------------
+               * LEGACY JOURNEY MIGRATION
+               * --------------------------------------------------
+               */
+
+              const legacyJourney =
+                await getLegacyCurrentJourney(
+                  user.uid
+                );
+
+
+              if (
+                legacyJourney
+              ) {
+                const childId =
+                  legacyJourney
+                    .familyProfile
+                    .childId ||
+                  createChildId();
+
+
+                const migratedProfile:
+                  FamilyProfile = {
+                  ...legacyJourney
+                    .familyProfile,
+
+                  childId,
+                };
+
+
+                const migratedJourney =
+                  await saveCurrentJourney(
+                    user.uid,
+
+                    migratedProfile,
+
+                    legacyJourney
+                      .journey,
+
+                    {
+                      stageNumber:
+                        legacyJourney
+                          .stageNumber,
+
+                      previousCompletedTaskIds:
+                        legacyJourney
+                          .previousCompletedTaskIds,
+
+                      journeyReason:
+                        legacyJourney
+                          .journeyReason,
+                    }
+                  );
+
+
+                /*
+                 * ------------------------------------------------
+                 * MIGRATE LEGACY HISTORY
+                 * ------------------------------------------------
+                 */
+
+                const legacyHistory =
+                  await getLegacyJourneyHistory(
+                    user.uid
+                  );
+
+
+                for (
+                  const stage
+                  of legacyHistory
+                ) {
+                  await saveJourneyStage(
+                    user.uid,
+
+                    stage.stageNumber,
+
+                    {
+                      ...stage
+                        .familyProfile,
+
+                      childId,
+                    },
+
+                    stage.journey,
+
+                    stage.completedTaskIds,
+
+                    {
+                      journeyId:
+                        migratedJourney
+                          .journeyId,
+
+                      createdAt:
+                        stage.createdAt,
+
+                      completedAt:
+                        stage.completedAt,
+
+                      reason:
+                        stage.reason,
+                    }
+                  );
+                }
+
+
+                children =
+                  await getSavedChildren(
+                    user.uid
+                  );
+
+
+                setSavedChildren(
+                  children
+                );
+
+
+                setSelectedChildId(
+                  childId
+                );
+
+
+                setFamilyProfile(
+                  migratedProfile
+                );
+
+
+                setPersonalizedJourney(
+                  legacyJourney
+                    .journey
+                );
+
+
+                setSavedJourneyLoaded(
+                  true
+                );
+
+
+                setAddingChildDraft(
+                  false
+                );
+
+
+                setPreviousChildSnapshot(
+                  null
+                );
+
+
+                return;
+              }
+
+
+              /*
+               * --------------------------------------------------
+               * NO ACTIVE JOURNEY
+               * --------------------------------------------------
+               */
+
+              setSavedChildren(
+                children
+              );
+
+
+              setSelectedChildId(
+                ""
+              );
+
+
+              setSavedJourneyLoaded(
+                false
+              );
+
+            } catch (
+              loadError
+            ) {
+              console.error(
+                "Unable to load saved journey:",
+                loadError
+              );
+
+
+              setSavedJourneyLoaded(
+                false
+              );
+
+            } finally {
+              setCheckingSavedJourney(
+                false
+              );
+            }
           }
-        }
-      );
+        );
 
 
-    /*
-     * ----------------------------------------------------------
-     * CLEANUP
-     * ----------------------------------------------------------
-     */
-
-    return () => {
-      unsubscribe();
-    };
-
-  }, []);
+      return () => {
+        unsubscribe();
+      };
+    },
+    []
+  );
 
 
   /*
-   * ============================================================
-   * SCROLL TO TOP — QUESTIONNAIRE
-   * ============================================================
-   *
-   * Automatically move the user to the top whenever the
-   * questionnaire step changes.
+   * ==========================================================
+   * SCROLL — QUESTIONNAIRE
+   * ==========================================================
    */
 
-  useEffect(() => {
+  useEffect(
+    () => {
+      if (
+        step >
+        0
+      ) {
+        window.scrollTo({
+          top:
+            0,
 
-    if (step > 0) {
-
-      window.scrollTo({
-        top: 0,
-        behavior: "smooth",
-      });
-
-    }
-
-  }, [step]);
+          behavior:
+            "smooth",
+        });
+      }
+    },
+    [
+      step,
+    ]
+  );
 
 
   /*
-   * ============================================================
-   * SCROLL TO TOP — JOURNEY
-   * ============================================================
-   *
-   * Prevents the results page from opening at the previous
-   * questionnaire scroll position.
+   * ==========================================================
+   * SCROLL — JOURNEY
+   * ==========================================================
    */
 
-  useEffect(() => {
+  useEffect(
+    () => {
+      if (
+        personalizedJourney
+      ) {
+        window.scrollTo({
+          top:
+            0,
 
-    if (personalizedJourney) {
-
-      window.scrollTo({
-        top: 0,
-        behavior: "smooth",
-      });
-
-    }
-
-  }, [personalizedJourney]);
+          behavior:
+            "smooth",
+        });
+      }
+    },
+    [
+      personalizedJourney,
+    ]
+  );
 
 
   /*
-   * ============================================================
+   * ==========================================================
    * UPDATE PROFILE
-   * ============================================================
+   * ==========================================================
    */
 
   function updateProfile<
@@ -407,45 +703,312 @@ export default function JourneyBuilder() {
     field: K,
     value: FamilyProfile[K]
   ) {
-
     setFamilyProfile(
-      (current) => ({
+      (
+        current
+      ) => ({
         ...current,
-        [field]: value,
+
+        [field]:
+          value,
       })
     );
-
   }
 
 
   /*
-   * ============================================================
-   * GENERATE PERSONALIZED JOURNEY
-   * ============================================================
-   *
-   * Sends the completed questionnaire to the AI generation API.
+   * ==========================================================
+   * BEGIN QUESTIONNAIRE
+   * ==========================================================
    */
 
-  async function generatePersonalizedJourney() {
+  function beginQuestionnaire() {
+    if (
+      !familyProfile
+        .childId
+    ) {
+      const childId =
+        createChildId();
 
-    setIsGenerating(true);
 
-    setError(null);
+      setFamilyProfile(
+        (
+          current
+        ) => ({
+          ...current,
 
-
-    try {
-
-      console.log(
-        "Sending family profile to AI:",
-        familyProfile
+          childId,
+        })
       );
 
 
+      setSelectedChildId(
+        childId
+      );
+    }
+
+
+    setStep(
+      1
+    );
+  }
+
+
+  /*
+   * ==========================================================
+   * LOAD SAVED CHILD
+   * ==========================================================
+   */
+
+  async function loadSavedChild(
+    childId: string
+  ) {
+    const user =
+      auth.currentUser;
+  
+  
+    if (
+      !user
+    ) {
+      return;
+    }
+  
+  
+    setCheckingSavedJourney(
+      true
+    );
+  
+  
+    setError(
+      null
+    );
+  
+  
+    setJourneyActionError(
+      null
+    );
+  
+  
+    setRemoveChildError(
+      null
+    );
+  
+  
+    setShowStartNewJourneyConfirm(
+      false
+    );
+  
+  
+    setShowRemoveChildConfirm(
+      false
+    );
+  
+  
+    try {
+      /*
+       * --------------------------------------------------------
+       * FIND THE CHILD RECORD
+       * --------------------------------------------------------
+       *
+       * A saved child can exist even when that child does not
+       * currently have an active Journey.
+       *
+       * The child record is therefore the source of truth for
+       * selecting the child.
+       * --------------------------------------------------------
+       */
+  
+      const savedChild =
+        savedChildren.find(
+          (
+            child
+          ) =>
+            child.childId ===
+            childId
+        );
+  
+  
+      if (
+        !savedChild
+      ) {
+        throw new Error(
+          "We couldn't find this child's saved profile."
+        );
+      }
+  
+  
+      /*
+       * --------------------------------------------------------
+       * SELECT THE CHILD FIRST
+       * --------------------------------------------------------
+       */
+  
+      setSelectedChildId(
+        childId
+      );
+  
+  
+      setFamilyProfile({
+        ...savedChild
+          .familyProfile,
+  
+        childId,
+      });
+  
+  
+      setAddingChildDraft(
+        false
+      );
+  
+  
+      setPreviousChildSnapshot(
+        null
+      );
+  
+  
+      setStep(
+        0
+      );
+  
+  
+      /*
+       * --------------------------------------------------------
+       * LOAD ACTIVE JOURNEY IF ONE EXISTS
+       * --------------------------------------------------------
+       */
+  
+      const savedJourney =
+        await getCurrentJourney(
+          user.uid,
+          childId
+        );
+  
+  
+      if (
+        savedJourney
+      ) {
+        setFamilyProfile({
+          ...savedJourney
+            .familyProfile,
+  
+          childId,
+        });
+  
+  
+        setPersonalizedJourney(
+          savedJourney
+            .journey
+        );
+  
+  
+        setSavedJourneyLoaded(
+          true
+        );
+  
+      } else {
+        /*
+         * ------------------------------------------------------
+         * CHILD EXISTS, BUT HAS NO ACTIVE JOURNEY
+         * ------------------------------------------------------
+         *
+         * This is valid.
+         *
+         * Keep the child selected using the child-level profile.
+         * This allows the family to:
+         *
+         * - see/select the child
+         * - begin a Journey for the child
+         * - remove the child
+         *
+         * ------------------------------------------------------
+         */
+  
+        setPersonalizedJourney(
+          null
+        );
+  
+  
+        setSavedJourneyLoaded(
+          false
+        );
+      }
+  
+  
+      window.scrollTo({
+        top:
+          0,
+  
+        behavior:
+          "smooth",
+      });
+  
+    } catch (
+      loadError
+    ) {
+      console.error(
+        "Unable to switch child journeys:",
+        loadError
+      );
+  
+  
+      setJourneyActionError(
+        loadError instanceof Error
+          ? loadError.message
+          : "We couldn't load this child's saved information."
+      );
+  
+    } finally {
+      setCheckingSavedJourney(
+        false
+      );
+    }
+  }
+
+
+  /*
+   * ==========================================================
+   * GENERATE PERSONALIZED JOURNEY
+   * ==========================================================
+   */
+
+  async function generatePersonalizedJourney() {
+    const profileForGeneration:
+      FamilyProfile =
+      familyProfile
+        .childId
+        ? familyProfile
+        : {
+            ...familyProfile,
+
+            childId:
+              createChildId(),
+          };
+
+
+   
+if (!familyProfile.childId) {
+  setFamilyProfile(
+    profileForGeneration
+  );
+
+  setSelectedChildId(
+    profileForGeneration.childId ?? ""
+  );
+}
+
+setIsGenerating(true);
+
+setError(null);
+
+
+
+    try {
       const response =
         await fetch(
           "/api/journey/generate",
           {
-            method: "POST",
+            method:
+              "POST",
 
             headers: {
               "Content-Type":
@@ -454,249 +1017,1126 @@ export default function JourneyBuilder() {
 
             body:
               JSON.stringify({
-                familyProfile,
+                familyProfile:
+                  profileForGeneration,
               }),
           }
         );
 
 
-      const data =
-        await response.json();
+      /*
+       * --------------------------------------------------------
+       * SAFE API RESPONSE PARSING
+       * --------------------------------------------------------
+       */
+
+      const responseText =
+        await response.text();
 
 
-      if (!response.ok) {
+      let data:
+        any =
+        null;
 
-        throw new Error(
-          data?.error ||
-            "Unable to generate your personalized journey."
-        );
 
+      if (
+        responseText
+      ) {
+        try {
+          data =
+            JSON.parse(
+              responseText
+            );
+
+        } catch (
+          parseError
+        ) {
+          console.error(
+            "Journey API returned a non-JSON response:",
+            {
+              status:
+                response.status,
+
+              statusText:
+                response.statusText,
+
+              responsePreview:
+                responseText.slice(
+                  0,
+                  300
+                ),
+
+              parseError,
+            }
+          );
+
+
+          throw new Error(
+            response.ok
+              ? "The Journey service returned an invalid response. Please try again."
+              : `The Journey service encountered a server error (${response.status}). Please try again.`
+          );
+        }
       }
 
 
-      if (!data?.journey) {
+      if (
+        !response.ok
+      ) {
+        throw new Error(
+          data?.error ||
+          `Unable to generate your personalized journey (${response.status}).`
+        );
+      }
 
+
+      if (
+        !data?.journey
+      ) {
         throw new Error(
           "The AI did not return a personalized journey."
         );
-
       }
-
-
-      console.log(
-        "AI personalized journey received:",
-        data.journey
-      );
 
 
       setPersonalizedJourney(
         data.journey
       );
 
-    } catch (err) {
 
+      /*
+       * Generated does not equal saved.
+       */
+
+      setSavedJourneyLoaded(
+        false
+      );
+
+    } catch (
+      generationError
+    ) {
       console.error(
         "AI journey generation failed:",
-        err
+        generationError
       );
 
 
       setError(
-        err instanceof Error
-          ? err.message
+        generationError instanceof Error
+          ? generationError.message
           : "We couldn't create your personalized journey. Please try again."
       );
 
     } finally {
-
-      setIsGenerating(false);
-
+      setIsGenerating(
+        false
+      );
     }
-
   }
 
 
   /*
-   * ============================================================
-   * START A NEW JOURNEY
-   * ============================================================
-   *
-   * A returning user may already have a saved journey but
-   * still want to begin a new questionnaire.
-   *
-   * This does NOT delete the saved journey from Firestore.
-   *
-   * It simply clears the current screen and starts a new
-   * questionnaire session.
+   * ==========================================================
+   * ADD ANOTHER CHILD
+   * ==========================================================
    */
 
-  function startNewJourney() {
+  function addAnotherChild() {
+    if (
+      personalizedJourney &&
+      familyProfile
+        .childId
+    ) {
+      setPreviousChildSnapshot({
+        childId:
+          familyProfile
+            .childId,
+
+        familyProfile,
+
+        journey:
+          personalizedJourney,
+      });
+    }
+
+
+    const newChildId =
+      createChildId();
+
+
+    setAddingChildDraft(
+      true
+    );
+
+
+    setShowStartNewJourneyConfirm(
+      false
+    );
+
+
+    setShowRemoveChildConfirm(
+      false
+    );
+
+
+    setJourneyActionError(
+      null
+    );
+
+
+    setRemoveChildError(
+      null
+    );
+
 
     setPersonalizedJourney(
       null
     );
 
 
-    setFamilyProfile({
-      childName: "",
-      childAge: "",
-      state: "",
-      journeyStage: "",
-      supports: [],
-      priority: "",
-      insurance: "",
-      notes: "",
-    });
+    setFamilyProfile(
+      createBlankProfile(
+        newChildId
+      )
+    );
 
 
-    setStep(0);
+    setSelectedChildId(
+      newChildId
+    );
 
-    setError(null);
+
+    setStep(
+      0
+    );
+
+
+    setError(
+      null
+    );
+
 
     setSavedJourneyLoaded(
       false
     );
 
+
+    window.scrollTo({
+      top:
+        0,
+
+      behavior:
+        "smooth",
+    });
   }
 
 
   /*
-   * ============================================================
-   * NEXT QUESTION
-   * ============================================================
+   * ==========================================================
+   * CANCEL ADDING CHILD
+   * ==========================================================
    */
 
-  function nextStep() {
+  function cancelAddingChild() {
+    if (
+      !previousChildSnapshot
+    ) {
+      return;
+    }
+
+
+    setFamilyProfile(
+      previousChildSnapshot
+        .familyProfile
+    );
+
+
+    setSelectedChildId(
+      previousChildSnapshot
+        .childId
+    );
+
+
+    setPersonalizedJourney(
+      previousChildSnapshot
+        .journey
+    );
+
+
+    setSavedJourneyLoaded(
+      true
+    );
+
+
+    setAddingChildDraft(
+      false
+    );
+
+
+    setPreviousChildSnapshot(
+      null
+    );
+
+
+    setStep(
+      0
+    );
+
+
+    setError(
+      null
+    );
+
+
+    setJourneyActionError(
+      null
+    );
+
+
+    setRemoveChildError(
+      null
+    );
+
+
+    window.scrollTo({
+      top:
+        0,
+
+      behavior:
+        "smooth",
+    });
+  }
+
+
+  /*
+   * ==========================================================
+   * JOURNEY SAVED
+   * ==========================================================
+   */
+
+  async function handleJourneySaved(
+    childId: string
+  ) {
+    const user =
+      auth.currentUser;
+
 
     if (
-      step < totalQuestions
+      !user
     ) {
+      return;
+    }
 
-      setStep(
-        (current) =>
+
+    try {
+      const children =
+        await getSavedChildren(
+          user.uid
+        );
+
+
+      setSavedChildren(
+        children
+      );
+
+
+      setSelectedChildId(
+        childId
+      );
+
+
+      setSavedJourneyLoaded(
+        true
+      );
+
+
+      setAddingChildDraft(
+        false
+      );
+
+
+      setPreviousChildSnapshot(
+        null
+      );
+
+
+      setJourneyActionError(
+        null
+      );
+
+
+      setRemoveChildError(
+        null
+      );
+
+
+      /*
+       * --------------------------------------------------------
+       * REFRESH CURRENT JOURNEY HISTORY
+       * --------------------------------------------------------
+       */
+
+      setJourneyHistoryRefreshKey(
+        (
+          current
+        ) =>
           current + 1
+      );
+
+    } catch (
+      refreshError
+    ) {
+      console.error(
+        "Journey saved, but unable to refresh child list:",
+        refreshError
+      );
+    }
+  }
+
+
+  /*
+   * ==========================================================
+   * REMOVE CHILD
+   * ==========================================================
+   */
+
+    /*
+   * ==========================================================
+   * REMOVE CHILD
+   * ==========================================================
+   *
+   * Child deletion intentionally uses the normal authenticated
+   * Firebase client instead of the Firebase Admin delete API.
+   *
+   * deleteChildJourneyData() removes:
+   *
+   * - Past Journeys
+   * - active Journey
+   * - child record
+   *
+   * After deletion, the saved-child list is refreshed and the
+   * app automatically loads another remaining child.
+   * ==========================================================
+   */
+
+    async function confirmRemoveChild() {
+      if (
+        removingChild
+      ) {
+        return;
+      }
+  
+  
+      const user =
+        auth.currentUser;
+  
+  
+      const childId =
+        familyProfile
+          .childId ||
+        selectedChildId;
+  
+  
+      if (
+        !user ||
+        !childId
+      ) {
+        setRemoveChildError(
+          "We couldn't determine which child to remove."
+        );
+  
+        return;
+      }
+  
+  
+      setRemovingChild(
+        true
+      );
+  
+  
+      setRemoveChildError(
+        null
+      );
+  
+  
+      setJourneyActionError(
+        null
+      );
+  
+  
+      try {
+  
+        /*
+         * --------------------------------------------------------
+         * DELETE CHILD DATA
+         * --------------------------------------------------------
+         *
+         * This now uses the normal authenticated Firestore client.
+         *
+         * Firebase Admin and /api/children/delete are intentionally
+         * NOT used here.
+         */
+  
+        await deleteChildJourneyData(
+          user.uid,
+          childId
+        );
+  
+  
+        /*
+         * --------------------------------------------------------
+         * REFRESH SAVED CHILDREN
+         * --------------------------------------------------------
+         */
+  
+        const remainingChildren =
+          await getSavedChildren(
+            user.uid
+          );
+  
+  
+        setSavedChildren(
+          remainingChildren
+        );
+  
+  
+        setShowRemoveChildConfirm(
+          false
+        );
+  
+  
+        setRemoveChildError(
+          null
+        );
+  
+  
+        /*
+         * --------------------------------------------------------
+         * LOAD ANOTHER REMAINING CHILD
+         * --------------------------------------------------------
+         *
+         * Prefer a child that already has an active Journey.
+         */
+  
+        if (
+          remainingChildren.length >
+          0
+        ) {
+          for (
+            const child
+            of remainingChildren
+          ) {
+            const currentJourney =
+              await getCurrentJourney(
+                user.uid,
+                child.childId
+              );
+  
+  
+            if (
+              !currentJourney
+            ) {
+              continue;
+            }
+  
+  
+            setSelectedChildId(
+              child.childId
+            );
+  
+  
+            setFamilyProfile({
+              ...currentJourney
+                .familyProfile,
+  
+              childId:
+                child.childId,
+            });
+  
+  
+            setPersonalizedJourney(
+              currentJourney
+                .journey
+            );
+  
+  
+            setSavedJourneyLoaded(
+              true
+            );
+  
+  
+            setAddingChildDraft(
+              false
+            );
+  
+  
+            setPreviousChildSnapshot(
+              null
+            );
+  
+  
+            setStep(
+              0
+            );
+  
+  
+            setError(
+              null
+            );
+  
+  
+            setJourneyActionError(
+              null
+            );
+  
+  
+            setJourneyHistoryRefreshKey(
+              (
+                current
+              ) =>
+                current + 1
+            );
+  
+  
+            window.scrollTo({
+              top:
+                0,
+  
+              behavior:
+                "smooth",
+            });
+  
+  
+            return;
+          }
+  
+  
+          /*
+           * ------------------------------------------------------
+           * REMAINING CHILDREN HAVE NO ACTIVE JOURNEY
+           * ------------------------------------------------------
+           *
+           * A child can legitimately exist without an active
+           * Journey.
+           *
+           * In that situation, select the first remaining child
+           * using the child-level profile so the family can start
+           * a Journey or remove that child.
+           */
+  
+          const nextChild =
+            remainingChildren[0];
+  
+  
+          setSelectedChildId(
+            nextChild.childId
+          );
+  
+  
+          setFamilyProfile({
+            ...nextChild
+              .familyProfile,
+  
+            childId:
+              nextChild.childId,
+          });
+  
+  
+          setPersonalizedJourney(
+            null
+          );
+  
+  
+          setSavedJourneyLoaded(
+            false
+          );
+  
+  
+          setAddingChildDraft(
+            false
+          );
+  
+  
+          setPreviousChildSnapshot(
+            null
+          );
+  
+  
+          setStep(
+            0
+          );
+  
+  
+          setError(
+            null
+          );
+  
+  
+          setJourneyActionError(
+            null
+          );
+  
+  
+          window.scrollTo({
+            top:
+              0,
+  
+            behavior:
+              "smooth",
+          });
+  
+  
+          return;
+        }
+  
+  
+        /*
+         * --------------------------------------------------------
+         * NO CHILDREN REMAIN
+         * --------------------------------------------------------
+         *
+         * Return the account to the normal Welcome / Begin My
+         * Journey state.
+         */
+  
+        setSelectedChildId(
+          ""
+        );
+  
+  
+        setFamilyProfile(
+          createBlankProfile()
+        );
+  
+  
+        setPersonalizedJourney(
+          null
+        );
+  
+  
+        setSavedJourneyLoaded(
+          false
+        );
+  
+  
+        setAddingChildDraft(
+          false
+        );
+  
+  
+        setPreviousChildSnapshot(
+          null
+        );
+  
+  
+        setStep(
+          0
+        );
+  
+  
+        setError(
+          null
+        );
+  
+  
+        setJourneyActionError(
+          null
+        );
+  
+  
+        window.scrollTo({
+          top:
+            0,
+  
+          behavior:
+            "smooth",
+        });
+  
+      } catch (
+        removalError
+      ) {
+        console.error(
+          "Unable to remove child:",
+          removalError
+        );
+  
+  
+        setRemoveChildError(
+          removalError instanceof Error
+            ? removalError.message
+            : "We couldn't remove this child right now."
+        );
+  
+      } finally {
+        setRemovingChild(
+          false
+        );
+      }
+    }
+
+
+  /*
+   * ==========================================================
+   * START NEW JOURNEY — SAME CHILD
+   * ==========================================================
+   */
+
+  async function confirmStartNewJourney() {
+    if (
+      startingNewJourney
+    ) {
+      return;
+    }
+
+
+    const childId =
+      familyProfile
+        .childId ||
+      selectedChildId;
+
+
+    if (
+      !childId
+    ) {
+      setJourneyActionError(
+        "We couldn't determine which child this journey belongs to."
       );
 
       return;
     }
 
 
-    generatePersonalizedJourney();
+    const user =
+      auth.currentUser;
 
+
+    if (
+      !user
+    ) {
+      setJourneyActionError(
+        "Please sign in before starting a new saved journey."
+      );
+
+      return;
+    }
+
+
+    setStartingNewJourney(
+      true
+    );
+
+
+    setJourneyActionError(
+      null
+    );
+
+
+    try {
+      await archiveCurrentJourney(
+        user.uid,
+        childId
+      );
+
+
+      /*
+       * --------------------------------------------------------
+       * KEEP CHILD IDENTITY, RESET JOURNEY-SPECIFIC ANSWERS
+       * --------------------------------------------------------
+       */
+
+      setFamilyProfile({
+        childId,
+
+        childName:
+          familyProfile
+            .childName,
+
+        childAge:
+          familyProfile
+            .childAge,
+
+        state:
+          familyProfile
+            .state,
+
+        journeyStage:
+          "",
+
+        supports:
+          [],
+
+        priority:
+          "",
+
+        insurance:
+          familyProfile
+            .insurance,
+
+        notes:
+          "",
+      });
+
+
+      setSelectedChildId(
+        childId
+      );
+
+
+      setPersonalizedJourney(
+        null
+      );
+
+
+      setSavedJourneyLoaded(
+        false
+      );
+
+
+      setAddingChildDraft(
+        false
+      );
+
+
+      setPreviousChildSnapshot(
+        null
+      );
+
+
+      setStep(
+        0
+      );
+
+
+      setError(
+        null
+      );
+
+
+      setShowStartNewJourneyConfirm(
+        false
+      );
+
+
+      window.scrollTo({
+        top:
+          0,
+
+        behavior:
+          "smooth",
+      });
+
+    } catch (
+      startError
+    ) {
+      console.error(
+        "Unable to start a new journey:",
+        startError
+      );
+
+
+      setJourneyActionError(
+        startError instanceof Error
+          ? startError.message
+          : "We couldn't archive the current journey. Nothing was changed."
+      );
+
+    } finally {
+      setStartingNewJourney(
+        false
+      );
+    }
   }
 
 
   /*
-   * ============================================================
+   * ==========================================================
+   * NEXT QUESTION
+   * ==========================================================
+   */
+
+  function nextStep() {
+    if (
+      step <
+      totalQuestions
+    ) {
+      setStep(
+        (
+          current
+        ) =>
+          current +
+          1
+      );
+
+
+      return;
+    }
+
+
+    generatePersonalizedJourney();
+  }
+
+
+  /*
+   * ==========================================================
    * PREVIOUS QUESTION
-   * ============================================================
+   * ==========================================================
    */
 
   function previousStep() {
-
-    if (step > 1) {
-
+    if (
+      step >
+      1
+    ) {
       setStep(
-        (current) =>
-          current - 1
+        (
+          current
+        ) =>
+          current -
+          1
       );
-
     }
-
   }
 
 
   /*
-   * ============================================================
+   * ==========================================================
    * CAN CONTINUE
-   * ============================================================
+   * ==========================================================
    */
 
   function canContinue() {
-
-    switch (step) {
-
+    switch (
+      step
+    ) {
       case 1:
-
         return (
           familyProfile
             .childName
-            .trim() !== ""
+            .trim() !==
+          ""
         );
 
 
       case 2:
-
         return (
           familyProfile
-            .childAge !== ""
+            .childAge !==
+          ""
         );
 
 
       case 3:
-
         return (
           familyProfile
-            .state !== ""
+            .state !==
+          ""
         );
 
 
       case 4:
-
         return (
           familyProfile
-            .journeyStage !== ""
+            .journeyStage !==
+          ""
         );
 
 
       case 5:
-
         return (
           familyProfile
-            .supports.length > 0
+            .supports
+            .length >
+          0
         );
 
 
       case 6:
-
         return (
           familyProfile
-            .priority !== ""
+            .priority !==
+          ""
         );
 
 
       case 7:
-
         return (
           familyProfile
-            .insurance !== ""
+            .insurance !==
+          ""
         );
 
 
       default:
-
         return true;
-
     }
-
   }
 
 
   /*
-   * ============================================================
-   * AUTHENTICATION / SAVED JOURNEY LOADING SCREEN
-   * ============================================================
-   *
-   * We don't want a returning user to see the questionnaire
-   * while we're checking Firestore.
+   * ==========================================================
+   * CHILD CONTROLS
+   * ==========================================================
+   */
+
+  function renderChildJourneyControls() {
+    if (
+      savedChildren.length ===
+      0
+    ) {
+      return null;
+    }
+
+
+    if (
+      addingChildDraft
+    ) {
+      return null;
+    }
+
+
+    return (
+      <ChildJourneyControls
+        savedChildren={
+          savedChildren
+        }
+
+        selectedChildId={
+          selectedChildId
+        }
+
+        onSelectChild={
+          loadSavedChild
+        }
+
+        onAddChild={
+          addAnotherChild
+        }
+
+        onRemoveChild={() => {
+          setRemoveChildError(
+            null
+          );
+
+
+          setShowRemoveChildConfirm(
+            true
+          );
+        }}
+      />
+    );
+  }
+
+
+  /*
+   * ==========================================================
+   * LOADING
+   * ==========================================================
    */
 
   if (
     checkingSavedJourney
   ) {
-
     return (
-
       <div
         style={{
           minHeight:
@@ -715,7 +2155,6 @@ export default function JourneyBuilder() {
             "60px 20px",
         }}
       >
-
         <div
           style={{
             maxWidth:
@@ -743,7 +2182,6 @@ export default function JourneyBuilder() {
               "0 10px 30px rgba(15,23,42,.06)",
           }}
         >
-
           <div
             style={{
               fontSize:
@@ -791,173 +2229,235 @@ export default function JourneyBuilder() {
                 1.6,
             }}
           >
-            We're checking whether you
-            have a saved journey.
+            We're checking whether you have a saved journey.
           </p>
+        </div>
+      </div>
+    );
+  }
 
+
+  /*
+   * ==========================================================
+   * GENERATING
+   * ==========================================================
+   */
+
+  if (
+    isGenerating
+  ) {
+    return (
+      <>
+        {
+          renderChildJourneyControls()
+        }
+
+        <GeneratingJourney />
+      </>
+    );
+  }
+
+
+  /*
+   * ==========================================================
+   * GENERATION ERROR
+   * ==========================================================
+   */
+
+  if (
+    error
+  ) {
+    return (
+      <>
+        {
+          renderChildJourneyControls()
+        }
+
+
+        <AddingChildBanner
+          visible={
+            addingChildDraft
+          }
+
+          previousChildName={
+            previousChildSnapshot
+              ?.familyProfile
+              .childName
+          }
+
+          canCancel={
+            Boolean(
+              previousChildSnapshot
+            )
+          }
+
+          onCancel={
+            cancelAddingChild
+          }
+        />
+
+
+        <div
+          style={{
+            maxWidth:
+              "700px",
+
+            margin:
+              "60px auto",
+
+            padding:
+              "0 20px",
+          }}
+        >
+          <div
+            style={{
+              padding:
+                "40px",
+
+              textAlign:
+                "center",
+
+              background:
+                "#FFFFFF",
+
+              borderRadius:
+                "24px",
+
+              border:
+                "1px solid #E2E8F0",
+
+              boxShadow:
+                "0 10px 30px rgba(15,23,42,.06)",
+            }}
+          >
+            <h2
+              style={{
+                fontSize:
+                  "30px",
+
+                fontWeight:
+                  800,
+
+                color:
+                  "#0F172A",
+
+                margin:
+                  "0 0 16px",
+              }}
+            >
+              We Couldn't Build Your Journey
+            </h2>
+
+
+            <p
+              style={{
+                color:
+                  "#64748B",
+
+                lineHeight:
+                  1.7,
+
+                margin:
+                  "0 0 28px",
+              }}
+            >
+              {error}
+            </p>
+
+
+            <button
+              type="button"
+
+              onClick={() => {
+                setError(
+                  null
+                );
+
+
+                generatePersonalizedJourney();
+              }}
+
+              style={{
+                padding:
+                  "14px 28px",
+
+                borderRadius:
+                  "10px",
+
+                border:
+                  "none",
+
+                background:
+                  "#2563EB",
+
+                color:
+                  "#FFFFFF",
+
+                fontWeight:
+                  700,
+
+                fontSize:
+                  "16px",
+
+                cursor:
+                  "pointer",
+              }}
+            >
+              Try Again
+            </button>
+          </div>
         </div>
 
-      </div>
 
+        <RemoveChildModal
+          visible={
+            showRemoveChildConfirm
+          }
+
+          childName={
+            familyProfile
+              .childName
+          }
+
+          removing={
+            removingChild
+          }
+
+          error={
+            removeChildError
+          }
+
+          onCancel={() =>
+            setShowRemoveChildConfirm(
+              false
+            )
+          }
+
+          onConfirm={
+            confirmRemoveChild
+          }
+        />
+      </>
     );
-
   }
 
 
   /*
-   * ============================================================
-   * GENERATING SCREEN
-   * ============================================================
-   */
-
-  if (isGenerating) {
-
-    return (
-      <GeneratingJourney />
-    );
-
-  }
-
-
-  /*
-   * ============================================================
-   * ERROR SCREEN
-   * ============================================================
-   */
-
-  if (error) {
-
-    return (
-
-      <div
-        style={{
-          maxWidth:
-            "700px",
-
-          margin:
-            "80px auto",
-
-          padding:
-            "40px",
-
-          textAlign:
-            "center",
-
-          background:
-            "#FFFFFF",
-
-          borderRadius:
-            "24px",
-
-          border:
-            "1px solid #E2E8F0",
-
-          boxShadow:
-            "0 10px 30px rgba(15,23,42,.06)",
-        }}
-      >
-
-        <h2
-          style={{
-            fontSize:
-              "30px",
-
-            fontWeight:
-              800,
-
-            color:
-              "#0F172A",
-
-            marginBottom:
-              "16px",
-          }}
-        >
-          We Couldn't Build Your Journey
-        </h2>
-
-
-        <p
-          style={{
-            color:
-              "#64748B",
-
-            lineHeight:
-              1.7,
-
-            marginBottom:
-              "28px",
-          }}
-        >
-          {error}
-        </p>
-
-
-        <button
-          type="button"
-
-          onClick={() => {
-
-            setError(null);
-
-            generatePersonalizedJourney();
-
-          }}
-
-          style={{
-            padding:
-              "14px 28px",
-
-            borderRadius:
-              "10px",
-
-            border:
-              "none",
-
-            background:
-              "#2563EB",
-
-            color:
-              "#FFFFFF",
-
-            fontWeight:
-              700,
-
-            fontSize:
-              "16px",
-
-            cursor:
-              "pointer",
-          }}
-        >
-          Try Again
-        </button>
-
-      </div>
-
-    );
-
-  }
-
-
-  /*
-   * ============================================================
+   * ==========================================================
    * SAVED JOURNEY
-   * ============================================================
-   *
-   * If Firestore returned a saved journey, show the dashboard.
-   *
-   * This is what allows a returning user to log in and
-   * immediately continue where they left off.
+   * ==========================================================
    */
 
   if (
     personalizedJourney &&
     savedJourneyLoaded
   ) {
-
     return (
-
       <>
+        {
+          renderChildJourneyControls()
+        }
+
 
         <JourneyDashboard
           personalizedJourney={
@@ -967,8 +2467,16 @@ export default function JourneyBuilder() {
           familyProfile={
             familyProfile
           }
+
+          onJourneySaved={
+            handleJourneySaved
+          }
         />
 
+
+        {/* ===================================================
+            JOURNEY ACTIONS
+        ==================================================== */}
 
         <div
           style={{
@@ -985,13 +2493,57 @@ export default function JourneyBuilder() {
               "center",
           }}
         >
+          {
+            journeyActionError && (
+              <div
+                style={{
+                  maxWidth:
+                    "620px",
+
+                  margin:
+                    "0 auto 18px",
+
+                  padding:
+                    "12px 16px",
+
+                  border:
+                    "1px solid #FCA5A5",
+
+                  background:
+                    "#FEF2F2",
+
+                  borderRadius:
+                    "10px",
+
+                  color:
+                    "#991B1B",
+
+                  fontSize:
+                    "14px",
+
+                  lineHeight:
+                    1.5,
+                }}
+              >
+                {journeyActionError}
+              </div>
+            )
+          }
+
 
           <button
             type="button"
 
-            onClick={
-              startNewJourney
-            }
+            onClick={() => {
+              setJourneyActionError(
+                null
+              );
+
+
+              setShowStartNewJourneyConfirm(
+                true
+              );
+            }}
 
             style={{
               padding:
@@ -1021,659 +2573,327 @@ export default function JourneyBuilder() {
           >
             Start a New Journey
           </button>
-
         </div>
 
+
+        {/* ===================================================
+            CURRENT JOURNEY HISTORY
+        ==================================================== */}
+
+        <JourneyHistory
+          childId={
+            familyProfile
+              .childId
+          }
+
+          refreshKey={
+            journeyHistoryRefreshKey
+          }
+        />
+
+
+        {/* ===================================================
+            PAST JOURNEYS
+        ==================================================== */}
+
+        
+{familyProfile.childId && (
+  <PastJourneys
+    childId={familyProfile.childId}
+  />
+)}
+
+
+
+        {/* ===================================================
+            START NEW JOURNEY MODAL
+        ==================================================== */}
+
+        <StartNewJourneyModal
+          visible={
+            showStartNewJourneyConfirm
+          }
+
+          childName={
+            familyProfile
+              .childName
+          }
+
+          starting={
+            startingNewJourney
+          }
+
+          onCancel={() =>
+            setShowStartNewJourneyConfirm(
+              false
+            )
+          }
+
+          onConfirm={
+            confirmStartNewJourney
+          }
+        />
+
+
+        {/* ===================================================
+            REMOVE CHILD MODAL
+        ==================================================== */}
+
+        <RemoveChildModal
+          visible={
+            showRemoveChildConfirm
+          }
+
+          childName={
+            familyProfile
+              .childName
+          }
+
+          removing={
+            removingChild
+          }
+
+          error={
+            removeChildError
+          }
+
+          onCancel={() =>
+            setShowRemoveChildConfirm(
+              false
+            )
+          }
+
+          onConfirm={
+            confirmRemoveChild
+          }
+        />
       </>
-
     );
-
   }
 
 
   /*
-   * ============================================================
-   * NEWLY GENERATED JOURNEY
-   * ============================================================
-   *
-   * This is the normal free journey experience.
-   *
-   * We intentionally show the dashboard even when the journey
-   * was just generated and has not yet been saved.
+   * ==========================================================
+   * GENERATED JOURNEY — NOT YET SAVED
+   * ==========================================================
    */
 
   if (
     personalizedJourney
   ) {
-
     return (
+      <>
+        <AddingChildBanner
+          visible={
+            addingChildDraft
+          }
 
-      <JourneyDashboard
-        personalizedJourney={
-          personalizedJourney
-        }
+          previousChildName={
+            previousChildSnapshot
+              ?.familyProfile
+              .childName
+          }
 
-        familyProfile={
-          familyProfile
-        }
-      />
+          canCancel={
+            Boolean(
+              previousChildSnapshot
+            )
+          }
 
+          onCancel={
+            cancelAddingChild
+          }
+        />
+
+
+        <JourneyDashboard
+          personalizedJourney={
+            personalizedJourney
+          }
+
+          familyProfile={
+            familyProfile
+          }
+
+          onJourneySaved={
+            handleJourneySaved
+          }
+        />
+      </>
     );
-
   }
 
 
   /*
-   * ============================================================
-   * QUESTIONNAIRE
-   * ============================================================
+   * ==========================================================
+   * QUESTIONNAIRE / WELCOME
+   * ==========================================================
    */
 
   return (
-
-    <div
-      style={{
-        maxWidth:
-          "900px",
-
-        margin:
-          "0 auto",
-
-        padding:
-          "40px 20px",
-      }}
-    >
-
-      {/* =====================================================
-          WELCOME
-      ====================================================== */}
-
-      {step === 0 && (
-
-        <Welcome
-          onBegin={() =>
-            setStep(1)
-          }
-        />
-
-      )}
-
-
-      {/* =====================================================
-          QUESTIONNAIRE
-      ====================================================== */}
-
-      {step > 0 && (
-
-        <>
-
-          <ProgressBar
-            currentStep={
-              step
-            }
-
-            totalSteps={
-              totalQuestions
-            }
-          />
-
-
-          {/* =================================================
-              QUESTION 1
-          ================================================== */}
-
-          {step === 1 && (
-
-            <ChildName
-              value={
-                familyProfile
-                  .childName
-              }
-
-              onChange={(
-                value
-              ) =>
-                updateProfile(
-                  "childName",
-                  value
-                )
-              }
-            />
-
-          )}
-
-
-          {/* =================================================
-              QUESTION 2
-          ================================================== */}
-
-          {step === 2 && (
-
-            <ChildAge
-              value={
-                familyProfile
-                  .childAge
-              }
-
-              onChange={(
-                value
-              ) =>
-                updateProfile(
-                  "childAge",
-                  value
-                )
-              }
-            />
-
-          )}
-
-
-          {/* =================================================
-              QUESTION 3
-          ================================================== */}
-
-          {step === 3 && (
-
-            <StateSelector
-              value={
-                familyProfile
-                  .state
-              }
-
-              onChange={(
-                value
-              ) =>
-                updateProfile(
-                  "state",
-                  value
-                )
-              }
-            />
-
-          )}
-
-
-          {/* =================================================
-              QUESTION 4
-          ================================================== */}
-
-          {step === 4 && (
-
-            <JourneyStage
-              value={
-                familyProfile
-                  .journeyStage
-              }
-
-              onChange={(
-                value
-              ) =>
-                updateProfile(
-                  "journeyStage",
-                  value
-                )
-              }
-            />
-
-          )}
-
-
-          {/* =================================================
-              QUESTION 5
-          ================================================== */}
-
-          {step === 5 && (
-
-            <Supports
-              value={
-                familyProfile
-                  .supports
-              }
-
-              onChange={(
-                value
-              ) =>
-                updateProfile(
-                  "supports",
-                  value
-                )
-              }
-            />
-
-          )}
-
-
-          {/* =================================================
-              QUESTION 6
-          ================================================== */}
-
-          {step === 6 && (
-
-            <Priority
-              value={
-                familyProfile
-                  .priority
-              }
-
-              onChange={(
-                value
-              ) =>
-                updateProfile(
-                  "priority",
-                  value
-                )
-              }
-            />
-
-          )}
-
-
-          {/* =================================================
-              QUESTION 7 — INSURANCE
-          ================================================== */}
-
-          {step === 7 && (
-
-            <div
-              style={{
-                maxWidth:
-                  "650px",
-
-                margin:
-                  "0 auto",
-              }}
-            >
-
-              <h2
-                style={{
-                  fontSize:
-                    "36px",
-
-                  fontWeight:
-                    800,
-
-                  color:
-                    "#0F172A",
-
-                  marginBottom:
-                    "12px",
-                }}
-              >
-                What type of insurance does
-                your child have?
-              </h2>
-
-
-              <p
-                style={{
-                  fontSize:
-                    "18px",
-
-                  lineHeight:
-                    1.7,
-
-                  color:
-                    "#64748B",
-
-                  marginBottom:
-                    "28px",
-                }}
-              >
-                This helps us personalize
-                recommendations related to
-                services, coverage, and
-                available resources.
-              </p>
-
-
-              <div
-                style={{
-                  display:
-                    "grid",
-
-                  gap:
-                    "16px",
-                }}
-              >
-
-                {[
-                  {
-                    value:
-                      "private",
-
-                    title:
-                      "Private Insurance",
-
-                    description:
-                      "Insurance through an employer, individual plan, or another private health plan.",
-                  },
-
-                  {
-                    value:
-                      "medicaid",
-
-                    title:
-                      "Medicaid",
-
-                    description:
-                      "My child is covered by Medicaid or a Medicaid managed-care plan.",
-                  },
-
-                  {
-                    value:
-                      "none",
-
-                    title:
-                      "No Insurance",
-
-                    description:
-                      "My child does not currently have health insurance.",
-                  },
-
-                ].map(
-                  (option) => {
-
-                    const selected =
-                      familyProfile
-                        .insurance ===
-                      option.value;
-
-
-                    return (
-
-                      <button
-                        key={
-                          option.value
-                        }
-
-                        type="button"
-
-                        onClick={() =>
-                          updateProfile(
-                            "insurance",
-                            option.value
-                          )
-                        }
-
-                        style={{
-                          width:
-                            "100%",
-
-                          textAlign:
-                            "left",
-
-                          padding:
-                            "24px",
-
-                          borderRadius:
-                            "16px",
-
-                          border:
-                            selected
-                              ? "2px solid #2563EB"
-                              : "1px solid #CBD5E1",
-
-                          background:
-                            selected
-                              ? "#EFF6FF"
-                              : "#FFFFFF",
-
-                          cursor:
-                            "pointer",
-
-                          boxShadow:
-                            selected
-                              ? "0 6px 18px rgba(37, 99, 235, 0.12)"
-                              : "0 2px 8px rgba(15, 23, 42, 0.04)",
-                        }}
-                      >
-
-                        <div
-                          style={{
-                            display:
-                              "flex",
-
-                            alignItems:
-                              "flex-start",
-
-                            gap:
-                              "16px",
-                          }}
-                        >
-
-                          <div
-                            style={{
-                              width:
-                                "22px",
-
-                              height:
-                                "22px",
-
-                              minWidth:
-                                "22px",
-
-                              borderRadius:
-                                "50%",
-
-                              border:
-                                selected
-                                  ? "6px solid #2563EB"
-                                  : "2px solid #CBD5E1",
-
-                              background:
-                                "#FFFFFF",
-
-                              marginTop:
-                                "2px",
-
-                              boxSizing:
-                                "border-box",
-                            }}
-                          />
-
-
-                          <div>
-
-                            <h3
-                              style={{
-                                margin:
-                                  0,
-
-                                marginBottom:
-                                  "6px",
-
-                                fontSize:
-                                  "21px",
-
-                                fontWeight:
-                                  700,
-
-                                color:
-                                  "#0F172A",
-                              }}
-                            >
-                              {
-                                option.title
-                              }
-                            </h3>
-
-
-                            <p
-                              style={{
-                                margin:
-                                  0,
-
-                                fontSize:
-                                  "16px",
-
-                                lineHeight:
-                                  1.6,
-
-                                color:
-                                  "#64748B",
-                              }}
-                            >
-                              {
-                                option.description
-                              }
-                            </p>
-
-                          </div>
-
-                        </div>
-
-                      </button>
-
-                    );
-
-                  }
-                )}
-
-              </div>
-
-
-              <p
-                style={{
-                  marginTop:
-                    "20px",
-
-                  fontSize:
-                    "14px",
-
-                  color:
-                    "#94A3B8",
-
-                  lineHeight:
-                    1.5,
-                }}
-              >
-                You can update your
-                insurance information
-                later if your coverage
-                changes.
-              </p>
-
-            </div>
-
-          )}
-
-
-          {/* =================================================
-              NAVIGATION BUTTONS
-          ================================================== */}
-
+    <>
+      {
+        renderChildJourneyControls()
+      }
+  
+  
+      <AddingChildBanner
+        visible={
+          addingChildDraft
+        }
+  
+        previousChildName={
+          previousChildSnapshot
+            ?.familyProfile
+            .childName
+        }
+  
+        canCancel={
+          Boolean(
+            previousChildSnapshot
+          )
+        }
+  
+        onCancel={
+          cancelAddingChild
+        }
+      />
+  
+  
+      {
+        journeyActionError && (
           <div
             style={{
-              marginTop:
-                "50px",
-
-              display:
-                "flex",
-
-              justifyContent:
-                "space-between",
-
-              gap:
-                "20px",
+              maxWidth:
+                "900px",
+  
+              margin:
+                "20px auto 0",
+  
+              padding:
+                "0 20px",
             }}
           >
-
-            <button
-              type="button"
-
-              onClick={
+            <div
+              style={{
+                padding:
+                  "12px 16px",
+  
+                border:
+                  "1px solid #FCA5A5",
+  
+                background:
+                  "#FEF2F2",
+  
+                borderRadius:
+                  "10px",
+  
+                color:
+                  "#991B1B",
+  
+                fontSize:
+                  "14px",
+  
+                lineHeight:
+                  1.5,
+              }}
+            >
+              {journeyActionError}
+            </div>
+          </div>
+        )
+      }
+  
+  
+      <div
+        style={{
+          maxWidth:
+            "900px",
+  
+          margin:
+            "0 auto",
+  
+          padding:
+            "40px 20px",
+        }}
+      >
+        {
+          step ===
+          0 && (
+            <Welcome
+              onBegin={
+                beginQuestionnaire
+              }
+            />
+          )
+        }
+  
+  
+        {
+          step >
+          0 && (
+            <JourneyQuestionnaire
+              step={
+                step
+              }
+  
+              totalQuestions={
+                totalQuestions
+              }
+  
+              familyProfile={
+                familyProfile
+              }
+  
+              onUpdateProfile={
+                updateProfile
+              }
+  
+              onPrevious={
                 previousStep
               }
-
-              disabled={
-                step === 1
-              }
-
-              style={{
-                padding:
-                  "14px 28px",
-
-                borderRadius:
-                  "10px",
-
-                border:
-                  "1px solid #D1D5DB",
-
-                background:
-                  step === 1
-                    ? "#E5E7EB"
-                    : "#FFFFFF",
-
-                color:
-                  "#0F172A",
-
-                cursor:
-                  step === 1
-                    ? "not-allowed"
-                    : "pointer",
-
-                fontWeight:
-                  600,
-              }}
-            >
-              ← Back
-            </button>
-
-
-            <button
-              type="button"
-
-              onClick={
+  
+              onNext={
                 nextStep
               }
-
-              disabled={
-                !canContinue()
+  
+              canContinue={
+                canContinue()
               }
-
-              style={{
-                padding:
-                  "14px 28px",
-
-                borderRadius:
-                  "10px",
-
-                border:
-                  "none",
-
-                background:
-                  canContinue()
-                    ? "#2563EB"
-                    : "#9CA3AF",
-
-                color:
-                  "#FFFFFF",
-
-                cursor:
-                  canContinue()
-                    ? "pointer"
-                    : "not-allowed",
-
-                fontWeight:
-                  700,
-              }}
-            >
-              {
-                step ===
-                totalQuestions
-                  ? "Build My Personalized Journey"
-                  : "Continue →"
-              }
-            </button>
-
-          </div>
-
-        </>
-
-      )}
-
-    </div>
-
+            />
+          )
+        }
+      </div>
+  
+  
+      <RemoveChildModal
+        visible={
+          showRemoveChildConfirm
+        }
+  
+        childName={
+          familyProfile
+            .childName
+        }
+  
+        removing={
+          removingChild
+        }
+  
+        error={
+          removeChildError
+        }
+  
+        onCancel={() =>
+          setShowRemoveChildConfirm(
+            false
+          )
+        }
+  
+        onConfirm={
+          confirmRemoveChild
+        }
+      />
+    </>
   );
-
 }

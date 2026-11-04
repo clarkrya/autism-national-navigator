@@ -1,11 +1,28 @@
-.hero {
+
+/*
+ * ============================================================
+ * AUTIVOYA — HOMEPAGE HERO
+ * ============================================================
+ *
+ * Brand colors:
+ * Navy: #204D6A
+ * Teal: #58AAA7
+ * Gold: #F7AD3F
+ *
+ * Preserves the existing two-column layout,
+ * responsive breakpoints, and hero illustration.
+ * ============================================================
+ */
+
+ .hero {
   background: linear-gradient(
-    135deg,
-    #2563eb 0%,
-    #14b8a6 100%
+    125deg,
+    #204d6a 0%,
+    #286d7b 48%,
+    #58aaa7 100%
   );
 
-  color: white;
+  color: #ffffff;
 
   padding: 100px 24px 90px;
 }
@@ -41,9 +58,11 @@
 
   border-radius: 999px;
 
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.13);
 
-  border: 1px solid rgba(255, 255, 255, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+
+  color: #ffffff;
 
   font-size: 13px;
 
@@ -60,6 +79,8 @@
   line-height: 1.04;
 
   margin: 0 0 28px;
+
+  color: #ffffff;
 }
 
 .description {
@@ -67,7 +88,7 @@
 
   line-height: 1.7;
 
-  color: rgba(255, 255, 255, 0.92);
+  color: rgba(255, 255, 255, 0.94);
 
   margin: 0 0 24px;
 
@@ -77,6 +98,62 @@
 .buttonRow {
   margin-bottom: 8px;
 }
+
+/*
+ * ============================================================
+ * HOMEPAGE PRIMARY BUTTON
+ * ============================================================
+ *
+ * Targets the button only inside this hero.
+ * Does not change shared buttons elsewhere.
+ * ============================================================
+ */
+
+.buttonRow a {
+  display: inline-block;
+  text-decoration: none;
+}
+
+.buttonRow button {
+  background: #f7ad3f;
+
+  color: #173b52;
+
+  border: 1px solid #f7ad3f;
+
+  border-radius: 12px;
+
+  font-weight: 800;
+
+  box-shadow: 0 8px 22px rgba(16, 49, 66, 0.18);
+
+  transition:
+    background 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.buttonRow button:hover {
+  background: #ffc36b;
+
+  border-color: #ffc36b;
+
+  transform: translateY(-2px);
+
+  box-shadow: 0 12px 26px rgba(16, 49, 66, 0.24);
+}
+
+.buttonRow button:focus-visible {
+  outline: 3px solid #ffffff;
+
+  outline-offset: 4px;
+}
+
+/*
+ * ============================================================
+ * FEATURE BADGES
+ * ============================================================
+ */
 
 .badges {
   display: flex;
@@ -93,13 +170,15 @@
 
   align-items: center;
 
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.15);
 
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.34);
 
   border-radius: 999px;
 
   padding: 12px 18px;
+
+  color: #ffffff;
 
   font-size: 15px;
 
@@ -107,6 +186,12 @@
 
   backdrop-filter: blur(8px);
 }
+
+/*
+ * ============================================================
+ * HERO IMAGE
+ * ============================================================
+ */
 
 .imageArea {
   display: flex;
@@ -130,8 +215,14 @@
   border-radius: 28px;
 
   box-shadow:
-    0 24px 60px rgba(15, 23, 42, 0.22);
+    0 24px 60px rgba(15, 40, 55, 0.25);
 }
+
+/*
+ * ============================================================
+ * TABLET
+ * ============================================================
+ */
 
 @media (max-width: 1000px) {
   .wrapper {
@@ -173,9 +264,15 @@
   }
 }
 
+/*
+ * ============================================================
+ * MOBILE
+ * ============================================================
+ */
+
 @media (max-width: 700px) {
   .hero {
-    padding: 70px 20px 70px;
+    padding: 70px 20px;
   }
 
   .heading {
@@ -222,5 +319,15 @@
     width: 100%;
 
     justify-content: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .buttonRow button {
+    transition: none;
+  }
+
+  .buttonRow button:hover {
+    transform: none;
   }
 }

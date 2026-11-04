@@ -8,8 +8,17 @@ import {
 import Link from "next/link";
 
 import {
+  doc,
+  getDoc,
+} from "firebase/firestore";
+
+import {
   getCurrentUser,
 } from "../../lib/auth";
+
+import {
+  db,
+} from "../../lib/firebase";
 
 import {
   useAccountEntitlements,
@@ -17,6 +26,8 @@ import {
 
 import {
   getCommunityPosts,
+  getCommunityReplies,
+  getCommunityReactionSummary,
 } from "../../lib/communityRepository";
 
 import type {
@@ -35,25 +46,35 @@ import type {
  *
  * Free:
  *   Read-only Community access.
+ *   Can create/manage a Community profile.
  *
  * Premium:
  *   Read + participate.
+ *   Can create/manage a Community profile.
  *
  * Premium+:
  *   Read + participate.
+ *   Can create/manage a Community profile.
  *
+ * Community is one shared space.
+ * Premium controls participation, not visibility.
  * ============================================================
  */
 
-
-/*
- * ============================================================
- * COMMUNITY RETURN PATH
- * ============================================================
- */
 
 const COMMUNITY_RETURN_TO =
   "/community";
+
+
+type CommunityPostCounts = {
+  replyCount: number;
+  reactionCount: number;
+};
+
+
+type CommunityModeratorRole =
+  | "moderator"
+  | "admin";
 
 
 /*
@@ -62,192 +83,126 @@ const COMMUNITY_RETURN_TO =
  * ============================================================
  */
 
-const CATEGORY_OPTIONS:
+const CATEGORY_OPTIONS: {
+  value:
+    | CommunityCategory
+    | "all";
+  label: string;
+  description: string;
+}[] = [
   {
-    value:
-      CommunityCategory |
-      "all";
-
-    label:
-      string;
-
-    description:
-      string;
-  }[] = [
-
-  {
-    value:
-      "all",
-
-    label:
-      "All Topics",
-
+    value: "all",
+    label: "All Topics",
     description:
       "See recent conversations across the Community.",
   },
-
   {
-    value:
-      "general",
-
-    label:
-      "General",
-
+    value: "general",
+    label: "General",
     description:
       "Everyday questions, experiences, and support.",
   },
-
   {
-    value:
-      "newly_diagnosed",
-
+    value: "newly_diagnosed",
     label:
       "Newly Diagnosed",
-
     description:
       "Early questions and navigating what comes next.",
   },
-
   {
-    value:
-      "school",
-
-    label:
-      "School",
-
+    value: "school",
+    label: "School",
     description:
       "School experiences, support, and transitions.",
   },
-
   {
-    value:
-      "therapy",
-
-    label:
-      "Therapy",
-
+    value: "therapy",
+    label: "Therapy",
     description:
       "Therapy experiences, questions, and support.",
   },
-
   {
-    value:
-      "insurance",
-
-    label:
-      "Insurance",
-
+    value: "insurance",
+    label: "Insurance",
     description:
       "Coverage, claims, and navigating insurance.",
   },
-
   {
     value:
       "financial_support",
-
     label:
       "Financial Support",
-
     description:
       "Financial assistance, costs, and support.",
   },
-
   {
     value:
       "parent_support",
-
     label:
       "Parent Support",
-
     description:
       "Support and encouragement for parents and caregivers.",
   },
-
   {
     value:
       "teen_transition",
-
     label:
       "Teen Transition",
-
     description:
       "Preparing for changing needs during the teen years.",
   },
-
   {
     value:
       "adult_transition",
-
     label:
       "Adult Transition",
-
     description:
       "Preparing for adulthood and greater independence.",
   },
-
   {
     value:
       "siblings_family",
-
     label:
       "Siblings & Family",
-
     description:
       "Family relationships, siblings, and shared experiences.",
   },
-
   {
     value:
       "success_stories",
-
     label:
       "Success Stories",
-
     description:
       "Celebrate progress, milestones, and encouraging moments.",
   },
-
   {
-    value:
-      "questions",
-
-    label:
-      "Questions",
-
+    value: "questions",
+    label: "Questions",
     description:
       "Ask about something you're navigating.",
   },
-
   {
-    value:
-      "other",
-
-    label:
-      "Other",
-
+    value: "other",
+    label: "Other",
     description:
       "Topics that don't fit another category.",
   },
-
 ];
 
 
 /*
  * ============================================================
- * CATEGORY LABEL
+ * HELPERS
  * ============================================================
  */
 
 function getCategoryLabel(
-  category:
-    CommunityCategory
+  category: CommunityCategory
 ): string {
 
   const option =
     CATEGORY_OPTIONS.find(
-      (
-        item
-      ) =>
+      (item) =>
         item.value ===
         category
     );
@@ -257,27 +212,18 @@ function getCategoryLabel(
     option?.label ||
     "Community"
   );
-
 }
 
 
-/*
- * ============================================================
- * CATEGORY DESCRIPTION
- * ============================================================
- */
-
 function getCategoryDescription(
   category:
-    CommunityCategory |
-    "all"
+    | CommunityCategory
+    | "all"
 ): string {
 
   const option =
     CATEGORY_OPTIONS.find(
-      (
-        item
-      ) =>
+      (item) =>
         item.value ===
         category
     );
@@ -287,27 +233,15 @@ function getCategoryDescription(
     option?.description ||
     "Explore Community conversations."
   );
-
 }
 
 
-/*
- * ============================================================
- * FORMAT DATE
- * ============================================================
- */
-
 function formatPostDate(
-  timestamp:
-    number
+  timestamp: number
 ): string {
 
-  if (
-    !timestamp
-  ) {
-
+  if (!timestamp) {
     return "";
-
   }
 
 
@@ -316,14 +250,9 @@ function formatPostDate(
     return new Intl.DateTimeFormat(
       "en-US",
       {
-        month:
-          "short",
-
-        day:
-          "numeric",
-
-        year:
-          "numeric",
+        month: "short",
+        day: "numeric",
+        year: "numeric",
       }
     ).format(
       new Date(
@@ -334,9 +263,7 @@ function formatPostDate(
   } catch {
 
     return "";
-
   }
-
 }
 
 
@@ -348,12 +275,6 @@ function formatPostDate(
 
 export default function CommunityFeed() {
 
-  /*
-   * ----------------------------------------------------------
-   * ACCOUNT ENTITLEMENTS
-   * ----------------------------------------------------------
-   */
-
   const {
     plan,
     loading:
@@ -363,59 +284,58 @@ export default function CommunityFeed() {
     useAccountEntitlements();
 
 
-  /*
-   * ----------------------------------------------------------
-   * POSTS
-   * ----------------------------------------------------------
-   */
-
   const [
     posts,
     setPosts,
-  ] = useState<
-    CommunityPost[]
-  >([]);
+  ] =
+    useState<
+      CommunityPost[]
+    >([]);
 
 
-  /*
-   * ----------------------------------------------------------
-   * LOADING
-   * ----------------------------------------------------------
-   */
+  const [
+    postCounts,
+    setPostCounts,
+  ] =
+    useState<
+      Record<
+        string,
+        CommunityPostCounts
+      >
+    >({});
+
 
   const [
     loading,
     setLoading,
-  ] = useState(true);
+  ] =
+    useState(true);
 
-
-  /*
-   * ----------------------------------------------------------
-   * ERROR
-   * ----------------------------------------------------------
-   */
 
   const [
     error,
     setError,
-  ] = useState("");
+  ] =
+    useState("");
 
-
-  /*
-   * ----------------------------------------------------------
-   * CATEGORY
-   * ----------------------------------------------------------
-   */
 
   const [
     selectedCategory,
     setSelectedCategory,
-  ] = useState<
-    CommunityCategory |
-    "all"
-  >(
-    "all"
-  );
+  ] =
+    useState<
+      | CommunityCategory
+      | "all"
+    >("all");
+
+
+  const [
+    moderatorRole,
+    setModeratorRole,
+  ] =
+    useState<
+      CommunityModeratorRole | null
+    >(null);
 
 
   /*
@@ -426,8 +346,7 @@ export default function CommunityFeed() {
 
   useEffect(() => {
 
-    let active =
-      true;
+    let active = true;
 
 
     async function loadPosts() {
@@ -437,80 +356,44 @@ export default function CommunityFeed() {
 
 
       /*
-       * ------------------------------------------------------
-       * GUEST
-       * ------------------------------------------------------
+       * Guests do not query Community content.
        */
 
-      if (
-        !currentUser
-      ) {
+      if (!currentUser) {
 
-        if (
-          active
-        ) {
+        if (active) {
 
           setPosts([]);
 
-          setLoading(
-            false
-          );
+          setPostCounts({});
 
+          setLoading(false);
         }
 
-        return;
 
+        return;
       }
 
 
-      setLoading(
-        true
-      );
+      setLoading(true);
 
       setError("");
 
 
       try {
 
-        /*
-         * ----------------------------------------------------
-         * BUILD QUERY
-         * ----------------------------------------------------
-         */
-
         const feedFilters =
           selectedCategory ===
           "all"
-
             ? {
-                premiumOnly:
-                  isPremium
-                    ? undefined
-                    : false,
-
-                limit:
-                  50,
+                limit: 50,
               }
-
             : {
                 category:
                   selectedCategory,
-
-                premiumOnly:
-                  isPremium
-                    ? undefined
-                    : false,
-
-                limit:
-                  50,
+                limit: 50,
               };
 
-
-        /*
-         * ----------------------------------------------------
-         * LOAD
-         * ----------------------------------------------------
-         */
 
         const loadedPosts =
           await getCommunityPosts(
@@ -518,36 +401,104 @@ export default function CommunityFeed() {
           );
 
 
-        if (
-          !active
-        ) {
+        /*
+         * Derive current counts from the actual Community
+         * reply and reaction documents.
+         *
+         * We intentionally do not rely on replyCount or
+         * reactionCount stored on the post document because
+         * those legacy values are not maintained by the
+         * current Community write architecture.
+         */
 
+        const countEntries =
+          await Promise.all(
+            loadedPosts.map(
+              async (
+                post
+              ) => {
+
+                try {
+
+                  const [
+                    replies,
+                    reactionSummary,
+                  ] =
+                    await Promise.all([
+                      getCommunityReplies(
+                        post.id
+                      ),
+
+                      getCommunityReactionSummary(
+                        "post",
+                        post.id,
+                        currentUser.uid
+                      ),
+                    ]);
+
+
+                  return [
+                    post.id,
+                    {
+                      replyCount:
+                        replies.length,
+
+                      reactionCount:
+                        reactionSummary.count,
+                    },
+                  ] as const;
+
+                } catch (
+                  countError
+                ) {
+
+                  console.error(
+                    "Unable to load Community post counts:",
+                    {
+                      postId:
+                        post.id,
+
+                      error:
+                        countError,
+                    }
+                  );
+
+
+                  /*
+                   * A count query should never prevent the
+                   * Community feed itself from loading.
+                   */
+
+                  return [
+                    post.id,
+                    {
+                      replyCount:
+                        0,
+
+                      reactionCount:
+                        0,
+                    },
+                  ] as const;
+                }
+              }
+            )
+          );
+
+
+        if (!active) {
           return;
-
         }
 
 
-        /*
-         * ----------------------------------------------------
-         * ADDITIONAL CLIENT-SIDE SAFETY
-         * ----------------------------------------------------
-         */
-
-        const visiblePosts =
-          isPremium
-
-            ? loadedPosts
-
-            : loadedPosts.filter(
-                (
-                  post
-                ) =>
-                  !post.isPremiumOnly
-              );
-
-
         setPosts(
-          visiblePosts
+          loadedPosts
+        );
+
+
+        setPostCounts(
+          Object.fromEntries(
+            countEntries
+          )
         );
 
       } catch (
@@ -560,12 +511,8 @@ export default function CommunityFeed() {
         );
 
 
-        if (
-          !active
-        ) {
-
+        if (!active) {
           return;
-
         }
 
 
@@ -575,45 +522,186 @@ export default function CommunityFeed() {
 
       } finally {
 
-        if (
-          active
-        ) {
-
-          setLoading(
-            false
-          );
-
+        if (active) {
+          setLoading(false);
         }
-
       }
-
     }
 
-
-    /*
-     * Don't query before auth/entitlement state is ready.
-     */
 
     if (
       !entitlementLoading
     ) {
 
       void loadPosts();
-
     }
 
 
     return () => {
-
-      active =
-        false;
-
+      active = false;
     };
 
   }, [
     selectedCategory,
-    isPremium,
     entitlementLoading,
+  ]);
+
+
+  /*
+   * ==========================================================
+   * COMMUNITY MODERATOR NAVIGATION
+   * ==========================================================
+   *
+   * This reads only the signed-in user's own trusted Community
+   * access record:
+   *
+   * users/{uid}/communityAccess/current
+   *
+   * Showing this link is navigation only. The moderation page,
+   * protected API routes, and Firestore Security Rules remain
+   * the actual authorization boundary.
+   */
+
+  useEffect(() => {
+
+    let active = true;
+
+
+    async function loadModeratorRole() {
+
+      const currentUser =
+        getCurrentUser();
+
+
+      if (!currentUser) {
+
+        if (active) {
+          setModeratorRole(
+            null
+          );
+        }
+
+
+        return;
+      }
+
+
+      try {
+
+        const accessSnapshot =
+          await getDoc(
+            doc(
+              db,
+              "users",
+              currentUser.uid,
+              "communityAccess",
+              "current"
+            )
+          );
+
+
+        if (!active) {
+          return;
+        }
+
+
+        if (
+          !accessSnapshot.exists()
+        ) {
+
+          setModeratorRole(
+            null
+          );
+
+          return;
+        }
+
+
+        const accessData =
+          accessSnapshot.data();
+
+
+        const role =
+          accessData.role;
+
+
+        const isActive =
+          accessData.active ===
+          true;
+
+
+        if (
+          isActive &&
+          (
+            role ===
+              "moderator" ||
+            role ===
+              "admin"
+          )
+        ) {
+
+          setModeratorRole(
+            role
+          );
+
+          return;
+        }
+
+
+        setModeratorRole(
+          null
+        );
+
+      } catch (
+        moderatorError
+      ) {
+
+        /*
+         * Failure to load this optional navigation control
+         * should never prevent the Community feed from loading.
+         */
+
+        console.error(
+          "Unable to load Community moderator navigation access:",
+          moderatorError
+        );
+
+
+        if (active) {
+
+          setModeratorRole(
+            null
+          );
+        }
+      }
+    }
+
+
+    if (
+      !entitlementLoading &&
+      plan !== "guest"
+    ) {
+
+      void loadModeratorRole();
+
+    } else if (
+      !entitlementLoading &&
+      plan === "guest"
+    ) {
+
+      setModeratorRole(
+        null
+      );
+    }
+
+
+    return () => {
+      active = false;
+    };
+
+  }, [
+    entitlementLoading,
+    plan,
   ]);
 
 
@@ -629,7 +717,6 @@ export default function CommunityFeed() {
   ) {
 
     return (
-
       <section
         style={{
           maxWidth:
@@ -642,7 +729,6 @@ export default function CommunityFeed() {
             "40px 24px 80px",
         }}
       >
-
         <CommunityHeader />
 
 
@@ -670,7 +756,6 @@ export default function CommunityFeed() {
               "0 8px 24px rgba(15, 23, 42, 0.04)",
           }}
         >
-
           <div
             style={{
               fontSize:
@@ -686,8 +771,7 @@ export default function CommunityFeed() {
 
           <h2
             style={{
-              margin:
-                0,
+              margin: 0,
 
               color:
                 "#0F172A",
@@ -745,14 +829,12 @@ export default function CommunityFeed() {
                 "wrap",
             }}
           >
-
             <Link
               href={
                 `/signup?returnTo=${encodeURIComponent(
                   COMMUNITY_RETURN_TO
                 )}`
               }
-
               style={{
                 padding:
                   "12px 20px",
@@ -761,7 +843,7 @@ export default function CommunityFeed() {
                   "10px",
 
                 background:
-                  "#2563EB",
+                  "#204D6A",
 
                 color:
                   "#FFFFFF",
@@ -786,7 +868,6 @@ export default function CommunityFeed() {
                   COMMUNITY_RETURN_TO
                 )}`
               }
-
               style={{
                 padding:
                   "12px 20px",
@@ -797,11 +878,8 @@ export default function CommunityFeed() {
                 border:
                   "1px solid #CBD5E1",
 
-                background:
-                  "#FFFFFF",
-
-                color:
-                  "#334155",
+                  background: "#F7AD3F",
+                  color: "#173B52",
 
                 fontSize:
                   "14px",
@@ -815,15 +893,10 @@ export default function CommunityFeed() {
             >
               Log In
             </Link>
-
           </div>
-
         </div>
-
       </section>
-
     );
-
   }
 
 
@@ -834,7 +907,6 @@ export default function CommunityFeed() {
    */
 
   return (
-
     <section
       style={{
         maxWidth:
@@ -847,56 +919,240 @@ export default function CommunityFeed() {
           "40px 24px 90px",
       }}
     >
-
       <CommunityHeader />
 
 
-      {/* ======================================================
+      {/* ====================================================
+          MEMBER ACTIONS
+      ===================================================== */}
+
+      {!entitlementLoading &&
+        plan !== "guest" && (
+          <div
+            style={{
+              marginTop:
+                "20px",
+
+              display:
+                "flex",
+
+              alignItems:
+                "center",
+
+              justifyContent:
+                "space-between",
+
+              gap:
+                "12px",
+
+              flexWrap:
+                "wrap",
+            }}
+          >
+            <div
+              style={{
+                display:
+                  "flex",
+
+                alignItems:
+                  "center",
+
+                gap:
+                  "9px",
+
+                flexWrap:
+                  "wrap",
+              }}
+            >
+              <Link
+                href="/community/profile"
+                style={{
+                  display:
+                    "inline-flex",
+
+                  alignItems:
+                    "center",
+
+                  gap:
+                    "7px",
+
+                  padding:
+                    "10px 16px",
+
+                  borderRadius:
+                    "10px",
+
+                  border:
+                    "1px solid #CBD5E1",
+
+                  background:
+                    "#FFFFFF",
+
+                  color:
+                    "#334155",
+
+                  fontSize:
+                    "13px",
+
+                  fontWeight:
+                    800,
+
+                  textDecoration:
+                    "none",
+                }}
+              >
+                <span
+                  aria-hidden="true"
+                >
+                  👤
+                </span>
+
+                Community Profile
+              </Link>
+
+
+              {moderatorRole && (
+                <Link
+                  href="/community/moderation"
+                  style={{
+                    display:
+                      "inline-flex",
+
+                    alignItems:
+                      "center",
+
+                    gap:
+                      "7px",
+
+                    padding:
+                      "10px 16px",
+
+                    borderRadius:
+                      "10px",
+
+                    border:
+                      "1px solid #BFDBFE",
+
+                    background:
+                    "#EAF6F5",
+
+                    color:
+                    "#204D6A",
+
+                    fontSize:
+                      "13px",
+
+                    fontWeight:
+                      800,
+
+                    textDecoration:
+                      "none",
+                  }}
+                >
+                  <span
+                    aria-hidden="true"
+                  >
+                    🛡️
+                  </span>
+
+                  Moderation
+                </Link>
+              )}
+            </div>
+
+
+            {isPremium && (
+              <Link
+                href="/community/create"
+                style={{
+                  display:
+                    "inline-flex",
+
+                  alignItems:
+                    "center",
+
+                  gap:
+                    "7px",
+
+                  padding:
+                    "11px 18px",
+
+                  borderRadius:
+                    "10px",
+
+                  background:
+                  "#204D6A",
+
+                  color:
+                    "#FFFFFF",
+
+                  fontSize:
+                    "14px",
+
+                  fontWeight:
+                    800,
+
+                  textDecoration:
+                    "none",
+                }}
+              >
+                <span
+                  aria-hidden="true"
+                >
+                  +
+                </span>
+
+                Create a Post
+              </Link>
+            )}
+          </div>
+        )}
+
+
+      {/* ====================================================
           FREE ACCOUNT NOTICE
-      ======================================================= */}
+      ===================================================== */}
 
       {!entitlementLoading &&
         plan === "free" && (
+          <div
+            style={{
+              marginTop:
+                "20px",
 
-        <div
-          style={{
-            marginTop:
-              "20px",
+              padding:
+                "14px 16px",
 
-            padding:
-              "14px 16px",
+              borderRadius:
+                "12px",
 
-            borderRadius:
-              "12px",
+              background:
+              "#EAF6F5",
 
-            background:
-              "#EFF6FF",
+              border:
+                "1px solid #BFDBFE",
 
-            border:
-              "1px solid #BFDBFE",
+              color:
+              "#204D6A",
 
-            color:
-              "#1E40AF",
+              fontSize:
+                "13px",
 
-            fontSize:
-              "13px",
-
-            lineHeight:
-              1.5,
-          }}
-        >
-          You're viewing the Community as a
-          Free member. You can read
-          conversations, while posting and
-          replying are available with Premium.
-        </div>
-
-      )}
+              lineHeight:
+                1.5,
+            }}
+          >
+            You're viewing the Community as a
+            Free member. You can read
+            conversations, while posting and
+            replying are available with Premium.
+          </div>
+        )}
 
 
-      {/* ======================================================
+      {/* ====================================================
           BROWSE BY TOPIC
-      ======================================================= */}
+      ===================================================== */}
 
       <section
         style={{
@@ -919,7 +1175,6 @@ export default function CommunityFeed() {
             "0 4px 14px rgba(15, 23, 42, 0.03)",
         }}
       >
-
         <div
           style={{
             display:
@@ -938,18 +1193,16 @@ export default function CommunityFeed() {
               "wrap",
           }}
         >
-
           <div
             style={{
               flex:
                 "1 1 420px",
             }}
           >
-
             <div
               style={{
                 color:
-                  "#2563EB",
+                "#204D6A",
 
                 fontSize:
                   "11px",
@@ -973,8 +1226,7 @@ export default function CommunityFeed() {
 
             <h2
               style={{
-                margin:
-                  0,
+                margin: 0,
 
                 color:
                   "#0F172A",
@@ -1014,13 +1266,8 @@ export default function CommunityFeed() {
                 )
               }
             </p>
-
           </div>
 
-
-          {/* ==================================================
-              TOPIC SELECTOR
-          =================================================== */}
 
           <div
             style={{
@@ -1031,10 +1278,8 @@ export default function CommunityFeed() {
                 "230px",
             }}
           >
-
             <label
               htmlFor="community-category"
-
               style={{
                 display:
                   "block",
@@ -1058,23 +1303,20 @@ export default function CommunityFeed() {
 
             <select
               id="community-category"
-
               value={
                 selectedCategory
               }
-
               onChange={(
                 event
               ) => {
 
                 setSelectedCategory(
-                  event.target.value as
-                    CommunityCategory |
-                    "all"
+                  event.target
+                    .value as
+                    | CommunityCategory
+                    | "all"
                 );
-
               }}
-
               style={{
                 width:
                   "100%",
@@ -1110,17 +1352,14 @@ export default function CommunityFeed() {
                   "pointer",
               }}
             >
-
               {CATEGORY_OPTIONS.map(
                 (
                   option
                 ) => (
-
                   <option
                     key={
                       option.value
                     }
-
                     value={
                       option.value
                     }
@@ -1129,20 +1368,12 @@ export default function CommunityFeed() {
                       option.label
                     }
                   </option>
-
                 )
               )}
-
             </select>
-
           </div>
-
         </div>
 
-
-        {/* ====================================================
-            SELECTED TOPIC CHIP
-        ===================================================== */}
 
         <div
           style={{
@@ -1168,7 +1399,6 @@ export default function CommunityFeed() {
               "wrap",
           }}
         >
-
           <span
             style={{
               color:
@@ -1194,10 +1424,10 @@ export default function CommunityFeed() {
                 "999px",
 
               background:
-                "#EFF6FF",
+              "#EAF6F5",
 
               color:
-                "#1D4ED8",
+              "#204D6A",
 
               fontSize:
                 "12px",
@@ -1209,89 +1439,19 @@ export default function CommunityFeed() {
             {
               selectedCategory ===
               "all"
-
                 ? "All Topics"
-
                 : getCategoryLabel(
                     selectedCategory
                   )
             }
           </span>
-
         </div>
-
       </section>
 
 
-      {/* ======================================================
-          PREMIUM CREATE POST
-      ======================================================= */}
-
-      {isPremium && (
-
-        <div
-          style={{
-            marginTop:
-              "20px",
-
-            display:
-              "flex",
-
-            justifyContent:
-              "flex-end",
-          }}
-        >
-
-          <Link
-            href="/community/create"
-
-            style={{
-              display:
-                "inline-flex",
-
-              alignItems:
-                "center",
-
-              gap:
-                "7px",
-
-              padding:
-                "11px 18px",
-
-              borderRadius:
-                "10px",
-
-              background:
-                "#2563EB",
-
-              color:
-                "#FFFFFF",
-
-              fontSize:
-                "14px",
-
-              fontWeight:
-                800,
-
-              textDecoration:
-                "none",
-            }}
-          >
-            <span>
-              +
-            </span>
-
-            Create a Post
-          </Link>
-
-        </div>
-
-      )}
-
-
-      {/* ======================================================
-          SECTION TITLE
-      ======================================================= */}
+      {/* ====================================================
+          RECENT CONVERSATIONS HEADING
+      ===================================================== */}
 
       <div
         style={{
@@ -1314,13 +1474,10 @@ export default function CommunityFeed() {
             "wrap",
         }}
       >
-
         <div>
-
           <h2
             style={{
-              margin:
-                0,
+              margin: 0,
 
               color:
                 "#0F172A",
@@ -1351,52 +1508,46 @@ export default function CommunityFeed() {
             {
               selectedCategory ===
               "all"
-
                 ? "The latest published Community conversations."
-                
                 : `Recent conversations about ${getCategoryLabel(
                     selectedCategory
                   ).toLowerCase()}.`
             }
           </p>
-
         </div>
 
 
         {!loading &&
           !error &&
           posts.length > 0 && (
+            <span
+              style={{
+                color:
+                  "#94A3B8",
 
-          <span
-            style={{
-              color:
-                "#94A3B8",
+                fontSize:
+                  "12px",
 
-              fontSize:
-                "12px",
-
-              fontWeight:
-                700,
-            }}
-          >
-            {posts.length}{" "}
-            {posts.length ===
-            1
-              ? "conversation"
-              : "conversations"}
-          </span>
-
-        )}
-
+                fontWeight:
+                  700,
+              }}
+            >
+              {posts.length}{" "}
+              {
+                posts.length === 1
+                  ? "conversation"
+                  : "conversations"
+              }
+            </span>
+          )}
       </div>
 
 
-      {/* ======================================================
+      {/* ====================================================
           LOADING
-      ======================================================= */}
+      ===================================================== */}
 
       {loading && (
-
         <div
           style={{
             marginTop:
@@ -1426,303 +1577,279 @@ export default function CommunityFeed() {
         >
           Loading Community conversations...
         </div>
-
       )}
 
 
-      {/* ======================================================
+      {/* ====================================================
           ERROR
-      ======================================================= */}
+      ===================================================== */}
 
       {!loading &&
         error && (
+          <div
+            role="alert"
+            style={{
+              marginTop:
+                "20px",
 
-        <div
-          role="alert"
+              padding:
+                "16px",
 
-          style={{
-            marginTop:
-              "20px",
+              borderRadius:
+                "14px",
 
-            padding:
-              "16px",
+              border:
+                "1px solid #FECACA",
 
-            borderRadius:
-              "14px",
+              background:
+                "#FEF2F2",
 
-            border:
-              "1px solid #FECACA",
+              color:
+                "#B91C1C",
 
-            background:
-              "#FEF2F2",
+              fontSize:
+                "14px",
 
-            color:
-              "#B91C1C",
-
-            fontSize:
-              "14px",
-
-            lineHeight:
-              1.5,
-          }}
-        >
-          {
-            error
-          }
-        </div>
-
-      )}
+              lineHeight:
+                1.5,
+            }}
+          >
+            {error}
+          </div>
+        )}
 
 
-      {/* ======================================================
-          EMPTY
-      ======================================================= */}
+      {/* ====================================================
+          EMPTY STATE
+      ===================================================== */}
 
       {!loading &&
         !error &&
         posts.length === 0 && (
-
-        <div
-          style={{
-            marginTop:
-              "20px",
-
-            padding:
-              "38px 24px",
-
-            borderRadius:
-              "18px",
-
-            border:
-              "1px solid #E2E8F0",
-
-            background:
-              "#FFFFFF",
-
-            textAlign:
-              "center",
-          }}
-        >
-
           <div
             style={{
-              fontSize:
-                "30px",
-
-              marginBottom:
-                "10px",
-            }}
-          >
-            💙
-          </div>
-
-
-          <h3
-            style={{
-              margin:
-                0,
-
-              color:
-                "#0F172A",
-
-              fontSize:
+              marginTop:
                 "20px",
 
-              fontWeight:
-                800,
+              padding:
+                "38px 24px",
+
+              borderRadius:
+                "18px",
+
+              border:
+                "1px solid #E2E8F0",
+
+              background:
+                "#FFFFFF",
+
+              textAlign:
+                "center",
             }}
           >
-            No conversations yet.
-          </h3>
+            <div
+              style={{
+                fontSize:
+                  "30px",
+
+                marginBottom:
+                  "10px",
+              }}
+            >
+              💙
+            </div>
 
 
-          <p
-            style={{
-              maxWidth:
-                "590px",
+            <h3
+              style={{
+                margin: 0,
 
-              margin:
-                "8px auto 0",
+                color:
+                  "#0F172A",
 
-              color:
-                "#64748B",
+                fontSize:
+                  "20px",
 
-              fontSize:
-                "14px",
-
-              lineHeight:
-                1.6,
-            }}
-          >
-            There aren't any published conversations
-            in this topic yet. Check another topic
-            or come back as the Community grows.
-          </p>
-
-        </div>
-
-      )}
+                fontWeight:
+                  800,
+              }}
+            >
+              No conversations yet.
+            </h3>
 
 
-      {/* ======================================================
+            <p
+              style={{
+                maxWidth:
+                  "590px",
+
+                margin:
+                  "8px auto 0",
+
+                color:
+                  "#64748B",
+
+                fontSize:
+                  "14px",
+
+                lineHeight:
+                  1.6,
+              }}
+            >
+              There aren't any published
+              conversations in this topic yet.
+              Check another topic or come back
+              as the Community grows.
+            </p>
+          </div>
+        )}
+
+
+      {/* ====================================================
           POSTS
-      ======================================================= */}
+      ===================================================== */}
 
       {!loading &&
         !error &&
         posts.length > 0 && (
+          <div
+            style={{
+              display:
+                "grid",
 
-        <div
-          style={{
-            display:
-              "grid",
+              gap:
+                "14px",
 
-            gap:
-              "14px",
-
-            marginTop:
-              "20px",
-          }}
-        >
-
-          {posts.map(
-            (
-              post
-            ) => (
-
-              <CommunityPostCard
-                key={
-                  post.id
-                }
-
-                post={
-                  post
-                }
-
-                isPremium={
-                  isPremium
-                }
-
-              />
-
-            )
-          )}
-
-        </div>
-
-      )}
+              marginTop:
+                "20px",
+            }}
+          >
+            {posts.map(
+              (
+                post
+              ) => (
+                <CommunityPostCard
+                  key={
+                    post.id
+                  }
+                  post={
+                    post
+                  }
+                  counts={
+                    postCounts[
+                      post.id
+                    ]
+                  }
+                />
+              )
+            )}
+          </div>
+        )}
 
 
-      {/* ======================================================
-          FREE ACCOUNT CONVERSION
-      ======================================================= */}
+      {/* ====================================================
+          FREE UPGRADE
+      ===================================================== */}
 
       {!entitlementLoading &&
         plan === "free" && (
-
-        <div
-          style={{
-            marginTop:
-              "35px",
-
-            padding:
-              "25px",
-
-            borderRadius:
-              "18px",
-
-            background:
-              "#F8FAFC",
-
-            border:
-              "1px solid #E2E8F0",
-
-            textAlign:
-              "center",
-          }}
-        >
-
-          <h3
+          <div
             style={{
-              margin:
-                0,
-
-              color:
-                "#0F172A",
-
-              fontSize:
-                "21px",
-
-              fontWeight:
-                800,
-            }}
-          >
-            Want to be part of the conversation?
-          </h3>
-
-
-          <p
-            style={{
-              maxWidth:
-                "620px",
-
-              margin:
-                "9px auto 17px",
-
-              color:
-                "#64748B",
-
-              fontSize:
-                "14px",
-
-              lineHeight:
-                1.6,
-            }}
-          >
-            Premium members can create posts,
-            reply to other families, and
-            participate in Community discussions.
-          </p>
-
-
-          <Link
-            href="/pricing"
-
-            style={{
-              display:
-                "inline-block",
+              marginTop:
+                "35px",
 
               padding:
-                "11px 19px",
+                "25px",
 
               borderRadius:
-                "10px",
+                "18px",
 
               background:
-                "#2563EB",
+                "#F8FAFC",
 
-              color:
-                "#FFFFFF",
+              border:
+                "1px solid #E2E8F0",
 
-              fontSize:
-                "14px",
-
-              fontWeight:
-                800,
-
-              textDecoration:
-                "none",
+              textAlign:
+                "center",
             }}
           >
-            Explore Premium
-          </Link>
+            <h3
+              style={{
+                margin: 0,
 
-        </div>
+                color:
+                  "#0F172A",
 
-      )}
+                fontSize:
+                  "21px",
 
+                fontWeight:
+                  800,
+              }}
+            >
+              Want to be part of the conversation?
+            </h3>
+
+
+            <p
+              style={{
+                maxWidth:
+                  "620px",
+
+                margin:
+                  "9px auto 17px",
+
+                color:
+                  "#64748B",
+
+                fontSize:
+                  "14px",
+
+                lineHeight:
+                  1.6,
+              }}
+            >
+              Premium members can create posts,
+              reply to other families, and
+              participate in Community
+              discussions.
+            </p>
+
+
+            <Link
+              href="/pricing"
+              style={{
+                display:
+                  "inline-block",
+
+                padding:
+                  "11px 19px",
+
+                borderRadius:
+                  "10px",
+
+                background:
+                "#204D6A",
+
+                color:
+                  "#FFFFFF",
+
+                fontSize:
+                  "14px",
+
+                fontWeight:
+                  800,
+
+                textDecoration:
+                  "none",
+              }}
+            >
+              Explore Premium
+            </Link>
+          </div>
+        )}
     </section>
-
   );
 }
 
@@ -1734,85 +1861,35 @@ export default function CommunityFeed() {
  */
 
 function CommunityHeader() {
-
   return (
-
     <header>
-
-      <div
-        style={{
-          color:
-            "#2563EB",
-
-          fontSize:
-            "12px",
-
-          fontWeight:
-            800,
-
-          letterSpacing:
-            "0.08em",
-
-          textTransform:
-            "uppercase",
-
-          marginBottom:
-            "7px",
-        }}
-      >
-        Myriad Autism Journey
-      </div>
-
-
       <h1
         style={{
-          margin:
-            0,
-
-          color:
-            "#0F172A",
-
-          fontSize:
-            "40px",
-
-          lineHeight:
-            1.15,
-
-          fontWeight:
-            850,
+          margin: 0,
+          color: "#204D6A",
+          fontSize: "34px",
+          lineHeight: 1.2,
+          fontWeight: 800,
+          letterSpacing: "-0.02em",
         }}
       >
-        Community
+        Autivoya Community
       </h1>
-
 
       <p
         style={{
-          maxWidth:
-            "760px",
-
-          margin:
-            "12px 0 0",
-
-          color:
-            "#64748B",
-
-          fontSize:
-            "17px",
-
-          lineHeight:
-            1.65,
+          maxWidth: "760px",
+          margin: "14px 0 0",
+          color: "#64748B",
+          fontSize: "17px",
+          lineHeight: 1.65,
         }}
       >
-        Explore conversations, experiences,
-        and encouragement from families
-        navigating the autism journey.
+        Explore conversations, experiences, and encouragement
+        from families navigating the autism journey.
       </p>
-
     </header>
-
   );
-
 }
 
 
@@ -1824,13 +1901,11 @@ function CommunityHeader() {
 
 function CommunityPostCard({
   post,
-  isPremium,
+  counts,
 }: {
-  post:
-    CommunityPost;
-
-  isPremium:
-    boolean;
+  post: CommunityPost;
+  counts?:
+    CommunityPostCounts;
 }) {
 
   const displayAuthor =
@@ -1841,7 +1916,6 @@ function CommunityPostCard({
 
 
   return (
-
     <article
       style={{
         padding:
@@ -1860,11 +1934,6 @@ function CommunityPostCard({
           "0 4px 14px rgba(15, 23, 42, 0.03)",
       }}
     >
-
-      {/* ====================================================
-          POST META
-      ===================================================== */}
-
       <div
         style={{
           display:
@@ -1886,93 +1955,39 @@ function CommunityPostCard({
             "10px",
         }}
       >
-
-        <div
+        <span
           style={{
-            display:
-              "flex",
+            padding:
+              "4px 8px",
 
-            alignItems:
-              "center",
+            borderRadius:
+              "999px",
 
-            gap:
-              "8px",
+            background:
+            "#EAF6F5",
 
-            flexWrap:
-              "wrap",
+            color:
+            "#204D6A",
+
+            fontSize:
+              "10px",
+
+            fontWeight:
+              800,
+
+            textTransform:
+              "uppercase",
+
+            letterSpacing:
+              "0.04em",
           }}
         >
-
-          <span
-            style={{
-              padding:
-                "4px 8px",
-
-              borderRadius:
-                "999px",
-
-              background:
-                "#EFF6FF",
-
-              color:
-                "#2563EB",
-
-              fontSize:
-                "10px",
-
-              fontWeight:
-                800,
-
-              textTransform:
-                "uppercase",
-
-              letterSpacing:
-                "0.04em",
-            }}
-          >
-            {
-              getCategoryLabel(
-                post.category
-              )
-            }
-          </span>
-
-
-          {post.isPremiumOnly && (
-
-            <span
-              style={{
-                padding:
-                  "4px 8px",
-
-                borderRadius:
-                  "999px",
-
-                background:
-                  "#F0FDFA",
-
-                color:
-                  "#0F766E",
-
-                fontSize:
-                  "10px",
-
-                fontWeight:
-                  800,
-
-                textTransform:
-                  "uppercase",
-
-                letterSpacing:
-                  "0.04em",
-              }}
-            >
-              Premium
-            </span>
-
-          )}
-
-        </div>
+          {
+            getCategoryLabel(
+              post.category
+            )
+          }
+        </span>
 
 
         <span
@@ -1990,13 +2005,8 @@ function CommunityPostCard({
             )
           }
         </span>
-
       </div>
 
-
-      {/* ====================================================
-          TITLE
-      ===================================================== */}
 
       <h3
         style={{
@@ -2016,20 +2026,13 @@ function CommunityPostCard({
             800,
         }}
       >
-        {
-          post.title
-        }
+        {post.title}
       </h3>
 
 
-      {/* ====================================================
-          BODY
-      ===================================================== */}
-
       <p
         style={{
-          margin:
-            0,
+          margin: 0,
 
           color:
             "#475569",
@@ -2044,15 +2047,9 @@ function CommunityPostCard({
             "pre-wrap",
         }}
       >
-        {
-          post.body
-        }
+        {post.body}
       </p>
 
-
-      {/* ====================================================
-          AUTHOR / STATS
-      ===================================================== */}
 
       <div
         style={{
@@ -2087,19 +2084,15 @@ function CommunityPostCard({
             "12px",
         }}
       >
-
         <span>
           Shared by{" "}
-
           <strong
             style={{
               color:
                 "#64748B",
             }}
           >
-            {
-              displayAuthor
-            }
+            {displayAuthor}
           </strong>
         </span>
 
@@ -2113,24 +2106,27 @@ function CommunityPostCard({
               "12px",
           }}
         >
-
           <span>
-            💬 {post.replyCount}
+            💬{" "}
+            {
+              counts
+                ?.replyCount ??
+              0
+            }
           </span>
 
 
           <span>
-            ♥ {post.reactionCount}
+            ♥{" "}
+            {
+              counts
+                ?.reactionCount ??
+              0
+            }
           </span>
-
         </div>
-
       </div>
 
-
-      {/* ====================================================
-          VIEW CONVERSATION
-      ===================================================== */}
 
       <div
         style={{
@@ -2138,15 +2134,13 @@ function CommunityPostCard({
             "15px",
         }}
       >
-
         <Link
           href={
             `/community/${post.id}`
           }
-
           style={{
             color:
-              "#2563EB",
+            "#204D6A",
 
             fontSize:
               "13px",
@@ -2160,11 +2154,7 @@ function CommunityPostCard({
         >
           View conversation →
         </Link>
-
       </div>
-
     </article>
-
   );
-
 }
