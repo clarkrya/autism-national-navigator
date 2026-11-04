@@ -1,3 +1,4 @@
+
 import {
   collection,
   deleteDoc,
@@ -9,53 +10,30 @@ import {
   setDoc,
 } from "firebase/firestore";
 
-import type {
-  FamilyProfile,
-} from "../types/familyProfile";
+import type { FamilyProfile } from "../types/familyProfile";
+import type { PersonalizedJourney } from "./ai/journeyTypes";
+import { db } from "./firebase";
 
-import type {
-  PersonalizedJourney,
-} from "./ai/journeyTypes";
-
-import {
-  db,
-} from "./firebase";
-
-
-/*
- * ============================================================
- * JOURNEY REPOSITORY
- * ============================================================
+/**
+ * AUTIVOYA JOURNEY REPOSITORY
  *
- * MULTI-CHILD / MULTI-JOURNEY STRUCTURE
+ * Supports:
+ * - Multiple children
+ * - Current journeys
+ * - Saved child profiles
+ * - Task progress
+ * - Archived journeys
+ * - Legacy journey retrieval
+ * - Child journey deletion
  *
- * Child:
+ * Firestore structure:
  *
  * users/{userId}/children/{childId}
- *
- *
- * Active Journey:
- *
  * users/{userId}/children/{childId}/journeys/current
- *
- *
- * Archived Journeys:
- *
  * users/{userId}/children/{childId}/pastJourneys/{journeyId}
  *
- *
- * Legacy account Journey:
- *
+ * Legacy:
  * users/{userId}/journeys/current
- *
- * ============================================================
- */
-
-
-/*
- * ============================================================
- * TYPES
- * ============================================================
  */
 
 export type JourneyReason =
@@ -63,188 +41,119 @@ export type JourneyReason =
   | "tasks_completed"
   | "manual_refresh";
 
-
 export type SavedJourney = {
   journeyId: string;
-
-  familyProfile:
-    FamilyProfile;
-
-  journey:
-    PersonalizedJourney;
-
-  updatedAt:
-    number;
-
-  createdAt:
-    number;
-
-  createdBy:
-    string;
-
-  stageNumber:
-    number;
-
-  previousCompletedTaskIds?:
-    string[];
-
-  journeyReason?:
-    JourneyReason;
+  familyProfile: FamilyProfile;
+  journey: PersonalizedJourney;
+  updatedAt: number;
+  createdAt: number;
+  createdBy: string;
+  stageNumber: number;
+  previousCompletedTaskIds?: string[];
+  journeyReason?: JourneyReason;
 };
-
 
 export type SavedChild = {
-  childId:
-    string;
-
-  familyProfile:
-    FamilyProfile;
-
-  updatedAt:
-    number;
+  childId: string;
+  familyProfile: FamilyProfile;
+  updatedAt: number;
 };
-
 
 export type ArchivedJourney = {
-  journeyId:
-    string;
-
-  familyProfile:
-    FamilyProfile;
-
-  journey:
-    PersonalizedJourney;
-
-  stageNumber:
-    number;
-
-  previousCompletedTaskIds?:
-    string[];
-
-  journeyReason?:
-    JourneyReason;
-
-  createdAt:
-    number;
-
-  updatedAt:
-    number;
-
-  archivedAt:
-    number;
-
-  createdBy:
-    string;
+  journeyId: string;
+  familyProfile: FamilyProfile;
+  journey: PersonalizedJourney;
+  stageNumber: number;
+  previousCompletedTaskIds?: string[];
+  journeyReason?: JourneyReason;
+  createdAt: number;
+  updatedAt: number;
+  archivedAt: number;
+  createdBy: string;
 };
 
+// ============================================================
+// ID GENERATION
+// ============================================================
 
-/*
- * ============================================================
- * ID GENERATION
- * ============================================================
- */
-
-export function createJourneyId():
-  string {
-
+export function createJourneyId(): string {
   if (
-    typeof globalThis !==
-      "undefined" &&
+    typeof globalThis !== "undefined" &&
     globalThis.crypto &&
-    typeof globalThis.crypto.randomUUID ===
-      "function"
+    typeof globalThis.crypto.randomUUID === "function"
   ) {
     return globalThis.crypto.randomUUID();
   }
-
 
   return `journey-${Date.now()}-${Math.random()
     .toString(36)
     .slice(2, 10)}`;
 }
 
+// ============================================================
+// VALIDATION
+// ============================================================
 
-/*
- * ============================================================
- * VALIDATION
- * ============================================================
- */
-
-function requireUserId(
-  userId: string
-) {
-  if (
-    !userId
-  ) {
+function requireUserId(userId: string): void {
+  if (!userId || !userId.trim()) {
     throw new Error(
       "A user ID is required to access journey data."
     );
   }
 }
 
-
+/**
+ * Validates a child ID and returns it as a string.
+ *
+ * FamilyProfile.childId is optional in the profile type.
+ * Returning a validated string resolves TypeScript errors
+ * without inventing or replacing the child's actual ID.
+ */
 function requireChildId(
-  childId: string
-) {
+  childId: string | undefined | null
+): string {
   if (
-    !childId
+    typeof childId !== "string" ||
+    !childId.trim()
   ) {
     throw new Error(
       "A child ID is required to access a child journey."
     );
   }
+
+  return childId;
 }
 
-
-function requireJourneyId(
-  journeyId: string
-) {
-  if (
-    !journeyId
-  ) {
+function requireJourneyId(journeyId: string): void {
+  if (!journeyId || !journeyId.trim()) {
     throw new Error(
       "A journey ID is required to access journey data."
     );
   }
 }
 
-
-/*
- * ============================================================
- * FIRESTORE REFERENCES
- * ============================================================
- */
+// ============================================================
+// FIRESTORE REFERENCES
+// ============================================================
 
 function getChildRef(
   userId: string,
   childId: string
 ) {
-  requireUserId(
-    userId
-  );
-
-  requireChildId(
-    childId
-  );
-
+  requireUserId(userId);
+  const validChildId = requireChildId(childId);
 
   return doc(
     db,
     "users",
     userId,
     "children",
-    childId
+    validChildId
   );
 }
 
-
-function getChildrenCollection(
-  userId: string
-) {
-  requireUserId(
-    userId
-  );
-
+function getChildrenCollection(userId: string) {
+  requireUserId(userId);
 
   return collection(
     db,
@@ -254,93 +163,63 @@ function getChildrenCollection(
   );
 }
 
-
 function getChildCurrentJourneyRef(
   userId: string,
   childId: string
 ) {
-  requireUserId(
-    userId
-  );
-
-  requireChildId(
-    childId
-  );
-
+  requireUserId(userId);
+  const validChildId = requireChildId(childId);
 
   return doc(
     db,
     "users",
     userId,
     "children",
-    childId,
+    validChildId,
     "journeys",
     "current"
   );
 }
 
-
 function getPastJourneysCollection(
   userId: string,
   childId: string
 ) {
-  requireUserId(
-    userId
-  );
-
-  requireChildId(
-    childId
-  );
-
+  requireUserId(userId);
+  const validChildId = requireChildId(childId);
 
   return collection(
     db,
     "users",
     userId,
     "children",
-    childId,
+    validChildId,
     "pastJourneys"
   );
 }
-
 
 function getPastJourneyRef(
   userId: string,
   childId: string,
   journeyId: string
 ) {
-  requireUserId(
-    userId
-  );
-
-  requireChildId(
-    childId
-  );
-
-  requireJourneyId(
-    journeyId
-  );
-
+  requireUserId(userId);
+  const validChildId = requireChildId(childId);
+  requireJourneyId(journeyId);
 
   return doc(
     db,
     "users",
     userId,
     "children",
-    childId,
+    validChildId,
     "pastJourneys",
     journeyId
   );
 }
 
-
-function getLegacyCurrentJourneyRef(
-  userId: string
-) {
-  requireUserId(
-    userId
-  );
-
+function getLegacyCurrentJourneyRef(userId: string) {
+  requireUserId(userId);
 
   return doc(
     db,
@@ -351,179 +230,94 @@ function getLegacyCurrentJourneyRef(
   );
 }
 
-
-/*
- * ============================================================
- * NORMALIZE JOURNEY REASON
- * ============================================================
- */
+// ============================================================
+// NORMALIZATION
+// ============================================================
 
 function normalizeJourneyReason(
   value: unknown
-):
-  | JourneyReason
-  | undefined {
-
+): JourneyReason | undefined {
   if (
-    value ===
-      "initial" ||
-    value ===
-      "tasks_completed" ||
-    value ===
-      "manual_refresh"
+    value === "initial" ||
+    value === "tasks_completed" ||
+    value === "manual_refresh"
   ) {
     return value;
   }
 
-
   return undefined;
 }
 
-
-/*
- * ============================================================
- * NORMALIZE SAVED JOURNEY
- * ============================================================
- */
-
 function normalizeSavedJourney(
-  data:
-    Record<string, any>,
-  userId:
-    string
-):
-  SavedJourney | null {
-
-  if (
-    !data?.familyProfile ||
-    !data?.journey
-  ) {
+  data: Record<string, any>,
+  userId: string
+): SavedJourney | null {
+  if (!data?.familyProfile || !data?.journey) {
     console.warn(
       "Saved journey exists but is incomplete."
     );
-
     return null;
   }
 
-
-  /*
-   * Older Journeys may not have journeyId.
-   */
-
   const journeyId =
-    typeof data.journeyId ===
-      "string" &&
+    typeof data.journeyId === "string" &&
     data.journeyId.trim()
-
       ? data.journeyId.trim()
-
       : createJourneyId();
 
-
   const updatedAt =
-    typeof data.updatedAt ===
-      "number"
-
+    typeof data.updatedAt === "number"
       ? data.updatedAt
-
       : Date.now();
 
-
   const createdAt =
-    typeof data.createdAt ===
-      "number"
-
+    typeof data.createdAt === "number"
       ? data.createdAt
-
       : updatedAt;
-
 
   return {
     journeyId,
-
-    familyProfile:
-      data.familyProfile as
-        FamilyProfile,
-
-    journey:
-      data.journey as
-        PersonalizedJourney,
-
+    familyProfile: data.familyProfile as FamilyProfile,
+    journey: data.journey as PersonalizedJourney,
     updatedAt,
-
     createdAt,
-
     createdBy:
-      typeof data.createdBy ===
-        "string"
-
+      typeof data.createdBy === "string"
         ? data.createdBy
-
         : userId,
-
     stageNumber:
-      typeof data.stageNumber ===
-        "number" &&
-      data.stageNumber >=
-        1
-
+      typeof data.stageNumber === "number" &&
+      data.stageNumber >= 1
         ? data.stageNumber
-
         : 1,
-
     previousCompletedTaskIds:
-      Array.isArray(
-        data.previousCompletedTaskIds
-      )
-
+      Array.isArray(data.previousCompletedTaskIds)
         ? data.previousCompletedTaskIds
-
         : undefined,
-
-    journeyReason:
-      normalizeJourneyReason(
-        data.journeyReason
-      ),
+    journeyReason: normalizeJourneyReason(
+      data.journeyReason
+    ),
   };
 }
 
-
-/*
- * ============================================================
- * GET CURRENT JOURNEY
- * ============================================================
- */
+// ============================================================
+// GET CURRENT JOURNEY
+// ============================================================
 
 export async function getCurrentJourney(
   userId: string,
   childId: string
-):
-  Promise<SavedJourney | null> {
+): Promise<SavedJourney | null> {
+  requireUserId(userId);
+  requireChildId(childId);
 
-  requireUserId(
-    userId
+  const snapshot = await getDoc(
+    getChildCurrentJourneyRef(userId, childId)
   );
 
-  requireChildId(
-    childId
-  );
-
-
-  const snapshot =
-    await getDoc(
-      getChildCurrentJourneyRef(
-        userId,
-        childId
-      )
-    );
-
-
-  if (
-    !snapshot.exists()
-  ) {
+  if (!snapshot.exists()) {
     return null;
   }
-
 
   return normalizeSavedJourney(
     snapshot.data(),
@@ -531,43 +325,22 @@ export async function getCurrentJourney(
   );
 }
 
-
-/*
- * ============================================================
- * GET LEGACY CURRENT JOURNEY
- * ============================================================
- *
- * Used only so existing accounts can migrate from:
- *
- * users/{uid}/journeys/current
- *
- * ============================================================
- */
+// ============================================================
+// GET LEGACY CURRENT JOURNEY
+// ============================================================
 
 export async function getLegacyCurrentJourney(
   userId: string
-):
-  Promise<SavedJourney | null> {
+): Promise<SavedJourney | null> {
+  requireUserId(userId);
 
-  requireUserId(
-    userId
+  const snapshot = await getDoc(
+    getLegacyCurrentJourneyRef(userId)
   );
 
-
-  const snapshot =
-    await getDoc(
-      getLegacyCurrentJourneyRef(
-        userId
-      )
-    );
-
-
-  if (
-    !snapshot.exists()
-  ) {
+  if (!snapshot.exists()) {
     return null;
   }
-
 
   return normalizeSavedJourney(
     snapshot.data(),
@@ -575,1173 +348,596 @@ export async function getLegacyCurrentJourney(
   );
 }
 
-
-/*
- * ============================================================
- * GET SAVED CHILDREN
- * ============================================================
- */
+// ============================================================
+// GET SAVED CHILDREN
+// ============================================================
 
 export async function getSavedChildren(
   userId: string
-):
-  Promise<SavedChild[]> {
+): Promise<SavedChild[]> {
+  requireUserId(userId);
 
-  requireUserId(
-    userId
+  const childrenQuery = query(
+    getChildrenCollection(userId),
+    orderBy("updatedAt", "desc")
   );
 
-
-  const childrenQuery =
-    query(
-      getChildrenCollection(
-        userId
-      ),
-
-      orderBy(
-        "updatedAt",
-        "desc"
-      )
-    );
-
-
-  const snapshot =
-    await getDocs(
-      childrenQuery
-    );
-
+  const snapshot = await getDocs(childrenQuery);
 
   return snapshot.docs
-    .map(
-      (
-        childDocument
-      ):
-        SavedChild | null => {
+    .map((childDocument): SavedChild | null => {
+      const data = childDocument.data();
 
-        const data =
-          childDocument.data();
-
-
-        if (
-          !data?.familyProfile
-        ) {
-          return null;
-        }
-
-
-        const storedProfile =
-          data.familyProfile as
-            Partial<FamilyProfile>;
-
-
-        const familyProfile:
-          FamilyProfile = {
-
-          childId:
-            typeof storedProfile.childId ===
-              "string" &&
-            storedProfile.childId
-
-              ? storedProfile.childId
-
-              : childDocument.id,
-
-          childName:
-            typeof storedProfile.childName ===
-              "string"
-
-              ? storedProfile.childName
-
-              : "",
-
-          childAge:
-            typeof storedProfile.childAge ===
-              "string"
-
-              ? storedProfile.childAge
-
-              : "",
-
-          state:
-            typeof storedProfile.state ===
-              "string"
-
-              ? storedProfile.state
-
-              : "",
-
-          journeyStage:
-            typeof storedProfile.journeyStage ===
-              "string"
-
-              ? storedProfile.journeyStage
-
-              : "",
-
-          supports:
-            Array.isArray(
-              storedProfile.supports
-            )
-
-              ? storedProfile.supports
-
-              : [],
-
-          priority:
-            typeof storedProfile.priority ===
-              "string"
-
-              ? storedProfile.priority
-
-              : "",
-
-          insurance:
-            typeof storedProfile.insurance ===
-              "string"
-
-              ? storedProfile.insurance
-
-              : "",
-
-          notes:
-            typeof storedProfile.notes ===
-              "string"
-
-              ? storedProfile.notes
-
-              : "",
-        };
-
-
-        return {
-          childId:
-            childDocument.id,
-
-          familyProfile,
-
-          updatedAt:
-            typeof data.updatedAt ===
-              "number"
-
-              ? data.updatedAt
-
-              : 0,
-        };
+      if (!data?.familyProfile) {
+        return null;
       }
-    )
+
+      const storedProfile =
+        data.familyProfile as Partial<FamilyProfile>;
+
+      const familyProfile: FamilyProfile = {
+        childId:
+          typeof storedProfile.childId === "string" &&
+          storedProfile.childId
+            ? storedProfile.childId
+            : childDocument.id,
+
+        childName:
+          typeof storedProfile.childName === "string"
+            ? storedProfile.childName
+            : "",
+
+        childAge:
+          typeof storedProfile.childAge === "string"
+            ? storedProfile.childAge
+            : "",
+
+        state:
+          typeof storedProfile.state === "string"
+            ? storedProfile.state
+            : "",
+
+        journeyStage:
+          typeof storedProfile.journeyStage === "string"
+            ? storedProfile.journeyStage
+            : "",
+
+        supports: Array.isArray(storedProfile.supports)
+          ? storedProfile.supports
+          : [],
+
+        priority:
+          typeof storedProfile.priority === "string"
+            ? storedProfile.priority
+            : "",
+
+        insurance:
+          typeof storedProfile.insurance === "string"
+            ? storedProfile.insurance
+            : "",
+
+        notes:
+          typeof storedProfile.notes === "string"
+            ? storedProfile.notes
+            : "",
+      };
+
+      return {
+        childId: childDocument.id,
+        familyProfile,
+        updatedAt:
+          typeof data.updatedAt === "number"
+            ? data.updatedAt
+            : 0,
+      };
+    })
     .filter(
-      (
-        child
-      ):
-        child is SavedChild =>
-        child !== null
+      (child): child is SavedChild => child !== null
     );
 }
 
-
-/*
- * ============================================================
- * SAVE CHILD RECORD
- * ============================================================
- */
+// ============================================================
+// SAVE CHILD RECORD
+// ============================================================
 
 async function saveChildRecord(
   userId: string,
-  familyProfile:
-    FamilyProfile
-):
-  Promise<void> {
+  familyProfile: FamilyProfile
+): Promise<void> {
+  requireUserId(userId);
 
-  requireUserId(
-    userId
-  );
-
-  requireChildId(
+  const childId = requireChildId(
     familyProfile.childId
   );
 
-
   await setDoc(
-    getChildRef(
-      userId,
-      familyProfile.childId
-    ),
+    getChildRef(userId, childId),
     {
-      childId:
-        familyProfile.childId,
-
+      childId,
       familyProfile,
-
-      updatedAt:
-        Date.now(),
-
-      createdBy:
-        userId,
+      updatedAt: Date.now(),
+      createdBy: userId,
     },
     {
-      merge:
-        true,
+      merge: true,
     }
   );
 }
 
-
-/*
- * ============================================================
- * SAVE CURRENT JOURNEY
- * ============================================================
- */
+// ============================================================
+// SAVE CURRENT JOURNEY
+// ============================================================
 
 export async function saveCurrentJourney(
   userId: string,
-  familyProfile:
-    FamilyProfile,
-  journey:
-    PersonalizedJourney,
+  familyProfile: FamilyProfile,
+  journey: PersonalizedJourney,
   options?: {
-    stageNumber?:
-      number;
-
-    previousCompletedTaskIds?:
-      string[];
-
-    journeyReason?:
-      JourneyReason;
-
-    journeyId?:
-      string;
+    stageNumber?: number;
+    previousCompletedTaskIds?: string[];
+    journeyReason?: JourneyReason;
+    journeyId?: string;
   }
-):
-  Promise<SavedJourney> {
+): Promise<SavedJourney> {
+  requireUserId(userId);
 
-  requireUserId(
-    userId
-  );
-
-  requireChildId(
+  const childId = requireChildId(
     familyProfile.childId
   );
 
+  const currentRef = getChildCurrentJourneyRef(
+    userId,
+    childId
+  );
 
-  const currentRef =
-    getChildCurrentJourneyRef(
-      userId,
-      familyProfile.childId
+  // Preserve existing journey ID whenever possible.
+  const existingSnapshot = await getDoc(currentRef);
+
+  let existingJourney: SavedJourney | null = null;
+
+  if (existingSnapshot.exists()) {
+    existingJourney = normalizeSavedJourney(
+      existingSnapshot.data(),
+      userId
     );
-
-
-  /*
-   * Preserve the current journeyId whenever possible.
-   */
-
-  const existingSnapshot =
-    await getDoc(
-      currentRef
-    );
-
-
-  let existingJourney:
-    SavedJourney | null =
-    null;
-
-
-  if (
-    existingSnapshot.exists()
-  ) {
-    existingJourney =
-      normalizeSavedJourney(
-        existingSnapshot.data(),
-        userId
-      );
   }
-
 
   const journeyId =
     options?.journeyId ||
     existingJourney?.journeyId ||
     createJourneyId();
 
-
-  const now =
-    Date.now();
-
+  const now = Date.now();
 
   const stageNumber =
     options?.stageNumber &&
-    Number.isInteger(
-      options.stageNumber
-    ) &&
-    options.stageNumber >=
-      1
-
+    Number.isInteger(options.stageNumber) &&
+    options.stageNumber >= 1
       ? options.stageNumber
-
-      : existingJourney?.stageNumber ||
-        1;
-
+      : existingJourney?.stageNumber || 1;
 
   const createdAt =
-    existingJourney?.createdAt ||
-    now;
+    existingJourney?.createdAt || now;
 
-
-  const savedJourney:
-    SavedJourney = {
-
+  const savedJourney: SavedJourney = {
     journeyId,
-
     familyProfile,
-
     journey,
-
-    updatedAt:
-      now,
-
+    updatedAt: now,
     createdAt,
-
-    createdBy:
-      userId,
-
+    createdBy: userId,
     stageNumber,
-
     previousCompletedTaskIds:
       options?.previousCompletedTaskIds ??
-      existingJourney
-        ?.previousCompletedTaskIds,
-
+      existingJourney?.previousCompletedTaskIds,
     journeyReason:
       options?.journeyReason ??
-      existingJourney
-        ?.journeyReason,
+      existingJourney?.journeyReason,
   };
 
-
-  const firestoreData:
-    Record<string, unknown> = {
-
-    journeyId:
-      savedJourney.journeyId,
-
-    familyProfile:
-      savedJourney.familyProfile,
-
-    journey:
-      savedJourney.journey,
-
-    updatedAt:
-      savedJourney.updatedAt,
-
-    createdAt:
-      savedJourney.createdAt,
-
-    createdBy:
-      savedJourney.createdBy,
-
-    stageNumber:
-      savedJourney.stageNumber,
+  const firestoreData: Record<string, unknown> = {
+    journeyId: savedJourney.journeyId,
+    familyProfile: savedJourney.familyProfile,
+    journey: savedJourney.journey,
+    updatedAt: savedJourney.updatedAt,
+    createdAt: savedJourney.createdAt,
+    createdBy: savedJourney.createdBy,
+    stageNumber: savedJourney.stageNumber,
   };
 
-
-  if (
-    savedJourney
-      .previousCompletedTaskIds
-  ) {
+  if (savedJourney.previousCompletedTaskIds) {
     firestoreData.previousCompletedTaskIds =
-      savedJourney
-        .previousCompletedTaskIds;
+      savedJourney.previousCompletedTaskIds;
   }
 
-
-  if (
-    savedJourney
-      .journeyReason
-  ) {
+  if (savedJourney.journeyReason) {
     firestoreData.journeyReason =
-      savedJourney
-        .journeyReason;
+      savedJourney.journeyReason;
   }
 
-
-  /*
-   * Save child record first.
-   */
-
-  await saveChildRecord(
-    userId,
-    familyProfile
-  );
-
-
-  /*
-   * Save active Journey.
-   */
+  // Save the child record before the active journey.
+  await saveChildRecord(userId, familyProfile);
 
   await setDoc(
     currentRef,
     firestoreData,
-    {
-      merge:
-        true,
-    }
+    { merge: true }
   );
-
 
   return savedJourney;
 }
 
-
-/*
- * ============================================================
- * SAVE TASK PROGRESS
- * ============================================================
- */
+// ============================================================
+// SAVE TASK PROGRESS
+// ============================================================
 
 export async function saveTaskProgress(
   userId: string,
-  familyProfile:
-    FamilyProfile,
-  journey:
-    PersonalizedJourney,
+  familyProfile: FamilyProfile,
+  journey: PersonalizedJourney,
   options?: {
-    stageNumber?:
-      number;
-
-    journeyReason?:
-      JourneyReason;
+    stageNumber?: number;
+    journeyReason?: JourneyReason;
   }
-):
-  Promise<void> {
+): Promise<void> {
+  requireUserId(userId);
 
-  requireUserId(
-    userId
-  );
-
-  requireChildId(
+  const childId = requireChildId(
     familyProfile.childId
   );
 
+  const currentRef = getChildCurrentJourneyRef(
+    userId,
+    childId
+  );
 
-  const currentRef =
-    getChildCurrentJourneyRef(
-      userId,
-      familyProfile.childId
-    );
+  // Keep the existing journey ID when tasks change.
+  const existingSnapshot = await getDoc(currentRef);
 
-
-  /*
-   * Load existing active Journey so we do not accidentally
-   * create a new journeyId when a checkbox changes.
-   */
-
-  const existingSnapshot =
-    await getDoc(
-      currentRef
-    );
-
-
-  const existingJourney =
-    existingSnapshot.exists()
-
-      ? normalizeSavedJourney(
-          existingSnapshot.data(),
-          userId
-        )
-
-      : null;
-
+  const existingJourney = existingSnapshot.exists()
+    ? normalizeSavedJourney(
+        existingSnapshot.data(),
+        userId
+      )
+    : null;
 
   const journeyId =
-    existingJourney
-      ?.journeyId ||
+    existingJourney?.journeyId ||
     createJourneyId();
-
 
   const stageNumber =
     options?.stageNumber &&
-    Number.isInteger(
-      options.stageNumber
-    ) &&
-    options.stageNumber >=
-      1
-
+    Number.isInteger(options.stageNumber) &&
+    options.stageNumber >= 1
       ? options.stageNumber
+      : existingJourney?.stageNumber || 1;
 
-      : existingJourney
-          ?.stageNumber ||
-        1;
+  const now = Date.now();
 
-
-  const now =
-    Date.now();
-
-
-  await saveChildRecord(
-    userId,
-    familyProfile
-  );
-
+  await saveChildRecord(userId, familyProfile);
 
   await setDoc(
     currentRef,
     {
       journeyId,
-
       familyProfile,
-
       journey,
-
-      updatedAt:
-        now,
-
-      createdAt:
-        existingJourney
-          ?.createdAt ||
-        now,
-
-      createdBy:
-        userId,
-
+      updatedAt: now,
+      createdAt: existingJourney?.createdAt || now,
+      createdBy: userId,
       stageNumber,
 
-      ...(options
-        ?.journeyReason
-
+      ...(options?.journeyReason
+        ? {
+            journeyReason: options.journeyReason,
+          }
+        : existingJourney?.journeyReason
         ? {
             journeyReason:
-              options
-                .journeyReason,
+              existingJourney.journeyReason,
           }
-
-        : existingJourney
-            ?.journeyReason
-
-          ? {
-              journeyReason:
-                existingJourney
-                  .journeyReason,
-            }
-
-          : {}),
+        : {}),
     },
     {
-      merge:
-        true,
+      merge: true,
     }
   );
 }
 
-
-/*
- * ============================================================
- * ARCHIVE CURRENT JOURNEY
- * ============================================================
- *
- * Called only when the family intentionally chooses:
- *
- * Start a New Journey
- *
- * The active Journey is copied to Past Journeys and then
- * journeys/current is deleted.
- *
- * The next saved Journey will therefore receive a NEW
- * journeyId.
- * ============================================================
- */
+// ============================================================
+// ARCHIVE CURRENT JOURNEY
+// ============================================================
 
 export async function archiveCurrentJourney(
   userId: string,
   childId: string
-):
-  Promise<ArchivedJourney | null> {
+): Promise<ArchivedJourney | null> {
+  requireUserId(userId);
+  requireChildId(childId);
 
-  requireUserId(
-    userId
-  );
-
-  requireChildId(
+  const currentRef = getChildCurrentJourneyRef(
+    userId,
     childId
   );
 
+  const currentSnapshot = await getDoc(currentRef);
 
-  const currentRef =
-    getChildCurrentJourneyRef(
-      userId,
-      childId
-    );
-
-
-  const currentSnapshot =
-    await getDoc(
-      currentRef
-    );
-
-
-  if (
-    !currentSnapshot.exists()
-  ) {
+  if (!currentSnapshot.exists()) {
     return null;
   }
 
+  const currentJourney = normalizeSavedJourney(
+    currentSnapshot.data(),
+    userId
+  );
 
-  const currentJourney =
-    normalizeSavedJourney(
-      currentSnapshot.data(),
-      userId
-    );
-
-
-  if (
-    !currentJourney
-  ) {
+  if (!currentJourney) {
     return null;
   }
 
-
-  const archivedJourney:
-    ArchivedJourney = {
-
-    journeyId:
-      currentJourney
-        .journeyId,
-
-    familyProfile:
-      currentJourney
-        .familyProfile,
-
-    journey:
-      currentJourney
-        .journey,
-
-    stageNumber:
-      currentJourney
-        .stageNumber,
-
+  const archivedJourney: ArchivedJourney = {
+    journeyId: currentJourney.journeyId,
+    familyProfile: currentJourney.familyProfile,
+    journey: currentJourney.journey,
+    stageNumber: currentJourney.stageNumber,
     previousCompletedTaskIds:
-      currentJourney
-        .previousCompletedTaskIds,
-
-    journeyReason:
-      currentJourney
-        .journeyReason,
-
-    createdAt:
-      currentJourney
-        .createdAt,
-
-    updatedAt:
-      currentJourney
-        .updatedAt,
-
-    archivedAt:
-      Date.now(),
-
-    createdBy:
-      currentJourney
-        .createdBy,
+      currentJourney.previousCompletedTaskIds,
+    journeyReason: currentJourney.journeyReason,
+    createdAt: currentJourney.createdAt,
+    updatedAt: currentJourney.updatedAt,
+    archivedAt: Date.now(),
+    createdBy: currentJourney.createdBy,
   };
 
-
-  const archiveData:
-    Record<string, unknown> = {
-
-    journeyId:
-      archivedJourney
-        .journeyId,
-
-    familyProfile:
-      archivedJourney
-        .familyProfile,
-
-    journey:
-      archivedJourney
-        .journey,
-
-    stageNumber:
-      archivedJourney
-        .stageNumber,
-
-    createdAt:
-      archivedJourney
-        .createdAt,
-
-    updatedAt:
-      archivedJourney
-        .updatedAt,
-
-    archivedAt:
-      archivedJourney
-        .archivedAt,
-
-    createdBy:
-      archivedJourney
-        .createdBy,
+  const archiveData: Record<string, unknown> = {
+    journeyId: archivedJourney.journeyId,
+    familyProfile: archivedJourney.familyProfile,
+    journey: archivedJourney.journey,
+    stageNumber: archivedJourney.stageNumber,
+    createdAt: archivedJourney.createdAt,
+    updatedAt: archivedJourney.updatedAt,
+    archivedAt: archivedJourney.archivedAt,
+    createdBy: archivedJourney.createdBy,
   };
 
-
-  if (
-    archivedJourney
-      .previousCompletedTaskIds
-  ) {
+  if (archivedJourney.previousCompletedTaskIds) {
     archiveData.previousCompletedTaskIds =
-      archivedJourney
-        .previousCompletedTaskIds;
+      archivedJourney.previousCompletedTaskIds;
   }
 
-
-  if (
-    archivedJourney
-      .journeyReason
-  ) {
+  if (archivedJourney.journeyReason) {
     archiveData.journeyReason =
-      archivedJourney
-        .journeyReason;
+      archivedJourney.journeyReason;
   }
 
-
-  /*
-   * Save archive.
-   */
-
+  // Save the archived journey first.
   await setDoc(
     getPastJourneyRef(
       userId,
       childId,
-      currentJourney
-        .journeyId
+      currentJourney.journeyId
     ),
     archiveData
   );
 
-
-  /*
-   * CRITICAL:
-   *
-   * Remove the old current Journey.
-   *
-   * Otherwise saveCurrentJourney() would see the old current
-   * document and reuse its journeyId when the family starts over.
-   */
-
-  await deleteDoc(
-    currentRef
-  );
-
+  // Remove the active journey so the next journey
+  // receives a new journey ID.
+  await deleteDoc(currentRef);
 
   return archivedJourney;
 }
 
-
-/*
- * ============================================================
- * GET PAST JOURNEYS
- * ============================================================
- */
+// ============================================================
+// GET PAST JOURNEYS
+// ============================================================
 
 export async function getPastJourneys(
   userId: string,
   childId: string
-):
-  Promise<ArchivedJourney[]> {
+): Promise<ArchivedJourney[]> {
+  requireUserId(userId);
+  requireChildId(childId);
 
-  requireUserId(
-    userId
+  const pastQuery = query(
+    getPastJourneysCollection(userId, childId),
+    orderBy("archivedAt", "desc")
   );
 
-  requireChildId(
-    childId
-  );
-
-
-  const pastQuery =
-    query(
-      getPastJourneysCollection(
-        userId,
-        childId
-      ),
-
-      orderBy(
-        "archivedAt",
-        "desc"
-      )
-    );
-
-
-  const snapshot =
-    await getDocs(
-      pastQuery
-    );
-
+  const snapshot = await getDocs(pastQuery);
 
   return snapshot.docs
-    .map(
-      (
-        journeyDocument
-      ):
-        ArchivedJourney | null => {
+    .map((journeyDocument): ArchivedJourney | null => {
+      const data = journeyDocument.data();
 
-        const data =
-          journeyDocument.data();
-
-
-        if (
-          !data?.familyProfile ||
-          !data?.journey
-        ) {
-          return null;
-        }
-
-
-        return {
-          journeyId:
-            typeof data.journeyId ===
-              "string" &&
-            data.journeyId
-
-              ? data.journeyId
-
-              : journeyDocument.id,
-
-          familyProfile:
-            data.familyProfile as
-              FamilyProfile,
-
-          journey:
-            data.journey as
-              PersonalizedJourney,
-
-          stageNumber:
-            typeof data.stageNumber ===
-              "number" &&
-            data.stageNumber >=
-              1
-
-              ? data.stageNumber
-
-              : 1,
-
-          previousCompletedTaskIds:
-            Array.isArray(
-              data.previousCompletedTaskIds
-            )
-
-              ? data.previousCompletedTaskIds
-
-              : undefined,
-
-          journeyReason:
-            normalizeJourneyReason(
-              data.journeyReason
-            ),
-
-          createdAt:
-            typeof data.createdAt ===
-              "number"
-
-              ? data.createdAt
-
-              : 0,
-
-          updatedAt:
-            typeof data.updatedAt ===
-              "number"
-
-              ? data.updatedAt
-
-              : 0,
-
-          archivedAt:
-            typeof data.archivedAt ===
-              "number"
-
-              ? data.archivedAt
-
-              : 0,
-
-          createdBy:
-            typeof data.createdBy ===
-              "string"
-
-              ? data.createdBy
-
-              : userId,
-        };
+      if (!data?.familyProfile || !data?.journey) {
+        return null;
       }
-    )
+
+      return {
+        journeyId:
+          typeof data.journeyId === "string" &&
+          data.journeyId
+            ? data.journeyId
+            : journeyDocument.id,
+
+        familyProfile:
+          data.familyProfile as FamilyProfile,
+
+        journey:
+          data.journey as PersonalizedJourney,
+
+        stageNumber:
+          typeof data.stageNumber === "number" &&
+          data.stageNumber >= 1
+            ? data.stageNumber
+            : 1,
+
+        previousCompletedTaskIds:
+          Array.isArray(data.previousCompletedTaskIds)
+            ? data.previousCompletedTaskIds
+            : undefined,
+
+        journeyReason: normalizeJourneyReason(
+          data.journeyReason
+        ),
+
+        createdAt:
+          typeof data.createdAt === "number"
+            ? data.createdAt
+            : 0,
+
+        updatedAt:
+          typeof data.updatedAt === "number"
+            ? data.updatedAt
+            : 0,
+
+        archivedAt:
+          typeof data.archivedAt === "number"
+            ? data.archivedAt
+            : 0,
+
+        createdBy:
+          typeof data.createdBy === "string"
+            ? data.createdBy
+            : userId,
+      };
+    })
     .filter(
-      (
-        journey
-      ):
-        journey is ArchivedJourney =>
+      (journey): journey is ArchivedJourney =>
         journey !== null
     );
 }
 
-
-/*
- * ============================================================
- * GET ONE PAST JOURNEY
- * ============================================================
- */
+// ============================================================
+// GET ONE PAST JOURNEY
+// ============================================================
 
 export async function getPastJourney(
   userId: string,
   childId: string,
   journeyId: string
-):
-  Promise<ArchivedJourney | null> {
+): Promise<ArchivedJourney | null> {
+  requireUserId(userId);
+  requireChildId(childId);
+  requireJourneyId(journeyId);
 
-  requireUserId(
-    userId
+  const snapshot = await getDoc(
+    getPastJourneyRef(
+      userId,
+      childId,
+      journeyId
+    )
   );
 
-  requireChildId(
-    childId
-  );
-
-  requireJourneyId(
-    journeyId
-  );
-
-
-  const snapshot =
-    await getDoc(
-      getPastJourneyRef(
-        userId,
-        childId,
-        journeyId
-      )
-    );
-
-
-  if (
-    !snapshot.exists()
-  ) {
+  if (!snapshot.exists()) {
     return null;
   }
 
+  const data = snapshot.data();
 
-  const data =
-    snapshot.data();
-
-
-  if (
-    !data?.familyProfile ||
-    !data?.journey
-  ) {
+  if (!data?.familyProfile || !data?.journey) {
     return null;
   }
-
 
   return {
     journeyId:
-      typeof data.journeyId ===
-        "string" &&
+      typeof data.journeyId === "string" &&
       data.journeyId
-
         ? data.journeyId
-
         : journeyId,
 
     familyProfile:
-      data.familyProfile as
-        FamilyProfile,
+      data.familyProfile as FamilyProfile,
 
     journey:
-      data.journey as
-        PersonalizedJourney,
+      data.journey as PersonalizedJourney,
 
     stageNumber:
-      typeof data.stageNumber ===
-        "number" &&
-      data.stageNumber >=
-        1
-
+      typeof data.stageNumber === "number" &&
+      data.stageNumber >= 1
         ? data.stageNumber
-
         : 1,
 
     previousCompletedTaskIds:
-      Array.isArray(
-        data.previousCompletedTaskIds
-      )
-
+      Array.isArray(data.previousCompletedTaskIds)
         ? data.previousCompletedTaskIds
-
         : undefined,
 
-    journeyReason:
-      normalizeJourneyReason(
-        data.journeyReason
-      ),
+    journeyReason: normalizeJourneyReason(
+      data.journeyReason
+    ),
 
     createdAt:
-      typeof data.createdAt ===
-        "number"
-
+      typeof data.createdAt === "number"
         ? data.createdAt
-
         : 0,
 
     updatedAt:
-      typeof data.updatedAt ===
-        "number"
-
+      typeof data.updatedAt === "number"
         ? data.updatedAt
-
         : 0,
 
     archivedAt:
-      typeof data.archivedAt ===
-        "number"
-
+      typeof data.archivedAt === "number"
         ? data.archivedAt
-
         : 0,
 
     createdBy:
-      typeof data.createdBy ===
-        "string"
-
+      typeof data.createdBy === "string"
         ? data.createdBy
-
         : userId,
   };
 }
-/*
- * ============================================================
- * DELETE CHILD JOURNEY DATA
- * ============================================================
- *
- * Permanently removes the Firestore data currently managed by
- * this repository for one child.
- *
- * IMPORTANT:
- *
- * Firestore does not automatically delete subcollections when
- * a parent document is deleted.
- *
- * Therefore deletion happens from the inside out:
- *
- * 1. Delete every Past Journey.
- * 2. Delete the active Journey.
- * 3. Delete the child record.
- *
- * This implementation intentionally uses the normal Firebase
- * client SDK instead of Firebase Admin.
- *
- * Firestore Security Rules remain responsible for ensuring that
- * the signed-in user can delete only data belonging to their
- * own account.
- *
- * This function deletes only child-scoped data whose Firestore
- * location is currently defined by this repository.
- * ============================================================
- */
 
+// ============================================================
+// DELETE CHILD JOURNEY DATA
+// ============================================================
+
+/**
+ * Deletes child-scoped journey data in the correct order:
+ *
+ * 1. Past journeys
+ * 2. Current journey
+ * 3. Child record
+ *
+ * Firestore does not automatically delete subcollections
+ * when a parent document is deleted.
+ *
+ * Firebase Security Rules remain responsible for
+ * enforcing account-level access permissions.
+ */
 export async function deleteChildJourneyData(
   userId: string,
   childId: string
-):
-  Promise<void> {
+): Promise<void> {
+  requireUserId(userId);
+  requireChildId(childId);
 
-  /*
-   * ----------------------------------------------------------
-   * VALIDATE REQUIRED IDS
-   * ----------------------------------------------------------
-   */
+  const childRef = getChildRef(userId, childId);
 
-  requireUserId(
-    userId
-  );
+  const childSnapshot = await getDoc(childRef);
 
-  requireChildId(
-    childId
-  );
-
-
-  /*
-   * ----------------------------------------------------------
-   * CONFIRM CHILD EXISTS
-   * ----------------------------------------------------------
-   *
-   * This prevents the UI from reporting a successful deletion
-   * when the selected child no longer exists.
-   */
-
-  const childRef =
-    getChildRef(
-      userId,
-      childId
-    );
-
-
-  const childSnapshot =
-    await getDoc(
-      childRef
-    );
-
-
-  if (
-    !childSnapshot.exists()
-  ) {
+  if (!childSnapshot.exists()) {
     throw new Error(
       "This child could not be found."
     );
   }
 
+  // Delete all archived journeys.
+  const pastJourneysSnapshot = await getDocs(
+    getPastJourneysCollection(userId, childId)
+  );
 
-  /*
-   * ----------------------------------------------------------
-   * DELETE PAST JOURNEYS
-   * ----------------------------------------------------------
-   *
-   * Path:
-   *
-   * users/{userId}/children/{childId}/pastJourneys/{journeyId}
-   *
-   * Deleting the child parent document would NOT automatically
-   * remove these documents, so they must be removed first.
-   */
-
-  const pastJourneysSnapshot =
-    await getDocs(
-      getPastJourneysCollection(
-        userId,
-        childId
-      )
-    );
-
-
-  if (
-    !pastJourneysSnapshot.empty
-  ) {
+  if (!pastJourneysSnapshot.empty) {
     await Promise.all(
       pastJourneysSnapshot.docs.map(
-        (
-          journeyDocument
-        ) =>
-          deleteDoc(
-            journeyDocument.ref
-          )
+        (journeyDocument) =>
+          deleteDoc(journeyDocument.ref)
       )
     );
   }
 
-
-  /*
-   * ----------------------------------------------------------
-   * DELETE ACTIVE JOURNEY
-   * ----------------------------------------------------------
-   *
-   * Path:
-   *
-   * users/{userId}/children/{childId}/journeys/current
-   *
-   * deleteDoc() is safe when the document does not exist, so
-   * this also works for an unfinished child that never received
-   * a generated Journey.
-   */
-
+  // Delete the active journey.
   await deleteDoc(
     getChildCurrentJourneyRef(
       userId,
@@ -1749,24 +945,6 @@ export async function deleteChildJourneyData(
     )
   );
 
-
-  /*
-   * ----------------------------------------------------------
-   * DELETE CHILD RECORD
-   * ----------------------------------------------------------
-   *
-   * This is deliberately last.
-   *
-   * getSavedChildren() reads the documents directly beneath:
-   *
-   * users/{userId}/children
-   *
-   * Once this document is removed, the child will disappear
-   * from the Child Journey dropdown after the UI refreshes its
-   * saved-child list.
-   */
-
-  await deleteDoc(
-    childRef
-  );
+  // Delete the child record last.
+  await deleteDoc(childRef);
 }
