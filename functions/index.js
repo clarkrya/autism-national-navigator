@@ -63,6 +63,8 @@ exports.sendFamilyTeamInvitation = onDocumentCreated(
     ).slice(0, 100);
 
     const safeRelationship = escapeHtml(relationship);
+    const invitationUrl =
+      `${WEBSITE_URL}/family-organizer/invitations`;
 
     const ses = new SESv2Client({
       region: SES_REGION,
@@ -72,50 +74,152 @@ exports.sendFamilyTeamInvitation = onDocumentCreated(
       },
     });
 
-    const subject = "You're invited to join a Family Team on Autivoya";
+    const subject =
+      "You're Invited to Join a Family Team on Autivoya";
 
     const html = `
-      <div style="background:#F7FAFB;padding:32px 16px;font-family:Arial,sans-serif;">
-        <div style="max-width:560px;margin:auto;background:#FFFFFF;border:1px solid #DCE7EC;border-radius:12px;padding:32px;">
-          <h1 style="color:#204D6A;margin-top:0;">Autivoya</h1>
-          <h2 style="color:#173B52;">You're invited!</h2>
-          <p style="color:#334155;line-height:1.7;">
-            Someone has invited you to join their Family Team on Autivoya
-            as a ${safeRelationship}.
-          </p>
-          <p style="color:#334155;line-height:1.7;">
-            Autivoya helps families organize information, coordinate
-            support, and navigate their journeys together.
-          </p>
-          <p style="margin:28px 0;">
-            <a href="${WEBSITE_URL}/family-organizer/invitations"
-               style="background:#317E7B;color:#FFFFFF;padding:14px 22px;text-decoration:none;border-radius:8px;display:inline-block;">
-              View Your Invitation
-            </a>
-          </p>
-          <p style="color:#64748B;font-size:13px;line-height:1.6;">
-            Sign in using the email address that received this invitation.
-            If you weren't expecting it, you can ignore this email.
-          </p>
-          <hr style="border:0;border-top:1px solid #DCE7EC;margin:24px 0;" />
-          <p style="color:#64748B;font-size:12px;">
-            Autivoya · Supporting families on their journeys
-          </p>
+      <div style="margin:0;padding:32px 16px;background:#F7FAFB;font-family:Arial,Helvetica,sans-serif;">
+        <div style="max-width:600px;margin:0 auto;background:#FFFFFF;border:1px solid #DCE7EC;border-radius:12px;overflow:hidden;">
+
+          <div style="height:6px;background:#F7AD3F;"></div>
+
+          <div style="padding:28px 32px;background:#EAF6F5;text-align:center;">
+            <h1 style="margin:0;color:#204D6A;font-size:32px;letter-spacing:-0.5px;">
+              Autivoya
+            </h1>
+            <p style="margin:10px 0 0;color:#317E7B;font-size:15px;font-weight:bold;">
+              Every journey is unique. No family should navigate it alone.
+            </p>
+          </div>
+
+          <div style="padding:32px;">
+
+            <h2 style="margin:0 0 12px;color:#173B52;font-size:25px;line-height:1.3;">
+              You've been invited to join a Family Team!
+            </h2>
+
+            <p style="color:#334155;font-size:16px;line-height:1.7;">
+              Someone you know has invited you to join their
+              Family Team on <strong>Autivoya</strong> as a
+              <strong>${safeRelationship}</strong>.
+            </p>
+
+            <h3 style="color:#204D6A;font-size:18px;margin:28px 0 10px;">
+              What is Autivoya?
+            </h3>
+
+            <p style="color:#334155;font-size:15px;line-height:1.8;">
+              Autivoya is a family support platform designed to
+              help parents, caregivers, and loved ones navigate
+              the autism journey together.
+            </p>
+
+            <p style="color:#334155;font-size:15px;line-height:1.8;">
+              From organizing important information and tracking
+              milestones to coordinating care and everyday support,
+              Autivoya helps families stay connected and informed
+              throughout their journey.
+            </p>
+
+            <h3 style="color:#204D6A;font-size:18px;margin:28px 0 10px;">
+              What does joining a Family Team mean?
+            </h3>
+
+            <p style="color:#334155;font-size:15px;line-height:1.8;">
+              A Family Team brings trusted family members and
+              caregivers together in one shared space.
+              Once you accept your invitation, you can collaborate
+              through the Family Organizer tools based on the
+              access provided to you.
+            </p>
+
+            <div style="background:#F7FAFB;border:1px solid #DCE7EC;border-radius:10px;padding:20px;margin:28px 0;">
+              <h3 style="margin:0 0 10px;color:#173B52;font-size:18px;">
+                Ready to join?
+              </h3>
+
+              <p style="margin:0;color:#334155;font-size:15px;line-height:1.7;">
+                Click the button below to view your invitation.
+                Sign in with your Autivoya account, or create
+                a free account if you're new.
+              </p>
+
+              <p style="margin:22px 0 4px;text-align:center;">
+                <a href="${invitationUrl}"
+                   style="display:inline-block;background:#317E7B;color:#FFFFFF;text-decoration:none;font-size:16px;font-weight:bold;padding:15px 26px;border-radius:8px;">
+                  View Your Invitation
+                </a>
+              </p>
+            </div>
+
+            <p style="color:#64748B;font-size:13px;line-height:1.7;">
+              <strong>Important:</strong> Use the same email address
+              that received this invitation when signing in or
+              creating your account.
+            </p>
+
+            <p style="color:#64748B;font-size:13px;line-height:1.7;">
+              If the button doesn't work, copy and paste this
+              address into your browser:
+              <a href="${invitationUrl}"
+                 style="color:#317E7B;overflow-wrap:anywhere;">
+                ${invitationUrl}
+              </a>
+            </p>
+
+            <hr style="border:0;border-top:1px solid #DCE7EC;margin:28px 0 20px;">
+
+            <p style="color:#64748B;font-size:12px;line-height:1.7;">
+              If you weren't expecting this invitation,
+              you can safely ignore this email.
+            </p>
+
+          </div>
+
+          <div style="background:#F7FAFB;border-top:1px solid #DCE7EC;padding:22px 32px;text-align:center;">
+            <p style="margin:0;color:#204D6A;font-size:15px;font-weight:bold;">
+              Autivoya
+            </p>
+            <p style="margin:8px 0 0;color:#64748B;font-size:12px;">
+              Supporting families through every unique journey.
+            </p>
+          </div>
+
         </div>
       </div>
     `;
 
     const plainText = [
-      "You're invited to join a Family Team on Autivoya.",
+      "AUTIVOYA",
+      "Every journey is unique. No family should navigate it alone.",
       "",
-      `You've been invited as a ${relationship}.`,
+      "YOU'VE BEEN INVITED TO JOIN A FAMILY TEAM!",
       "",
-      "To view your invitation, sign in using this email address:",
-      `${WEBSITE_URL}/family-organizer/invitations`,
+      `Someone you know has invited you to join their Family Team on Autivoya as a ${relationship}.`,
       "",
-      "If you weren't expecting this invitation, you can ignore this email.",
+      "WHAT IS AUTIVOYA?",
       "",
-      "The Autivoya Team",
+      "Autivoya is a family support platform designed to help parents, caregivers, and loved ones navigate the autism journey together.",
+      "",
+      "Autivoya helps families organize important information, track milestones, coordinate care and support, and stay connected throughout their journey.",
+      "",
+      "WHAT DOES JOINING A FAMILY TEAM MEAN?",
+      "",
+      "A Family Team brings trusted family members and caregivers together in one shared space. Once you accept your invitation, you can collaborate using Family Organizer tools based on the access provided to you.",
+      "",
+      "READY TO JOIN?",
+      "",
+      "View your invitation here:",
+      invitationUrl,
+      "",
+      "Sign in with your Autivoya account or create a free account if you're new.",
+      "",
+      "IMPORTANT: Use the same email address that received this invitation.",
+      "",
+      "If you weren't expecting this invitation, you can safely ignore this email.",
+      "",
+      "Autivoya",
+      "Supporting families through every unique journey.",
     ].join("\n");
 
     try {
