@@ -1,3 +1,4 @@
+
 import {
   collection,
   doc,
@@ -8,77 +9,32 @@ import {
   setDoc,
 } from "firebase/firestore";
 
-import type {
-  FamilyProfile,
-} from "../types/familyProfile";
+import type { FamilyProfile } from "../types/familyProfile";
+import type { PersonalizedJourney } from "./ai/journeyTypes";
 
-import type {
-  PersonalizedJourney,
-} from "./ai/journeyTypes";
-
-import {
-  db,
-} from "./firebase";
-
-import {
-  getCurrentJourney,
-} from "./journeyRepository";
-
+import { auth, db } from "./firebase";
+import { getCurrentJourney } from "./journeyRepository";
 
 /*
  * ============================================================
  * JOURNEY HISTORY
  * ============================================================
  *
- * NEW MULTI-CHILD / MULTI-JOURNEY STRUCTURE
+ * Preferred:
+ * users/{ownerUserId}/children/{childId}/
+ * journeys/{journeyId}/history/{stageId}
  *
- * Preferred history location:
+ * Child legacy:
+ * users/{ownerUserId}/children/{childId}/journeyHistory
  *
- * users/
- *   {userId}/
- *     children/
- *       {childId}/
- *         journeys/
- *           {journeyId}/
- *             history/
- *               stage-1
- *               stage-2
- *               stage-3
- *
- *
- * CHILD LEGACY HISTORY:
- *
- * users/
- *   {userId}/
- *     children/
- *       {childId}/
- *         journeyHistory/
- *           stage-1
- *
- *
- * OLD ACCOUNT LEGACY HISTORY:
- *
- * users/
- *   {userId}/
- *     journeyHistory/
- *       stage-1
- *
+ * Account legacy:
+ * users/{ownerUserId}/journeyHistory
  *
  * IMPORTANT:
- *
- * Each Journey has its own history.
- *
- * Starting a New Journey must therefore begin with an empty
- * Journey History rather than showing stages from the child's
- * previous Journey.
- *
- * ============================================================
- */
-
-
-/*
- * ============================================================
- * TYPES
+ * - Each Journey has its own history.
+ * - Starting a new Journey must not reuse old history.
+ * - Shared members read the owner's canonical history.
+ * - Reading shared history must not initiate migration writes.
  * ============================================================
  */
 
@@ -87,36 +43,17 @@ export type JourneyReason =
   | "tasks_completed"
   | "manual_refresh";
 
-
 export type JourneyStageRecord = {
-  stageId:
-    string;
-
-  stageNumber:
-    number;
-
-  journeyId?:
-    string;
-
-  familyProfile:
-    FamilyProfile;
-
-  journey:
-    PersonalizedJourney;
-
-  completedTaskIds:
-    string[];
-
-  createdAt:
-    number;
-
-  completedAt:
-    number;
-
-  reason:
-    JourneyReason;
+  stageId: string;
+  stageNumber: number;
+  journeyId?: string;
+  familyProfile: FamilyProfile;
+  journey: PersonalizedJourney;
+  completedTaskIds: string[];
+  createdAt: number;
+  completedAt: number;
+  reason: JourneyReason;
 };
-
 
 /*
  * ============================================================
@@ -124,92 +61,77 @@ export type JourneyStageRecord = {
  * ============================================================
  */
 
-function requireUserId(
-  userId: string
-) {
-  if (
-    !userId
-  ) {
+function requireUserId(userId: string): void {
+  if (!userId?.trim()) {
     throw new Error(
       "A user ID is required to access journey history."
     );
   }
 }
 
-
-function requireChildId(
-  childId: string
-) {
-  if (
-    !childId
-  ) {
+function requireChildId(childId: string): void {
+  if (!childId?.trim()) {
     throw new Error(
       "A child ID is required to access child journey history."
     );
   }
 }
 
-
-function requireJourneyId(
-  journeyId: string
-) {
-  if (
-    !journeyId
-  ) {
+function requireJourneyId(journeyId: string): void {
+  if (!journeyId?.trim()) {
     throw new Error(
       "A journey ID is required to access journey history."
     );
   }
 }
 
-
-function requireStageNumber(
-  stageNumber: number
-) {
-  if (
-    !Number.isInteger(
-      stageNumber
-    ) ||
-    stageNumber <
-      1
-  ) {
+function requireStageNumber(stageNumber: number): void {
+  if (!Number.isInteger(stageNumber) || stageNumber < 1) {
     throw new Error(
       "Stage number must be a positive integer."
     );
   }
 }
 
-
-/*
- * ============================================================
- * NORMALIZE REASON
- * ============================================================
- */
-
-function normalizeReason(
-  value: unknown
-):
-  JourneyReason {
-
+function normalizeReason(value: unknown): JourneyReason {
   if (
-    value ===
-      "initial" ||
-    value ===
-      "tasks_completed" ||
-    value ===
-      "manual_refresh"
+    value === "initial" ||
+    value === "tasks_completed" ||
+    value === "manual_refresh"
   ) {
     return value;
   }
 
-
   return "tasks_completed";
 }
 
+/*
+ * ============================================================
+ * OWNER CHECK
+ * ============================================================
+ *
+ * The userId argument identifies the canonical data owner.
+ *
+ * A shared member may read the owner's Journey, but must not
+ * perform legacy migration on behalf of the owner.
+ *
+ * This is a client-side migration safeguard, NOT a substitute
+ * for Firestore security rules.
+ * ============================================================
+ */
+
+function isSignedInOwner(ownerUserId: string): boolean {
+  const signedInUserId = auth.currentUser?.uid;
+
+  return Boolean(
+    signedInUserId &&
+    signedInUserId === ownerUserId
+  );
+}
 
 /*
  * ============================================================
- * CHILD DOCUMENT
+ * FIRESTORE REFERENCES
  * ============================================================
  */
 
@@ -217,14 +139,8 @@ function getChildRef(
   userId: string,
   childId: string
 ) {
-  requireUserId(
-    userId
-  );
-
-  requireChildId(
-    childId
-  );
-
+  requireUserId(userId);
+  requireChildId(childId);
 
   return doc(
     db,
@@ -235,30 +151,14 @@ function getChildRef(
   );
 }
 
-
-/*
- * ============================================================
- * PREFERRED JOURNEY HISTORY COLLECTION
- * ============================================================
- */
-
 function getJourneySpecificHistoryCollection(
   userId: string,
   childId: string,
   journeyId: string
 ) {
-  requireUserId(
-    userId
-  );
-
-  requireChildId(
-    childId
-  );
-
-  requireJourneyId(
-    journeyId
-  );
-
+  requireUserId(userId);
+  requireChildId(childId);
+  requireJourneyId(journeyId);
 
   return collection(
     db,
@@ -272,23 +172,13 @@ function getJourneySpecificHistoryCollection(
   );
 }
 
-
-/*
- * ============================================================
- * PREFERRED JOURNEY STAGE DOCUMENT
- * ============================================================
- */
-
 function getJourneySpecificStageRef(
   userId: string,
   childId: string,
   journeyId: string,
   stageNumber: number
 ) {
-  requireStageNumber(
-    stageNumber
-  );
-
+  requireStageNumber(stageNumber);
 
   return doc(
     getJourneySpecificHistoryCollection(
@@ -300,25 +190,12 @@ function getJourneySpecificStageRef(
   );
 }
 
-
-/*
- * ============================================================
- * CHILD LEGACY HISTORY
- * ============================================================
- */
-
 function getChildLegacyHistoryCollection(
   userId: string,
   childId: string
 ) {
-  requireUserId(
-    userId
-  );
-
-  requireChildId(
-    childId
-  );
-
+  requireUserId(userId);
+  requireChildId(childId);
 
   return collection(
     db,
@@ -330,20 +207,10 @@ function getChildLegacyHistoryCollection(
   );
 }
 
-
-/*
- * ============================================================
- * OLD ACCOUNT LEGACY HISTORY
- * ============================================================
- */
-
 function getLegacyJourneyHistoryCollection(
   userId: string
 ) {
-  requireUserId(
-    userId
-  );
-
+  requireUserId(userId);
 
   return collection(
     db,
@@ -353,30 +220,17 @@ function getLegacyJourneyHistoryCollection(
   );
 }
 
-
-/*
- * ============================================================
- * OLD ACCOUNT LEGACY STAGE
- * ============================================================
- */
-
 function getLegacyJourneyStageRef(
   userId: string,
   stageNumber: number
 ) {
-  requireStageNumber(
-    stageNumber
-  );
-
+  requireStageNumber(stageNumber);
 
   return doc(
-    getLegacyJourneyHistoryCollection(
-      userId
-    ),
+    getLegacyJourneyHistoryCollection(userId),
     `stage-${stageNumber}`
   );
 }
-
 
 /*
  * ============================================================
@@ -385,101 +239,59 @@ function getLegacyJourneyStageRef(
  */
 
 function normalizeStageRecord(
-  data:
-    Record<string, any>,
-  documentId:
-    string
-):
-  JourneyStageRecord | null {
-
-  if (
-    !data?.familyProfile ||
-    !data?.journey
-  ) {
+  data: Record<string, any>,
+  documentId: string
+): JourneyStageRecord | null {
+  if (!data?.familyProfile || !data?.journey) {
     return null;
   }
-
 
   const stageNumber =
-    typeof data.stageNumber ===
-      "number" &&
-    data.stageNumber >=
-      1
-
+    typeof data.stageNumber === "number" &&
+    Number.isInteger(data.stageNumber) &&
+    data.stageNumber >= 1
       ? data.stageNumber
-
       : 0;
 
-
-  if (
-    stageNumber ===
-    0
-  ) {
+  if (stageNumber === 0) {
     return null;
   }
-
 
   return {
     stageId:
-      typeof data.stageId ===
-        "string" &&
-      data.stageId
-
+      typeof data.stageId === "string" && data.stageId
         ? data.stageId
-
         : documentId,
 
     stageNumber,
 
     journeyId:
-      typeof data.journeyId ===
-        "string" &&
+      typeof data.journeyId === "string" &&
       data.journeyId
-
         ? data.journeyId
-
         : undefined,
 
-    familyProfile:
-      data.familyProfile as
-        FamilyProfile,
+    familyProfile: data.familyProfile as FamilyProfile,
 
-    journey:
-      data.journey as
-        PersonalizedJourney,
+    journey: data.journey as PersonalizedJourney,
 
-    completedTaskIds:
-      Array.isArray(
-        data.completedTaskIds
-      )
-
-        ? data.completedTaskIds
-
-        : [],
+    completedTaskIds: Array.isArray(data.completedTaskIds)
+      ? data.completedTaskIds
+      : [],
 
     createdAt:
-      typeof data.createdAt ===
-        "number"
-
+      typeof data.createdAt === "number"
         ? data.createdAt
-
         : 0,
 
     completedAt:
-      typeof data.completedAt ===
-        "number"
-
+      typeof data.completedAt === "number"
         ? data.completedAt
-
         : 0,
 
-    reason:
-      normalizeReason(
-        data.reason
-      ),
+    reason: normalizeReason(data.reason),
   };
 }
-
 
 /*
  * ============================================================
@@ -488,47 +300,27 @@ function normalizeStageRecord(
  */
 
 async function readHistoryCollection(
-  historyCollection:
-    ReturnType<typeof collection>
-):
-  Promise<JourneyStageRecord[]> {
+  historyCollection: ReturnType<typeof collection>
+): Promise<JourneyStageRecord[]> {
+  const historyQuery = query(
+    historyCollection,
+    orderBy("stageNumber", "asc")
+  );
 
-  const historyQuery =
-    query(
-      historyCollection,
-
-      orderBy(
-        "stageNumber",
-        "asc"
-      )
-    );
-
-
-  const snapshot =
-    await getDocs(
-      historyQuery
-    );
-
+  const snapshot = await getDocs(historyQuery);
 
   return snapshot.docs
-    .map(
-      (
-        stageDocument
-      ) =>
-        normalizeStageRecord(
-          stageDocument.data(),
-          stageDocument.id
-        )
+    .map((stageDocument) =>
+      normalizeStageRecord(
+        stageDocument.data(),
+        stageDocument.id
+      )
     )
     .filter(
-      (
-        stage
-      ):
-        stage is JourneyStageRecord =>
+      (stage): stage is JourneyStageRecord =>
         stage !== null
     );
 }
-
 
 /*
  * ============================================================
@@ -540,123 +332,68 @@ async function resolveJourneyId(
   userId: string,
   childId: string,
   requestedJourneyId?: string
-):
-  Promise<string> {
+): Promise<string> {
+  requireUserId(userId);
+  requireChildId(childId);
 
   const explicitJourneyId =
-    requestedJourneyId
-      ?.trim() ||
-    "";
+    requestedJourneyId?.trim() || "";
 
-
-  if (
-    explicitJourneyId
-  ) {
+  if (explicitJourneyId) {
     return explicitJourneyId;
   }
 
-
-  const currentJourney =
-    await getCurrentJourney(
-      userId,
-      childId
-    );
-
-
-  return (
-    currentJourney
-      ?.journeyId ||
-    ""
+  const currentJourney = await getCurrentJourney(
+    userId,
+    childId
   );
-}
 
+  return currentJourney?.journeyId || "";
+}
 
 /*
  * ============================================================
- * GET OLD ACCOUNT LEGACY HISTORY
+ * LEGACY HISTORY READS
  * ============================================================
  *
- * This is intentionally kept because JourneyBuilder uses it
- * while migrating older accounts.
+ * Retained for existing accounts and JourneyBuilder migration.
  * ============================================================
  */
 
 export async function getLegacyJourneyHistory(
   userId: string
-):
-  Promise<JourneyStageRecord[]> {
-
-  requireUserId(
-    userId
-  );
-
+): Promise<JourneyStageRecord[]> {
+  requireUserId(userId);
 
   return readHistoryCollection(
-    getLegacyJourneyHistoryCollection(
-      userId
-    )
+    getLegacyJourneyHistoryCollection(userId)
   );
 }
-
-
-/*
- * ============================================================
- * GET CHILD LEGACY HISTORY
- * ============================================================
- */
 
 async function getChildLegacyJourneyHistory(
   userId: string,
   childId: string
-):
-  Promise<JourneyStageRecord[]> {
-
-  requireUserId(
-    userId
-  );
-
-  requireChildId(
-    childId
-  );
-
+): Promise<JourneyStageRecord[]> {
+  requireUserId(userId);
+  requireChildId(childId);
 
   return readHistoryCollection(
-    getChildLegacyHistoryCollection(
-      userId,
-      childId
-    )
+    getChildLegacyHistoryCollection(userId, childId)
   );
 }
-
 
 /*
  * ============================================================
  * MIGRATE CHILD LEGACY HISTORY
  * ============================================================
  *
- * Previous multi-child builds stored history here:
+ * Migration is owner-only.
  *
- * users/{uid}/children/{childId}/journeyHistory
+ * Shared members must not write migration metadata or copy
+ * historical records when opening a Journey.
  *
- * That history belongs to the Journey that was active when the
- * migration first occurs.
- *
- *
- * IMPORTANT:
- *
- * historyMigratedToJourneyId is written to the child document.
- *
- * Once migration has happened, old child-level history will NOT
- * be copied into a future New Journey.
- *
- * This prevents:
- *
- * Journey A Stage 1
- *
- * from appearing inside:
- *
- * Journey B Stage 1
- *
+ * Once migration is completed, the original child-level
+ * history is never copied into a different Journey.
  * ============================================================
  */
 
@@ -664,67 +401,32 @@ async function migrateChildLegacyHistoryIfNeeded(
   userId: string,
   childId: string,
   journeyId: string
-):
-  Promise<void> {
+): Promise<void> {
+  requireUserId(userId);
+  requireChildId(childId);
+  requireJourneyId(journeyId);
 
-  requireUserId(
-    userId
-  );
-
-  requireChildId(
-    childId
-  );
-
-  requireJourneyId(
-    journeyId
-  );
-
-
-  const childRef =
-    getChildRef(
-      userId,
-      childId
-    );
-
-
-  const childSnapshot =
-    await getDoc(
-      childRef
-    );
-
-
-  const childData =
-    childSnapshot.exists()
-
-      ? childSnapshot.data()
-
-      : null;
-
-
-  const alreadyMigratedToJourneyId =
-    typeof childData
-      ?.historyMigratedToJourneyId ===
-      "string"
-
-      ? childData
-          .historyMigratedToJourneyId
-
-      : "";
-
-
-  /*
-   * If this child's old history has already been assigned
-   * to ANY Journey, never assign it again.
-   *
-   * This is what protects future Journeys.
-   */
-
-  if (
-    alreadyMigratedToJourneyId
-  ) {
+  // Never perform migration from a shared member's session.
+  if (!isSignedInOwner(userId)) {
     return;
   }
 
+  const childRef = getChildRef(userId, childId);
+  const childSnapshot = await getDoc(childRef);
+
+  const childData = childSnapshot.exists()
+    ? childSnapshot.data()
+    : null;
+
+  const alreadyMigratedToJourneyId =
+    typeof childData?.historyMigratedToJourneyId ===
+    "string"
+      ? childData.historyMigratedToJourneyId
+      : "";
+
+  if (alreadyMigratedToJourneyId) {
+    return;
+  }
 
   const legacyHistory =
     await getChildLegacyJourneyHistory(
@@ -732,11 +434,7 @@ async function migrateChildLegacyHistoryIfNeeded(
       childId
     );
 
-
-  for (
-    const stage
-    of legacyHistory
-  ) {
+  for (const stage of legacyHistory) {
     await setDoc(
       getJourneySpecificStageRef(
         userId,
@@ -746,41 +444,36 @@ async function migrateChildLegacyHistoryIfNeeded(
       ),
       {
         ...stage,
-
         journeyId,
       },
       {
-        merge:
-          true,
+        merge: true,
       }
     );
   }
 
-
-  /*
-   * Mark migration even when there was no legacy history.
-   *
-   * Otherwise old child-level records created later could
-   * accidentally leak into another Journey.
-   */
-
+  // Mark migration even if no legacy records existed.
   await setDoc(
     childRef,
     {
-      historyMigratedToJourneyId:
-        journeyId,
+      historyMigratedToJourneyId: journeyId,
     },
     {
-      merge:
-        true,
+      merge: true,
     }
   );
 }
 
-
 /*
  * ============================================================
  * SAVE COMPLETED STAGE
+ * ============================================================
+ *
+ * Existing function signature is preserved.
+ *
+ * userId is the canonical owner's UID.
+ *
+ * Actual write authorization is enforced by Firestore rules.
  * ============================================================
  */
 
@@ -791,115 +484,53 @@ export async function saveJourneyStage(
   journey: PersonalizedJourney,
   completedTaskIds: string[],
   options?: {
-    journeyId?:
-      string;
-
-    createdAt?:
-      number;
-
-    completedAt?:
-      number;
-
-    reason?:
-      JourneyReason;
+    journeyId?: string;
+    createdAt?: number;
+    completedAt?: number;
+    reason?: JourneyReason;
   }
-):
-  Promise<void> {
+): Promise<void> {
+  requireUserId(userId);
+  requireStageNumber(stageNumber);
 
-  requireUserId(
-    userId
-  );
+  const now = Date.now();
+  const childId = familyProfile.childId?.trim() || "";
 
-  requireStageNumber(
-    stageNumber
-  );
+  if (childId) {
+    const journeyId = await resolveJourneyId(
+      userId,
+      childId,
+      options?.journeyId
+    );
 
-
-  const now =
-    Date.now();
-
-
-  const childId =
-    familyProfile
-      .childId
-      ?.trim() ||
-    "";
-
-
-  /*
-   * ==========================================================
-   * CHILD-SPECIFIC JOURNEY
-   * ==========================================================
-   */
-
-  if (
-    childId
-  ) {
-    const journeyId =
-      await resolveJourneyId(
-        userId,
-        childId,
-        options?.journeyId
-      );
-
-
-    if (
-      !journeyId
-    ) {
+    if (!journeyId) {
       throw new Error(
         "Unable to save Journey History because no active journey ID was found."
       );
     }
 
-
-    /*
-     * If necessary, attach old child-level history to this
-     * Journey before writing the new stage.
-     */
-
+    // Legacy migration is performed only by the owner.
     await migrateChildLegacyHistoryIfNeeded(
       userId,
       childId,
       journeyId
     );
 
-
-    const stageRecord:
-      JourneyStageRecord = {
-
-      stageId:
-        `stage-${stageNumber}`,
-
+    const stageRecord: JourneyStageRecord = {
+      stageId: `stage-${stageNumber}`,
       stageNumber,
-
       journeyId,
-
       familyProfile,
-
       journey,
 
-      completedTaskIds:
-        Array.isArray(
-          completedTaskIds
-        )
+      completedTaskIds: Array.isArray(completedTaskIds)
+        ? completedTaskIds
+        : [],
 
-          ? completedTaskIds
-
-          : [],
-
-      createdAt:
-        options?.createdAt ??
-        now,
-
-      completedAt:
-        options?.completedAt ??
-        now,
-
-      reason:
-        options?.reason ??
-        "tasks_completed",
+      createdAt: options?.createdAt ?? now,
+      completedAt: options?.completedAt ?? now,
+      reason: options?.reason ?? "tasks_completed",
     };
-
 
     await setDoc(
       getJourneySpecificStageRef(
@@ -910,58 +541,33 @@ export async function saveJourneyStage(
       ),
       stageRecord,
       {
-        merge:
-          true,
+        merge: true,
       }
     );
-
 
     return;
   }
 
-
   /*
-   * ==========================================================
    * LEGACY ACCOUNT FALLBACK
-   * ==========================================================
    *
-   * This remains only for older accounts during migration.
+   * Retained for older accounts without a child ID.
    */
 
-  const legacyRecord:
-    JourneyStageRecord = {
-
-    stageId:
-      `stage-${stageNumber}`,
-
+  const legacyRecord: JourneyStageRecord = {
+    stageId: `stage-${stageNumber}`,
     stageNumber,
-
     familyProfile,
-
     journey,
 
-    completedTaskIds:
-      Array.isArray(
-        completedTaskIds
-      )
+    completedTaskIds: Array.isArray(completedTaskIds)
+      ? completedTaskIds
+      : [],
 
-        ? completedTaskIds
-
-        : [],
-
-    createdAt:
-      options?.createdAt ??
-      now,
-
-    completedAt:
-      options?.completedAt ??
-      now,
-
-    reason:
-      options?.reason ??
-      "tasks_completed",
+    createdAt: options?.createdAt ?? now,
+    completedAt: options?.completedAt ?? now,
+    reason: options?.reason ?? "tasks_completed",
   };
-
 
   await setDoc(
     getLegacyJourneyStageRef(
@@ -970,12 +576,10 @@ export async function saveJourneyStage(
     ),
     legacyRecord,
     {
-      merge:
-        true,
+      merge: true,
     }
   );
 }
-
 
 /*
  * ============================================================
@@ -983,20 +587,14 @@ export async function saveJourneyStage(
  * ============================================================
  *
  * Preferred:
+ * getJourneyHistory(ownerUserId, childId, journeyId)
  *
- * getJourneyHistory(
- *   userId,
- *   childId,
- *   journeyId
- * )
+ * If journeyId is omitted, resolve the child's current Journey.
  *
+ * If childId is omitted, return account-level legacy history.
  *
- * If journeyId is omitted, the child's current Journey ID is
- * resolved automatically.
- *
- *
- * If childId is omitted, old account-level history is returned
- * for migration compatibility only.
+ * Shared users can read existing history without performing
+ * migration writes.
  * ============================================================
  */
 
@@ -1004,70 +602,36 @@ export async function getJourneyHistory(
   userId: string,
   childId?: string,
   journeyId?: string
-):
-  Promise<JourneyStageRecord[]> {
+): Promise<JourneyStageRecord[]> {
+  requireUserId(userId);
 
-  requireUserId(
-    userId
-  );
+  const normalizedChildId = childId?.trim() || "";
 
-
-  const normalizedChildId =
-    childId
-      ?.trim() ||
-    "";
-
-
-  /*
-   * Legacy account history.
-   */
-
-  if (
-    !normalizedChildId
-  ) {
-    return getLegacyJourneyHistory(
-      userId
-    );
+  if (!normalizedChildId) {
+    return getLegacyJourneyHistory(userId);
   }
 
+  const resolvedJourneyId = await resolveJourneyId(
+    userId,
+    normalizedChildId,
+    journeyId
+  );
 
-  /*
-   * Resolve current Journey identity.
-   */
-
-  const resolvedJourneyId =
-    await resolveJourneyId(
-      userId,
-      normalizedChildId,
-      journeyId
-    );
-
-
-  /*
-   * A child without an active Journey has no CURRENT
-   * Journey History.
-   *
-   * This is especially important immediately after
-   * Start a New Journey.
-   */
-
-  if (
-    !resolvedJourneyId
-  ) {
+  // A child without an active Journey has no current history.
+  if (!resolvedJourneyId) {
     return [];
   }
 
-
   /*
-   * One-time migration of previous child-level history.
+   * Only the owner can perform legacy migration.
+   *
+   * For invited members, this operation returns without writes.
    */
-
   await migrateChildLegacyHistoryIfNeeded(
     userId,
     normalizedChildId,
     resolvedJourneyId
   );
-
 
   return readHistoryCollection(
     getJourneySpecificHistoryCollection(
@@ -1077,7 +641,6 @@ export async function getJourneyHistory(
     )
   );
 }
-
 
 /*
  * ============================================================
@@ -1089,45 +652,25 @@ export async function getNextStageNumber(
   userId: string,
   childId?: string,
   journeyId?: string
-):
-  Promise<number> {
+): Promise<number> {
+  const history = await getJourneyHistory(
+    userId,
+    childId,
+    journeyId
+  );
 
-  const history =
-    await getJourneyHistory(
-      userId,
-      childId,
-      journeyId
-    );
-
-
-  if (
-    history.length ===
-    0
-  ) {
+  if (history.length === 0) {
     return 1;
   }
 
-
-  const highestStage =
-    history.reduce(
-      (
-        highest,
-        stage
-      ) =>
-        Math.max(
-          highest,
-          stage.stageNumber
-        ),
-      0
-    );
-
-
-  return (
-    highestStage +
-    1
+  const highestStage = history.reduce(
+    (highest, stage) =>
+      Math.max(highest, stage.stageNumber),
+    0
   );
-}
 
+  return highestStage + 1;
+}
 
 /*
  * ============================================================
@@ -1139,34 +682,20 @@ export async function getCurrentStageNumber(
   userId: string,
   childId?: string,
   journeyId?: string
-):
-  Promise<number> {
+): Promise<number> {
+  const history = await getJourneyHistory(
+    userId,
+    childId,
+    journeyId
+  );
 
-  const history =
-    await getJourneyHistory(
-      userId,
-      childId,
-      journeyId
-    );
-
-
-  if (
-    history.length ===
-    0
-  ) {
+  if (history.length === 0) {
     return 0;
   }
 
-
   return history.reduce(
-    (
-      highest,
-      stage
-    ) =>
-      Math.max(
-        highest,
-        stage.stageNumber
-      ),
+    (highest, stage) =>
+      Math.max(highest, stage.stageNumber),
     0
   );
 }

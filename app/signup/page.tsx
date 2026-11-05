@@ -1,10 +1,7 @@
 
 "use client";
 
-import {
-  FormEvent,
-  useState,
-} from "react";
+import { FormEvent, useState } from "react";
 
 import Link from "next/link";
 
@@ -43,9 +40,16 @@ import {
  * - Firebase email/password authentication
  * - Password confirmation and validation
  * - Pending Journey persistence
- * - Firestore document structure
- * - Safe returnTo navigation
+ * - Existing Firestore document structure
  * - Existing Firebase error handling
+ * - Autivoya branding and layout
+ * - Return navigation
+ *
+ * Improvements:
+ * - Stronger internal redirect validation
+ * - Family Team invitation return navigation
+ * - Prevents unrelated Journey creation during
+ *   Family Team invitation registration
  *
  * ============================================================
  */
@@ -67,21 +71,39 @@ const BRAND = {
  * ============================================================
  * SAFE RETURN DESTINATION
  * ============================================================
+ *
+ * Only internal application paths are accepted.
+ *
+ * Examples:
+ * /journey
+ * /community
+ * /pricing
+ * /family-organizer/invitations
+ *
+ * Reject:
+ * - External URLs
+ * - Protocol-relative URLs
+ * - Backslashes
+ * - Control characters
+ *
+ * Default: /journey
+ *
+ * ============================================================
  */
 
 function getSafeReturnTo(
   value: string | null
 ): string {
-  if (!value) {
-    return "/journey";
-  }
+  const fallback = "/journey";
 
-  if (!value.startsWith("/")) {
-    return "/journey";
-  }
-
-  if (value.startsWith("//")) {
-    return "/journey";
+  if (
+    !value ||
+    !value.startsWith("/") ||
+    value.startsWith("//") ||
+    value.includes("\\") ||
+    /[\u0000-\u001F\u007F]/.test(value)
+  ) {
+    return fallback;
   }
 
   return value;
@@ -124,13 +146,43 @@ export default function SignupPage() {
   const searchParams = useSearchParams();
 
   /*
-   * Read the return destination directly from the URL.
-   * This is intentionally not stored in React state.
+   * ============================================================
+   * RETURN DESTINATION
+   * ============================================================
    */
 
   const returnTo = getSafeReturnTo(
     searchParams.get("returnTo")
   );
+
+  /*
+   * ============================================================
+   * FAMILY TEAM INVITATION DETECTION
+   * ============================================================
+   *
+   * Invitation-based registration should not create
+   * a separate Journey from locally stored data.
+   *
+   * The invited member must eventually access the
+   * original owner's canonical child workspace.
+   *
+   * ============================================================
+   */
+
+  const isFamilyInvitation =
+    returnTo === "/family-organizer/invitations" ||
+    returnTo.startsWith(
+      "/family-organizer/invitations?"
+    ) ||
+    returnTo.startsWith(
+      "/family-organizer/invitations/"
+    );
+
+  /*
+   * ============================================================
+   * FORM STATE
+   * ============================================================
+   */
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -142,9 +194,9 @@ export default function SignupPage() {
   const [message, setMessage] = useState("");
 
   /*
-   * ==========================================================
+   * ============================================================
    * NAVIGATION LABEL
-   * ==========================================================
+   * ============================================================
    */
 
   const backLabel =
@@ -152,21 +204,26 @@ export default function SignupPage() {
       ? "← Back to Community"
       : returnTo.startsWith("/community/")
         ? "← Back to Conversation"
-        : "← Back";
+        : isFamilyInvitation
+          ? "← Back to Invitations"
+          : "← Back";
 
   /*
-   * ==========================================================
+   * ============================================================
    * LOGIN URL
-   * ==========================================================
+   * ============================================================
+   *
+   * Preserve the original return destination when
+   * switching from signup to login.
    */
 
   const loginUrl =
     `/login?returnTo=${encodeURIComponent(returnTo)}`;
 
   /*
-   * ==========================================================
-   * BACK
-   * ==========================================================
+   * ============================================================
+   * BACK NAVIGATION
+   * ============================================================
    */
 
   function handleBack() {
@@ -174,9 +231,9 @@ export default function SignupPage() {
   }
 
   /*
-   * ==========================================================
+   * ============================================================
    * SIGN UP
-   * ==========================================================
+   * ============================================================
    */
 
   async function handleSignup(
@@ -189,7 +246,9 @@ export default function SignupPage() {
     setLoading(true);
 
     /*
+     * ==========================================================
      * PASSWORD VALIDATION
+     * ==========================================================
      */
 
     if (password.length < 6) {
@@ -208,7 +267,9 @@ export default function SignupPage() {
 
     try {
       /*
+       * ========================================================
        * CREATE FIREBASE ACCOUNT
+       * ========================================================
        */
 
       const credential =
@@ -221,13 +282,37 @@ export default function SignupPage() {
       const user = credential.user;
 
       /*
+       * ========================================================
        * CHECK FOR PENDING JOURNEY
+       * ========================================================
+       *
+       * Normal signup:
+       * Restore the user's locally stored Journey.
+       *
+       * Family Team invitation signup:
+       * Do not create a separate Journey.
+       *
+       * Existing pending Journey data is not deleted
+       * when signing up through an invitation.
+       *
+       * ========================================================
        */
 
-      const pendingJourney = getPendingJourney();
+      const pendingJourney = isFamilyInvitation
+        ? null
+        : getPendingJourney();
 
       /*
+       * ========================================================
        * SAVE PENDING JOURNEY
+       * ========================================================
+       *
+       * Preserve the existing Firestore structure.
+       *
+       * This is only performed for normal registration
+       * when a pending Journey exists.
+       *
+       * ========================================================
        */
 
       if (pendingJourney) {
@@ -272,12 +357,31 @@ export default function SignupPage() {
       }
 
       /*
+       * ========================================================
        * RETURN TO ORIGINAL PAGE
+       * ========================================================
+       *
+       * Family Team registration:
+       * /family-organizer/invitations
+       *
+       * Normal registration:
+       * Return to the original requested page.
+       *
+       * Default:
+       * /journey
+       *
+       * ========================================================
        */
 
       router.replace(returnTo);
     } catch (error: unknown) {
       console.error("Signup error:", error);
+
+      /*
+       * ========================================================
+       * FIREBASE ERROR HANDLING
+       * ========================================================
+       */
 
       if (
         error &&
@@ -329,9 +433,9 @@ export default function SignupPage() {
   }
 
   /*
-   * ==========================================================
+   * ============================================================
    * PAGE
-   * ==========================================================
+   * ============================================================
    */
 
   return (
@@ -473,7 +577,10 @@ export default function SignupPage() {
           {/* EMAIL */}
 
           <div style={{ marginBottom: 18 }}>
-            <label htmlFor="email" style={labelStyle}>
+            <label
+              htmlFor="email"
+              style={labelStyle}
+            >
               Email
             </label>
 
@@ -494,7 +601,10 @@ export default function SignupPage() {
           {/* PASSWORD */}
 
           <div style={{ marginBottom: 18 }}>
-            <label htmlFor="password" style={labelStyle}>
+            <label
+              htmlFor="password"
+              style={labelStyle}
+            >
               Password
             </label>
 
@@ -536,7 +646,9 @@ export default function SignupPage() {
             />
           </div>
 
-          {/* CREATE ACCOUNT */}
+          {/* ==================================================
+              CREATE ACCOUNT
+          ================================================== */}
 
           <button
             type="submit"

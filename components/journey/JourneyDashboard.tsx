@@ -1,7 +1,12 @@
 
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import Link from "next/link";
 import { signOut } from "firebase/auth";
 
@@ -13,7 +18,10 @@ import type {
 import type { Task } from "../../lib/journeyEngine";
 
 import { auth } from "../../lib/firebase";
-import { getCurrentUser, watchAuthState } from "../../lib/auth";
+import {
+  getCurrentUser,
+  watchAuthState,
+} from "../../lib/auth";
 import { savePendingJourney } from "../../lib/journeyStorage";
 import {
   getCurrentJourney,
@@ -25,10 +33,21 @@ import {
   saveJourneyStage,
 } from "../../lib/journeyHistory";
 
+type JourneyAccessLevel =
+  | "owner"
+  | "viewer"
+  | "contributor"
+  | "administrator";
+
 interface JourneyDashboardProps {
   personalizedJourney: PersonalizedJourney;
   familyProfile: FamilyProfile;
-  onJourneySaved?: (childId: string) => void | Promise<void>;
+  onJourneySaved?: (
+    childId: string
+  ) => void | Promise<void>;
+  ownerUserId?: string;
+  accessLevel?: JourneyAccessLevel;
+  journeyId?: string;
 }
 
 const colors = {
@@ -44,34 +63,6 @@ const colors = {
   green: "#047857",
   red: "#B91C1C",
 };
-
-function formatDisplayValue(value: string): string {
-  if (!value) return "";
-  return value
-    .replace(/[-_]/g, " ")
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-function formatResourceType(type: AIResource["type"]): string {
-  switch (type) {
-    case "grant":
-      return "Grant";
-    case "government":
-      return "Government";
-    case "insurance":
-      return "Insurance";
-    case "therapy":
-      return "Therapy";
-    case "school":
-      return "School";
-    case "financial":
-      return "Financial Support";
-    case "support":
-      return "Support";
-    default:
-      return "Resource";
-  }
-}
 
 const sectionStyle: React.CSSProperties = {
   marginBottom: 32,
@@ -106,17 +97,47 @@ const linkButtonStyle: React.CSSProperties = {
   textDecoration: "none",
 };
 
+function formatDisplayValue(value: string): string {
+  if (!value) return "";
+
+  return value
+    .replace(/[-_]/g, " ")
+    .replace(/\b\w/g, (letter) =>
+      letter.toUpperCase()
+    );
+}
+
+function formatResourceType(
+  type: AIResource["type"]
+): string {
+  switch (type) {
+    case "grant":
+      return "Grant";
+    case "government":
+      return "Government";
+    case "insurance":
+      return "Insurance";
+    case "therapy":
+      return "Therapy";
+    case "school":
+      return "School";
+    case "financial":
+      return "Financial Support";
+    case "support":
+      return "Support";
+    default:
+      return "Resource";
+  }
+}
+
 export default function JourneyDashboard({
   personalizedJourney: initialJourney,
   familyProfile,
   onJourneySaved,
+  ownerUserId,
+  accessLevel,
+  journeyId,
 }: JourneyDashboardProps) {
-  /*
-   * ACTIVE JOURNEY
-   *
-   * Rename the incoming prop to initialJourney.
-   * This avoids the duplicate personalizedJourney declaration.
-   */
   const [personalizedJourney, setPersonalizedJourney] =
     useState<PersonalizedJourney>(initialJourney);
 
@@ -124,53 +145,101 @@ export default function JourneyDashboard({
     initialJourney.tasks || []
   );
 
-  const [journeyStageNumber, setJourneyStageNumber] = useState(1);
-  const [loadingStageNumber, setLoadingStageNumber] = useState(true);
+  const [journeyStageNumber, setJourneyStageNumber] =
+    useState(1);
 
-  const [savingJourney, setSavingJourney] = useState(false);
-  const [saveMessage, setSaveMessage] = useState("");
-  const [saveError, setSaveError] = useState("");
+  const [loadingStageNumber, setLoadingStageNumber] =
+    useState(true);
 
-  const [showSaveAccountPrompt, setShowSaveAccountPrompt] =
+  const [savingJourney, setSavingJourney] =
     useState(false);
 
-  const [showNextAccountPrompt, setShowNextAccountPrompt] =
-    useState(false);
+  const [saveMessage, setSaveMessage] =
+    useState("");
+
+  const [saveError, setSaveError] =
+    useState("");
+
+  const [
+    showSaveAccountPrompt,
+    setShowSaveAccountPrompt,
+  ] = useState(false);
+
+  const [
+    showNextAccountPrompt,
+    setShowNextAccountPrompt,
+  ] = useState(false);
 
   const [currentUserEmail, setCurrentUserEmail] =
     useState<string | null>(null);
 
-  const [loggingOut, setLoggingOut] = useState(false);
-
-  const [generatingNextJourney, setGeneratingNextJourney] =
+  const [loggingOut, setLoggingOut] =
     useState(false);
 
-  const [nextJourneyError, setNextJourneyError] = useState("");
+  const [
+    generatingNextJourney,
+    setGeneratingNextJourney,
+  ] = useState(false);
 
-  const [taskSaveStatus, setTaskSaveStatus] = useState<
-    "idle" | "saving" | "error"
-  >("idle");
+  const [nextJourneyError, setNextJourneyError] =
+    useState("");
 
-  const taskSaveQueueRef = useRef<Promise<void>>(
-    Promise.resolve()
+  const [taskSaveStatus, setTaskSaveStatus] =
+    useState<"idle" | "saving" | "error">("idle");
+
+  const taskSaveQueueRef =
+    useRef<Promise<void>>(Promise.resolve());
+
+  const tasksRef = useRef<Task[]>(
+    initialJourney.tasks || []
   );
 
-  /*
-   * KEEP THE DISPLAY IN SYNC WHEN JOURNEY BUILDER
-   * SUPPLIES A DIFFERENT JOURNEY.
-   */
+  const workspaceKey = [
+    ownerUserId || "",
+    familyProfile.childId || "",
+    journeyId || "",
+  ].join("__");
+
+  const signedInUserId =
+    auth.currentUser?.uid || "";
+
+  const canonicalOwnerUserId =
+    ownerUserId?.trim() || signedInUserId;
+
+  const isSharedJourney =
+    Boolean(
+      signedInUserId &&
+      canonicalOwnerUserId &&
+      signedInUserId !== canonicalOwnerUserId
+    );
+
+  const effectiveAccessLevel: JourneyAccessLevel =
+    isSharedJourney
+      ? accessLevel === "contributor" ||
+        accessLevel === "administrator"
+        ? accessLevel
+        : "viewer"
+      : "owner";
+
+  const canEdit =
+    effectiveAccessLevel !== "viewer";
+
+  const canGenerateNextStage =
+    effectiveAccessLevel === "owner";
+
   useEffect(() => {
     setPersonalizedJourney(initialJourney);
     setTasks(initialJourney.tasks || []);
+    tasksRef.current = initialJourney.tasks || [];
+
+    taskSaveQueueRef.current = Promise.resolve();
+
     setSaveMessage("");
     setSaveError("");
     setNextJourneyError("");
     setTaskSaveStatus("idle");
-  }, [initialJourney, familyProfile.childId]);
+  }, [initialJourney, workspaceKey]);
 
-  /*
-   * LOAD AUTHENTICATION AND JOURNEY STAGE.
-   */
   useEffect(() => {
     let active = true;
 
@@ -187,23 +256,33 @@ export default function JourneyDashboard({
 
       setLoadingStageNumber(true);
 
-      try {
+      const targetOwnerUserId =
+        ownerUserId?.trim() || user.uid;
 
+      try {
         const savedJourney = familyProfile.childId
-        ? await getCurrentJourney(
-            user.uid,
-            familyProfile.childId
-          )
-        : null;
-      
+          ? await getCurrentJourney(
+              targetOwnerUserId,
+              familyProfile.childId
+            )
+          : null;
+
         if (!active) return;
 
-        if (savedJourney && savedJourney.stageNumber >= 1) {
-          setJourneyStageNumber(savedJourney.stageNumber);
-        } else {
-          const lastCompletedStage = await getCurrentStageNumber(
-            user.uid
+        if (
+          savedJourney &&
+          savedJourney.stageNumber >= 1
+        ) {
+          setJourneyStageNumber(
+            savedJourney.stageNumber
           );
+        } else {
+          const lastCompletedStage =
+            await getCurrentStageNumber(
+              targetOwnerUserId,
+              familyProfile.childId || undefined,
+              journeyId
+            );
 
           if (!active) return;
 
@@ -217,9 +296,13 @@ export default function JourneyDashboard({
           error
         );
 
-        if (active) setJourneyStageNumber(1);
+        if (active) {
+          setJourneyStageNumber(1);
+        }
       } finally {
-        if (active) setLoadingStageNumber(false);
+        if (active) {
+          setLoadingStageNumber(false);
+        }
       }
     });
 
@@ -227,12 +310,15 @@ export default function JourneyDashboard({
       active = false;
       unsubscribe();
     };
-  }, [familyProfile.childId]);
-  /*
-   * TASK PROGRESS
-   */
+  }, [
+    familyProfile.childId,
+    ownerUserId,
+    journeyId,
+  ]);
+
   const completedTasks = useMemo(
-    () => tasks.filter((task) => task.completed).length,
+    () =>
+      tasks.filter((task) => task.completed).length,
     [tasks]
   );
 
@@ -240,18 +326,20 @@ export default function JourneyDashboard({
 
   const taskPercent =
     totalTasks > 0
-      ? Math.round((completedTasks / totalTasks) * 100)
+      ? Math.round(
+          (completedTasks / totalTasks) * 100
+        )
       : 0;
 
   const allTasksCompleted =
-    tasks.length > 0 && tasks.every((task) => task.completed);
+    tasks.length > 0 &&
+    tasks.every((task) => task.completed);
 
   const actions = personalizedJourney.actions || [];
-  const primaryAction = actions.length > 0 ? actions[0] : null;
 
-  /*
-   * NOTIFY JOURNEY BUILDER AFTER A SUCCESSFUL SAVE.
-   */
+  const primaryAction =
+    actions.length > 0 ? actions[0] : null;
+
   async function notifyJourneySaved() {
     if (onJourneySaved && familyProfile.childId) {
       try {
@@ -265,73 +353,86 @@ export default function JourneyDashboard({
     }
   }
 
-  /*
-   * TASK TOGGLING AND FIRESTORE SAVE QUEUE
-   */
   function toggleTask(taskId: string) {
+    if (!canEdit) return;
+
     const currentUser = getCurrentUser();
 
-    setTasks((currentTasks) => {
-      const nextTasks = currentTasks.map((task) =>
+    const nextTasks = tasksRef.current.map(
+      (task) =>
         task.id === taskId
-          ? { ...task, completed: !task.completed }
+          ? {
+              ...task,
+              completed: !task.completed,
+            }
           : task
-      );
+    );
 
-      setNextJourneyError("");
-      setSaveMessage("");
-      setSaveError("");
+    tasksRef.current = nextTasks;
+    setTasks(nextTasks);
 
-      if (!currentUser) {
-        setTaskSaveStatus("idle");
-        return nextTasks;
-      }
+    setNextJourneyError("");
+    setSaveMessage("");
+    setSaveError("");
 
-      setTaskSaveStatus("saving");
+    if (!currentUser) {
+      setTaskSaveStatus("idle");
+      return;
+    }
 
-      taskSaveQueueRef.current = taskSaveQueueRef.current
+    const targetOwnerUserId =
+      ownerUserId?.trim() || currentUser.uid;
+
+    const journeyToSave = {
+      ...personalizedJourney,
+      tasks: nextTasks,
+    };
+
+    setTaskSaveStatus("saving");
+
+    const pendingSave =
+      taskSaveQueueRef.current
         .catch(() => undefined)
         .then(async () => {
-          try {
-            await saveTaskProgress(
-              currentUser.uid,
-              familyProfile,
-              {
-                ...personalizedJourney,
-                tasks: nextTasks,
-              },
-              {
-                stageNumber: journeyStageNumber,
-                journeyReason:
-                  journeyStageNumber === 1
-                    ? "initial"
-                    : "tasks_completed",
-              }
-            );
-
-            setTaskSaveStatus("idle");
-          } catch (error) {
-            console.error(
-              "Unable to save task progress:",
-              error
-            );
-
-            setTaskSaveStatus("error");
-            setSaveError(
-              "Your task change is visible, but we couldn't save it right now. Please try again."
-            );
-          }
+          await saveTaskProgress(
+            targetOwnerUserId,
+            familyProfile,
+            journeyToSave,
+            {
+              stageNumber: journeyStageNumber,
+              journeyReason:
+                journeyStageNumber === 1
+                  ? "initial"
+                  : "tasks_completed",
+            }
+          );
         });
 
-      return nextTasks;
-    });
+    taskSaveQueueRef.current = pendingSave;
+
+    pendingSave
+      .then(() => {
+        if (
+          taskSaveQueueRef.current === pendingSave
+        ) {
+          setTaskSaveStatus("idle");
+        }
+      })
+      .catch((error) => {
+        console.error(
+          "Unable to save task progress:",
+          error
+        );
+
+        setTaskSaveStatus("error");
+        setSaveError(
+          "Your task change is visible, but we couldn't save it right now. Please try again."
+        );
+      });
   }
 
-  /*
-   * SAVE CURRENT JOURNEY
-   */
   async function handleSaveJourney() {
-    if (savingJourney) return;
+    if (!canEdit || savingJourney) return;
 
     setSaveMessage("");
     setSaveError("");
@@ -348,17 +449,20 @@ export default function JourneyDashboard({
       return;
     }
 
+    const targetOwnerUserId =
+      ownerUserId?.trim() || currentUser.uid;
+
     setSavingJourney(true);
 
     try {
       await taskSaveQueueRef.current;
 
       await saveCurrentJourney(
-        currentUser.uid,
+        targetOwnerUserId,
         familyProfile,
         {
           ...personalizedJourney,
-          tasks,
+          tasks: tasksRef.current,
         },
         {
           stageNumber: journeyStageNumber,
@@ -369,12 +473,19 @@ export default function JourneyDashboard({
         }
       );
 
-      setSaveMessage("Your journey has been saved.");
+      setSaveMessage(
+        "Your journey has been saved."
+      );
+
       setShowSaveAccountPrompt(false);
 
       await notifyJourneySaved();
     } catch (error) {
-      console.error("Unable to save journey:", error);
+      console.error(
+        "Unable to save journey:",
+        error
+      );
+
       setSaveError(
         "We couldn't save your journey right now. Please try again."
       );
@@ -383,11 +494,12 @@ export default function JourneyDashboard({
     }
   }
 
-  /*
-   * GENERATE NEXT JOURNEY STAGE
-   */
   async function handleShowNextJourney() {
-    if (!allTasksCompleted || generatingNextJourney) {
+    if (
+      !canGenerateNextStage ||
+      !allTasksCompleted ||
+      generatingNextJourney
+    ) {
       return;
     }
 
@@ -403,65 +515,79 @@ export default function JourneyDashboard({
       return;
     }
 
+    const targetOwnerUserId =
+      ownerUserId?.trim() || currentUser.uid;
+
     setShowNextAccountPrompt(false);
     setNextJourneyError("");
     setSaveMessage("");
     setGeneratingNextJourney(true);
 
     try {
-      // Wait for pending checkbox changes.
       await taskSaveQueueRef.current;
 
-      const idToken = await currentUser.getIdToken();
+      const idToken =
+        await currentUser.getIdToken();
 
-      const completedTaskIds = tasks
+      const completedTaskIds = tasksRef.current
         .filter((task) => task.completed)
         .map((task) => task.id);
 
-      const completedTaskDetails = tasks.filter(
-        (task) => task.completed
-      );
+      const completedTaskDetails =
+        tasksRef.current.filter(
+          (task) => task.completed
+        );
 
       const currentJourney = {
         ...personalizedJourney,
-        tasks,
+        tasks: tasksRef.current,
       };
 
       const lastCompletedStageNumber =
-        await getCurrentStageNumber(currentUser.uid);
+        await getCurrentStageNumber(
+          targetOwnerUserId,
+          familyProfile.childId || undefined,
+          journeyId
+        );
 
       let completedStageNumber = Math.max(
         1,
         journeyStageNumber
       );
 
-      if (lastCompletedStageNumber >= completedStageNumber) {
-        completedStageNumber = lastCompletedStageNumber + 1;
+      if (
+        lastCompletedStageNumber >=
+        completedStageNumber
+      ) {
+        completedStageNumber =
+          lastCompletedStageNumber + 1;
       }
 
-      /*
-       * Request the next stage before archiving the current
-       * stage. This prevents archiving a completed stage
-       * when the API rejects the request.
-       */
-      const response = await fetch("/api/journey/next", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          familyProfile,
-          currentJourney,
-          completedTaskIds,
-          completedTasks: completedTaskDetails,
-        }),
-      });
+      const response = await fetch(
+        "/api/journey/next",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({
+            familyProfile,
+            currentJourney,
+            completedTaskIds,
+            completedTasks:
+              completedTaskDetails,
+          }),
+        }
+      );
 
       const data = await response.json();
 
       if (response.status === 401) {
-        savePendingJourney(familyProfile, currentJourney);
+        savePendingJourney(
+          familyProfile,
+          currentJourney
+        );
 
         setNextJourneyError(
           "Your login session has expired. Please log in again to continue your journey."
@@ -484,19 +610,20 @@ export default function JourneyDashboard({
         );
       }
 
-      const nextJourney = data.journey as PersonalizedJourney;
-      const nextStageNumber = completedStageNumber + 1;
+      const nextJourney =
+        data.journey as PersonalizedJourney;
 
-      /*
-       * ARCHIVE THE COMPLETED STAGE.
-       */
+      const nextStageNumber =
+        completedStageNumber + 1;
+
       await saveJourneyStage(
-        currentUser.uid,
+        targetOwnerUserId,
         completedStageNumber,
         familyProfile,
         currentJourney,
         completedTaskIds,
         {
+          journeyId,
           reason:
             completedStageNumber === 1
               ? "initial"
@@ -504,11 +631,8 @@ export default function JourneyDashboard({
         }
       );
 
-      /*
-       * SAVE THE NEXT ACTIVE STAGE.
-       */
       await saveCurrentJourney(
-        currentUser.uid,
+        targetOwnerUserId,
         familyProfile,
         {
           ...nextJourney,
@@ -516,16 +640,18 @@ export default function JourneyDashboard({
         },
         {
           stageNumber: nextStageNumber,
-          previousCompletedTaskIds: completedTaskIds,
+          previousCompletedTaskIds:
+            completedTaskIds,
           journeyReason: "tasks_completed",
         }
       );
 
-      /*
-       * UPDATE SCREEN ONLY AFTER SAVING SUCCEEDS.
-       */
       setPersonalizedJourney(nextJourney);
       setTasks(nextJourney.tasks || []);
+
+      tasksRef.current =
+        nextJourney.tasks || [];
+
       setJourneyStageNumber(nextStageNumber);
       setTaskSaveStatus("idle");
 
@@ -550,9 +676,6 @@ export default function JourneyDashboard({
     }
   }
 
-  /*
-   * LOG OUT
-   */
   async function handleLogout() {
     setLoggingOut(true);
 
@@ -574,11 +697,13 @@ export default function JourneyDashboard({
       }}
     >
       {/* HEADER */}
+
       <section style={sectionStyle}>
         <div
           style={{
             display: "flex",
-            justifyContent: "space-between",
+            justifyContent:
+              "space-between",
             alignItems: "center",
             flexWrap: "wrap",
             gap: 16,
@@ -608,14 +733,16 @@ export default function JourneyDashboard({
                 fontWeight: 800,
               }}
             >
-              Journey Stage {journeyStageNumber}
+              Journey Stage{" "}
+              {journeyStageNumber}
             </span>
           )}
         </div>
 
         <h1
           style={{
-            fontSize: "clamp(30px, 5vw, 46px)",
+            fontSize:
+              "clamp(30px, 5vw, 46px)",
             lineHeight: 1.1,
             fontWeight: 800,
             color: colors.dark,
@@ -635,12 +762,38 @@ export default function JourneyDashboard({
             color: colors.muted,
           }}
         >
-          Based on what you shared, we've identified where
-          we'd recommend starting.
+          Based on what you shared, we've
+          identified where we'd recommend
+          starting.
         </p>
+
+        {isSharedJourney && (
+          <div
+            style={{
+              display: "inline-block",
+              marginTop: 14,
+              padding: "9px 14px",
+              borderRadius: 10,
+              background: "#F0FDFA",
+              border: "1px solid #99F6E4",
+              color: colors.navy,
+              fontSize: 13,
+              fontWeight: 700,
+            }}
+          >
+            Family Team Access:{" "}
+            {formatDisplayValue(
+              effectiveAccessLevel
+            )}
+            {effectiveAccessLevel ===
+              "viewer" &&
+              " — Read Only"}
+          </div>
+        )}
       </section>
 
       {/* FAMILY SNAPSHOT */}
+
       <section
         style={{
           ...panelStyle,
@@ -676,7 +829,9 @@ export default function JourneyDashboard({
             label="Location"
             value={
               familyProfile.state
-                ? formatDisplayValue(familyProfile.state)
+                ? formatDisplayValue(
+                    familyProfile.state
+                  )
                 : "Not provided"
             }
           />
@@ -685,7 +840,9 @@ export default function JourneyDashboard({
             label="Journey Stage"
             value={
               familyProfile.journeyStage
-                ? formatDisplayValue(familyProfile.journeyStage)
+                ? formatDisplayValue(
+                    familyProfile.journeyStage
+                  )
                 : "Not provided"
             }
           />
@@ -694,7 +851,9 @@ export default function JourneyDashboard({
             label="Insurance"
             value={
               familyProfile.insurance
-                ? formatDisplayValue(familyProfile.insurance)
+                ? formatDisplayValue(
+                    familyProfile.insurance
+                  )
                 : "Not provided"
             }
           />
@@ -705,7 +864,8 @@ export default function JourneyDashboard({
             style={{
               marginTop: 22,
               paddingTop: 20,
-              borderTop: `1px solid ${colors.border}`,
+              borderTop:
+                `1px solid ${colors.border}`,
             }}
           >
             <strong
@@ -726,21 +886,27 @@ export default function JourneyDashboard({
                 gap: 8,
               }}
             >
-              {familyProfile.supports.map((support, index) => (
-                <span
-                  key={`${support}-${index}`}
-                  style={{
-                    padding: "7px 12px",
-                    borderRadius: 999,
-                    border: "1px solid #CBD5E1",
-                    background: colors.white,
-                    fontSize: 13,
-                    color: colors.text,
-                  }}
-                >
-                  {formatDisplayValue(support)}
-                </span>
-              ))}
+              {familyProfile.supports.map(
+                (support, index) => (
+                  <span
+                    key={`${support}-${index}`}
+                    style={{
+                      padding: "7px 12px",
+                      borderRadius: 999,
+                      border:
+                        "1px solid #CBD5E1",
+                      background:
+                        colors.white,
+                      fontSize: 13,
+                      color: colors.text,
+                    }}
+                  >
+                    {formatDisplayValue(
+                      support
+                    )}
+                  </span>
+                )
+              )}
             </div>
           </div>
         )}
@@ -764,19 +930,23 @@ export default function JourneyDashboard({
                 color: colors.dark,
               }}
             >
-              {formatDisplayValue(familyProfile.priority)}
+              {formatDisplayValue(
+                familyProfile.priority
+              )}
             </div>
           </div>
         )}
       </section>
 
       {/* CURRENT FOCUS */}
+
       <section style={sectionStyle}>
         <div
           style={{
             padding: 32,
             borderRadius: 22,
-            border: "1px solid #BFDBFE",
+            border:
+              "1px solid #BFDBFE",
             background:
               "linear-gradient(135deg, #EFF6FF, #F0FDFA)",
           }}
@@ -790,7 +960,9 @@ export default function JourneyDashboard({
               marginBottom: 12,
             }}
           >
-            Journey Stage {journeyStageNumber} — Current Focus
+            Journey Stage{" "}
+            {journeyStageNumber} — Current
+            Focus
           </div>
 
           <h2
@@ -801,7 +973,10 @@ export default function JourneyDashboard({
               color: colors.dark,
             }}
           >
-            {personalizedJourney.currentFocus.title}
+            {
+              personalizedJourney
+                .currentFocus.title
+            }
           </h2>
 
           <p
@@ -813,7 +988,10 @@ export default function JourneyDashboard({
               color: colors.text,
             }}
           >
-            {personalizedJourney.currentFocus.explanation}
+            {
+              personalizedJourney
+                .currentFocus.explanation
+            }
           </p>
 
           {personalizedJourney.nextStep && (
@@ -821,14 +999,16 @@ export default function JourneyDashboard({
               style={{
                 marginTop: 24,
                 paddingTop: 22,
-                borderTop: "1px solid #BFDBFE",
+                borderTop:
+                  "1px solid #BFDBFE",
               }}
             >
               <strong
                 style={{
                   color: colors.navy,
                   fontSize: 12,
-                  textTransform: "uppercase",
+                  textTransform:
+                    "uppercase",
                 }}
               >
                 Your Next Best Step
@@ -841,7 +1021,10 @@ export default function JourneyDashboard({
                   margin: "8px 0",
                 }}
               >
-                {personalizedJourney.nextStep.title}
+                {
+                  personalizedJourney
+                    .nextStep.title
+                }
               </h3>
 
               <p
@@ -851,7 +1034,10 @@ export default function JourneyDashboard({
                   margin: 0,
                 }}
               >
-                {personalizedJourney.nextStep.description}
+                {
+                  personalizedJourney
+                    .nextStep.description
+                }
               </p>
             </div>
           )}
@@ -859,6 +1045,7 @@ export default function JourneyDashboard({
       </section>
 
       {/* FIRST ACTION */}
+
       {primaryAction && (
         <section style={sectionStyle}>
           <SectionHeading
@@ -867,16 +1054,23 @@ export default function JourneyDashboard({
             description="Here's a practical way to get started."
           />
 
-          <div style={{ ...panelStyle, marginTop: 22 }}>
+          <div
+            style={{
+              ...panelStyle,
+              marginTop: 22,
+            }}
+          >
             <span
               style={{
                 color: colors.navy,
                 fontSize: 12,
                 fontWeight: 800,
-                textTransform: "uppercase",
+                textTransform:
+                  "uppercase",
               }}
             >
-              {primaryAction.priority} Priority
+              {primaryAction.priority}{" "}
+              Priority
             </span>
 
             <h3
@@ -889,10 +1083,17 @@ export default function JourneyDashboard({
               {primaryAction.title}
             </h3>
 
-            <div style={{ display: "grid", gap: 18 }}>
+            <div
+              style={{
+                display: "grid",
+                gap: 18,
+              }}
+            >
               <GuidanceBlock
                 label="Why it matters"
-                text={primaryAction.whyItMatters}
+                text={
+                  primaryAction.whyItMatters
+                }
               />
 
               <GuidanceBlock
@@ -908,7 +1109,9 @@ export default function JourneyDashboard({
               {primaryAction.nextStep && (
                 <GuidanceBlock
                   label="Then"
-                  text={primaryAction.nextStep}
+                  text={
+                    primaryAction.nextStep
+                  }
                 />
               )}
             </div>
@@ -917,20 +1120,29 @@ export default function JourneyDashboard({
               style={{
                 marginTop: 20,
                 paddingTop: 16,
-                borderTop: `1px solid ${colors.border}`,
+                borderTop:
+                  `1px solid ${colors.border}`,
                 color: colors.muted,
                 fontSize: 13,
               }}
             >
-              Estimated time: {primaryAction.estimatedTime}
+              Estimated time:{" "}
+              {primaryAction.estimatedTime}
             </div>
           </div>
         </section>
       )}
 
       {/* RESOURCES */}
-      {(personalizedJourney.resources?.length ?? 0) > 0 && (
-        <section style={{ ...sectionStyle, marginBottom: 48 }}>
+
+      {(personalizedJourney.resources
+        ?.length ?? 0) > 0 && (
+        <section
+          style={{
+            ...sectionStyle,
+            marginBottom: 48,
+          }}
+        >
           <SectionHeading
             eyebrow="Resources"
             title="Resources selected for you"
@@ -946,106 +1158,122 @@ export default function JourneyDashboard({
               marginTop: 22,
             }}
           >
-            {personalizedJourney.resources.map((resource) => (
-              <ResourceCard
-                key={resource.id}
-                resource={resource}
-              />
-            ))}
+            {personalizedJourney.resources.map(
+              (resource) => (
+                <ResourceCard
+                  key={resource.id}
+                  resource={resource}
+                />
+              )
+            )}
           </div>
         </section>
       )}
 
       {/* SAVE JOURNEY */}
-      <section style={sectionStyle}>
-        <div
-          style={{
-            ...panelStyle,
-            background: "#EFF6FF",
-            borderColor: "#BFDBFE",
-            textAlign: "center",
-          }}
-        >
-          <h2
+
+      {canEdit && (
+        <section style={sectionStyle}>
+          <div
             style={{
-              margin: 0,
-              fontSize: 23,
-              color: colors.dark,
+              ...panelStyle,
+              background: "#EFF6FF",
+              borderColor: "#BFDBFE",
+              textAlign: "center",
             }}
           >
-            Want to keep your journey?
-          </h2>
-
-          <p
-            style={{
-              margin: "10px auto 18px",
-              maxWidth: 620,
-              color: colors.text,
-              lineHeight: 1.6,
-            }}
-          >
-            Save your personalized journey so you can come
-            back to it and keep moving forward.
-          </p>
-
-          <button
-            type="button"
-            onClick={handleSaveJourney}
-            disabled={savingJourney || generatingNextJourney}
-            style={{
-              ...primaryButtonStyle,
-              opacity:
-                savingJourney || generatingNextJourney
-                  ? 0.6
-                  : 1,
-            }}
-          >
-            {savingJourney
-              ? "Saving..."
-              : "💾 Save My Journey"}
-          </button>
-
-          {saveMessage && (
-            <p
-              role="status"
+            <h2
               style={{
-                color: colors.green,
-                fontWeight: 700,
-                marginTop: 15,
+                margin: 0,
+                fontSize: 23,
+                color: colors.dark,
               }}
             >
-              ✓ {saveMessage}
-            </p>
-          )}
+              Want to keep your journey?
+            </h2>
 
-          {saveError && (
             <p
-              role="alert"
               style={{
-                color: colors.red,
-                marginTop: 15,
+                margin:
+                  "10px auto 18px",
+                maxWidth: 620,
+                color: colors.text,
+                lineHeight: 1.6,
               }}
             >
-              {saveError}
+              Save your personalized
+              journey so you can come
+              back to it and keep
+              moving forward.
             </p>
-          )}
 
-          {showSaveAccountPrompt && (
-            <AccountPrompt
-              message="Create a free account or log in to save your journey."
-            />
-          )}
-        </div>
-      </section>
+            <button
+              type="button"
+              onClick={
+                handleSaveJourney
+              }
+              disabled={
+                savingJourney ||
+                generatingNextJourney
+              }
+              style={{
+                ...primaryButtonStyle,
+                opacity:
+                  savingJourney ||
+                  generatingNextJourney
+                    ? 0.6
+                    : 1,
+              }}
+            >
+              {savingJourney
+                ? "Saving..."
+                : "💾 Save My Journey"}
+            </button>
+
+            {saveMessage && (
+              <p
+                role="status"
+                style={{
+                  color: colors.green,
+                  fontWeight: 700,
+                  marginTop: 15,
+                }}
+              >
+                ✓ {saveMessage}
+              </p>
+            )}
+
+            {saveError && (
+              <p
+                role="alert"
+                style={{
+                  color: colors.red,
+                  marginTop: 15,
+                }}
+              >
+                {saveError}
+              </p>
+            )}
+
+            {showSaveAccountPrompt && (
+              <AccountPrompt
+                message="Create a free account or log in to save your journey."
+              />
+            )}
+          </div>
+        </section>
+      )}
 
       {/* ACCOUNT */}
+
       {currentUserEmail && (
         <section style={sectionStyle}>
           <div
             style={{
               ...panelStyle,
               display: "flex",
-              justifyContent: "space-between",
+              justifyContent:
+                "space-between",
               alignItems: "center",
               flexWrap: "wrap",
               gap: 20,
@@ -1057,7 +1285,8 @@ export default function JourneyDashboard({
                   color: colors.muted,
                   fontSize: 12,
                   fontWeight: 800,
-                  textTransform: "uppercase",
+                  textTransform:
+                    "uppercase",
                 }}
               >
                 Your Account
@@ -1081,25 +1310,34 @@ export default function JourneyDashboard({
               style={{
                 padding: "10px 18px",
                 borderRadius: 9,
-                border: "1px solid #CBD5E1",
-                background: colors.white,
+                border:
+                  "1px solid #CBD5E1",
+                background:
+                  colors.white,
                 color: colors.text,
                 fontWeight: 700,
                 cursor: "pointer",
               }}
             >
-              {loggingOut ? "Logging Out..." : "Log Out"}
+              {loggingOut
+                ? "Logging Out..."
+                : "Log Out"}
             </button>
           </div>
         </section>
       )}
 
       {/* PROGRESS */}
+
       <section style={sectionStyle}>
         <SectionHeading
           eyebrow={`Journey Stage ${journeyStageNumber}`}
           title="Keep moving at your own pace"
-          description="Complete the suggested tasks to unlock your next stage."
+          description={
+            canEdit
+              ? "Complete the suggested tasks to unlock your next stage."
+              : "Follow the progress of this shared Journey."
+          }
         />
 
         <div
@@ -1112,14 +1350,19 @@ export default function JourneyDashboard({
           <div
             style={{
               display: "flex",
-              justifyContent: "space-between",
+              justifyContent:
+                "space-between",
               alignItems: "center",
               flexWrap: "wrap",
               gap: 12,
               marginBottom: 12,
             }}
           >
-            <strong style={{ color: colors.dark }}>
+            <strong
+              style={{
+                color: colors.dark,
+              }}
+            >
               Journey Progress
             </strong>
 
@@ -1129,7 +1372,8 @@ export default function JourneyDashboard({
                 color: colors.text,
               }}
             >
-              {completedTasks} of {totalTasks} completed
+              {completedTasks} of{" "}
+              {totalTasks} completed
             </span>
           </div>
 
@@ -1143,16 +1387,19 @@ export default function JourneyDashboard({
           >
             <div
               style={{
-                width: `${taskPercent}%`,
+                width:
+                  `${taskPercent}%`,
                 height: "100%",
                 background:
                   "linear-gradient(90deg, #204D6A, #58AAA7)",
-                transition: "width .3s ease",
+                transition:
+                  "width .3s ease",
               }}
             />
           </div>
 
-          {taskSaveStatus === "saving" && (
+          {taskSaveStatus ===
+            "saving" && (
             <p
               role="status"
               style={{
@@ -1165,7 +1412,8 @@ export default function JourneyDashboard({
             </p>
           )}
 
-          {taskSaveStatus === "error" && (
+          {taskSaveStatus ===
+            "error" && (
             <p
               role="alert"
               style={{
@@ -1174,7 +1422,8 @@ export default function JourneyDashboard({
                 textAlign: "right",
               }}
             >
-              We couldn't save your latest task change.
+              We couldn't save your
+              latest task change.
             </p>
           )}
         </div>
@@ -1190,12 +1439,16 @@ export default function JourneyDashboard({
             <TaskCard
               key={task.id}
               task={task}
-              onToggle={() => toggleTask(task.id)}
+              onToggle={() =>
+                toggleTask(task.id)
+              }
+              readOnly={!canEdit}
             />
           ))}
         </div>
 
         {/* NEXT STAGE */}
+
         {allTasksCompleted && (
           <div
             style={{
@@ -1203,7 +1456,8 @@ export default function JourneyDashboard({
               padding: 26,
               borderRadius: 18,
               background: "#ECFDF5",
-              border: "1px solid #A7F3D0",
+              border:
+                "1px solid #A7F3D0",
               textAlign: "center",
             }}
           >
@@ -1223,7 +1477,8 @@ export default function JourneyDashboard({
                 margin: 0,
               }}
             >
-              You've completed Journey Stage{" "}
+              You've completed Journey
+              Stage{" "}
               {journeyStageNumber}.
             </h3>
 
@@ -1231,12 +1486,16 @@ export default function JourneyDashboard({
               style={{
                 color: colors.green,
                 lineHeight: 1.6,
-                margin: "9px auto 18px",
+                margin:
+                  "9px auto 18px",
                 maxWidth: 650,
               }}
             >
-              Great work. We'll build on what you've
-              accomplished to determine what should come next.
+              Great work. We'll build
+              on what you've
+              accomplished to
+              determine what should
+              come next.
             </p>
 
             {nextJourneyError && (
@@ -1244,11 +1503,14 @@ export default function JourneyDashboard({
                 role="alert"
                 style={{
                   maxWidth: 650,
-                  margin: "0 auto 16px",
+                  margin:
+                    "0 auto 16px",
                   padding: 14,
                   borderRadius: 10,
-                  background: "#FEF2F2",
-                  border: "1px solid #FECACA",
+                  background:
+                    "#FEF2F2",
+                  border:
+                    "1px solid #FECACA",
                   color: colors.red,
                   textAlign: "left",
                 }}
@@ -1263,35 +1525,54 @@ export default function JourneyDashboard({
               />
             )}
 
-            <button
-              type="button"
-              onClick={handleShowNextJourney}
-              disabled={
-                generatingNextJourney ||
-                savingJourney ||
-                taskSaveStatus === "saving"
-              }
-              style={{
-                ...primaryButtonStyle,
-                background: "#059669",
-                minWidth: 210,
-                opacity:
+            {canGenerateNextStage ? (
+              <button
+                type="button"
+                onClick={
+                  handleShowNextJourney
+                }
+                disabled={
                   generatingNextJourney ||
                   savingJourney ||
-                  taskSaveStatus === "saving"
-                    ? 0.6
-                    : 1,
-              }}
-            >
-              {generatingNextJourney
-                ? "Building What's Next..."
-                : "Show Me What's Next →"}
-            </button>
+                  taskSaveStatus ===
+                    "saving"
+                }
+                style={{
+                  ...primaryButtonStyle,
+                  background:
+                    "#059669",
+                  minWidth: 210,
+                  opacity:
+                    generatingNextJourney ||
+                    savingJourney ||
+                    taskSaveStatus ===
+                      "saving"
+                      ? 0.6
+                      : 1,
+                }}
+              >
+                {generatingNextJourney
+                  ? "Building What's Next..."
+                  : "Show Me What's Next →"}
+              </button>
+            ) : (
+              <p
+                style={{
+                  fontSize: 13,
+                  color: colors.green,
+                  fontWeight: 700,
+                }}
+              >
+                The Journey owner can
+                unlock the next stage.
+              </p>
+            )}
           </div>
         )}
       </section>
 
       {/* DISCLAIMER */}
+
       <p
         style={{
           textAlign: "center",
@@ -1301,17 +1582,19 @@ export default function JourneyDashboard({
           marginTop: 50,
         }}
       >
-        Your recommendations are based on the information
-        you provided and are intended to help you identify
-        possible next steps.
+        Your recommendations are based
+        on the information you provided
+        and are intended to help you
+        identify possible next steps.
       </p>
     </main>
   );
 }
 
-/*
- * FAMILY SNAPSHOT ITEM
- */
+/* ============================================================
+   FAMILY SNAPSHOT ITEM
+   ============================================================ */
+
 function SnapshotItem({
   label,
   value,
@@ -1347,9 +1630,10 @@ function SnapshotItem({
   );
 }
 
-/*
- * SECTION HEADING
- */
+/* ============================================================
+   SECTION HEADING
+   ============================================================ */
+
 function SectionHeading({
   eyebrow,
   title,
@@ -1402,9 +1686,10 @@ function SectionHeading({
   );
 }
 
-/*
- * GUIDANCE BLOCK
- */
+/* ============================================================
+   GUIDANCE BLOCK
+   ============================================================ */
+
 function GuidanceBlock({
   label,
   text,
@@ -1438,9 +1723,10 @@ function GuidanceBlock({
   );
 }
 
-/*
- * RESOURCE CARD
- */
+/* ============================================================
+   RESOURCE CARD
+   ============================================================ */
+
 function ResourceCard({
   resource,
 }: {
@@ -1462,7 +1748,9 @@ function ResourceCard({
           marginBottom: 11,
         }}
       >
-        {formatResourceType(resource.type)}
+        {formatResourceType(
+          resource.type
+        )}
       </div>
 
       <h3
@@ -1499,7 +1787,9 @@ function ResourceCard({
             lineHeight: 1.5,
           }}
         >
-          <strong>Why it may help:</strong>{" "}
+          <strong>
+            Why it may help:
+          </strong>{" "}
           {resource.whyItMayHelp}
         </div>
       )}
@@ -1512,7 +1802,8 @@ function ResourceCard({
             marginBottom: 12,
           }}
         >
-          Source: {resource.sourceName}
+          Source:{" "}
+          {resource.sourceName}
         </div>
       )}
 
@@ -1539,16 +1830,18 @@ function ResourceCard({
   );
 }
 
-/*
- * TASK CARD
- */
+/* ============================================================
+   TASK CARD
+   ============================================================ */
 
 function TaskCard({
   task,
   onToggle,
+  readOnly = false,
 }: {
   task: Task;
   onToggle: () => void;
+  readOnly?: boolean;
 }) {
   const priority = String(
     task.priority ?? "Low"
@@ -1586,6 +1879,7 @@ function TaskCard({
       <button
         type="button"
         onClick={onToggle}
+        disabled={readOnly}
         aria-label={
           task.completed
             ? `Mark ${task.title} incomplete`
@@ -1606,13 +1900,25 @@ function TaskCard({
           color: colors.white,
           fontSize: 16,
           fontWeight: 800,
-          cursor: "pointer",
+          cursor: readOnly
+            ? "not-allowed"
+            : "pointer",
+          opacity: readOnly
+            ? 0.7
+            : 1,
         }}
       >
-        {task.completed ? "✓" : ""}
+        {task.completed
+          ? "✓"
+          : ""}
       </button>
 
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div
+        style={{
+          flex: 1,
+          minWidth: 0,
+        }}
+      >
         <div
           style={{
             display: "flex",
@@ -1626,9 +1932,10 @@ function TaskCard({
               margin: 0,
               color: colors.dark,
               fontSize: 17,
-              textDecoration: task.completed
-                ? "line-through"
-                : "none",
+              textDecoration:
+                task.completed
+                  ? "line-through"
+                  : "none",
             }}
           >
             {task.title}
@@ -1638,11 +1945,13 @@ function TaskCard({
             style={{
               padding: "4px 8px",
               borderRadius: 999,
-              background: priorityBackground,
+              background:
+                priorityBackground,
               color: priorityColor,
               fontSize: 11,
               fontWeight: 800,
-              textTransform: "uppercase",
+              textTransform:
+                "uppercase",
             }}
           >
             {task.priority} Priority
@@ -1668,7 +1977,8 @@ function TaskCard({
               marginTop: 8,
             }}
           >
-            Estimated time: {task.estimatedTime}
+            Estimated time:{" "}
+            {task.estimatedTime}
           </div>
         )}
 
@@ -1678,7 +1988,8 @@ function TaskCard({
             target="_blank"
             rel="noopener noreferrer"
             style={{
-              display: "inline-block",
+              display:
+                "inline-block",
               marginTop: 10,
               color: colors.navy,
               fontSize: 13,
@@ -1693,15 +2004,9 @@ function TaskCard({
   );
 }
 
-/*
- * ============================================================
- * ACCOUNT PROMPT
- * ============================================================
- *
- * Displayed when a user needs to log in or create
- * an account to save or continue their journey.
- * ============================================================
- */
+/* ============================================================
+   ACCOUNT PROMPT
+   ============================================================ */
 
 function AccountPrompt({
   message,
@@ -1716,7 +2021,8 @@ function AccountPrompt({
         padding: 20,
         borderRadius: 14,
         background: colors.white,
-        border: `1px solid ${colors.border}`,
+        border:
+          `1px solid ${colors.border}`,
         textAlign: "center",
       }}
     >
@@ -1733,7 +2039,8 @@ function AccountPrompt({
       <div
         style={{
           display: "flex",
-          justifyContent: "center",
+          justifyContent:
+            "center",
           flexWrap: "wrap",
           gap: 10,
         }}
@@ -1749,9 +2056,11 @@ function AccountPrompt({
           href="/signup"
           style={{
             ...linkButtonStyle,
-            background: colors.white,
+            background:
+              colors.white,
             color: colors.navy,
-            border: `1px solid ${colors.navy}`,
+            border:
+              `1px solid ${colors.navy}`,
           }}
         >
           Create Free Account

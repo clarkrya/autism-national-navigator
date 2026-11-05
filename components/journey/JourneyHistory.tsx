@@ -17,11 +17,15 @@ import {
 
 interface JourneyHistoryProps {
   childId?: string;
+  ownerUserId?: string;
+  journeyId?: string;
   refreshKey?: number;
 }
 
 export default function JourneyHistory({
   childId,
+  ownerUserId,
+  journeyId,
   refreshKey = 0,
 }: JourneyHistoryProps) {
   const [history, setHistory] = useState<
@@ -29,21 +33,7 @@ export default function JourneyHistory({
   >([]);
 
   const [loading, setLoading] = useState(true);
-
   const [error, setError] = useState("");
-
-  /*
-   * ============================================================
-   * LOAD HISTORY FOR SELECTED CHILD
-   * ============================================================
-   *
-   * - Only authenticated users can load history.
-   * - History is scoped to the selected child.
-   * - Switching children clears the previous history.
-   * - refreshKey triggers a reload after saving.
-   * - Stale requests cannot overwrite newer results.
-   * ============================================================
-   */
 
   useEffect(() => {
     let active = true;
@@ -54,9 +44,7 @@ export default function JourneyHistory({
     setLoading(true);
 
     const unsubscribe = watchAuthState(async (user) => {
-      if (!active) {
-        return;
-      }
+      if (!active) return;
 
       const currentRequest = ++requestId;
 
@@ -72,9 +60,13 @@ export default function JourneyHistory({
       setHistory([]);
 
       try {
+        const canonicalOwnerUserId =
+          ownerUserId?.trim() || user.uid;
+
         const journeyHistory = await getJourneyHistory(
-          user.uid,
-          childId
+          canonicalOwnerUserId,
+          childId,
+          journeyId
         );
 
         if (
@@ -99,7 +91,6 @@ export default function JourneyHistory({
         }
 
         setHistory([]);
-
         setError(
           "We couldn't load your journey history right now."
         );
@@ -118,18 +109,10 @@ export default function JourneyHistory({
       requestId += 1;
       unsubscribe();
     };
-  }, [childId, refreshKey]);
-
-  /*
-   * ============================================================
-   * FORMAT DATE
-   * ============================================================
-   */
+  }, [childId, ownerUserId, journeyId, refreshKey]);
 
   function formatDate(timestamp: number): string {
-    if (!timestamp) {
-      return "Date unavailable";
-    }
+    if (!timestamp) return "Date unavailable";
 
     try {
       return new Intl.DateTimeFormat("en-US", {
@@ -142,15 +125,7 @@ export default function JourneyHistory({
     }
   }
 
-  /*
-   * ============================================================
-   * HIDE EMPTY HISTORY
-   * ============================================================
-   */
-
-  if (!childId) {
-    return null;
-  }
+  if (!childId) return null;
 
   if (
     !loading &&
@@ -160,12 +135,6 @@ export default function JourneyHistory({
     return null;
   }
 
-  /*
-   * ============================================================
-   * RENDER
-   * ============================================================
-   */
-
   return (
     <section
       style={{
@@ -174,13 +143,7 @@ export default function JourneyHistory({
         padding: "0 24px",
       }}
     >
-      {/* HEADER */}
-
-      <div
-        style={{
-          marginBottom: "22px",
-        }}
-      >
+      <div style={{ marginBottom: "22px" }}>
         <div
           style={{
             color: "#2563EB",
@@ -220,8 +183,6 @@ export default function JourneyHistory({
         </p>
       </div>
 
-      {/* LOADING */}
-
       {loading && (
         <div
           style={{
@@ -237,8 +198,6 @@ export default function JourneyHistory({
           Loading your journey history...
         </div>
       )}
-
-      {/* ERROR */}
 
       {!loading && error && (
         <div
@@ -256,8 +215,6 @@ export default function JourneyHistory({
           {error}
         </div>
       )}
-
-      {/* HISTORY */}
 
       {!loading &&
         !error &&
@@ -295,8 +252,6 @@ export default function JourneyHistory({
                       background: "#FFFFFF",
                     }}
                   >
-                    {/* STAGE INDICATOR */}
-
                     <div
                       style={{
                         flexShrink: 0,
@@ -314,8 +269,6 @@ export default function JourneyHistory({
                     >
                       ✓
                     </div>
-
-                    {/* STAGE CONTENT */}
 
                     <div style={{ flex: 1 }}>
                       <div
@@ -356,15 +309,9 @@ export default function JourneyHistory({
                         </span>
                       </div>
 
-                      {/* FOCUS */}
-
                       {stage.journey?.currentFocus
                         ?.title && (
-                        <div
-                          style={{
-                            marginTop: "10px",
-                          }}
-                        >
+                        <div style={{ marginTop: "10px" }}>
                           <div
                             style={{
                               color: "#64748B",
@@ -395,8 +342,6 @@ export default function JourneyHistory({
                           </div>
                         </div>
                       )}
-
-                      {/* COMPLETED TASKS */}
 
                       <div
                         style={{

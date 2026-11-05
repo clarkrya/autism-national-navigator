@@ -1,10 +1,7 @@
 
 "use client";
 
-import {
-  FormEvent,
-  useState,
-} from "react";
+import { FormEvent, useState } from "react";
 
 import Link from "next/link";
 
@@ -13,9 +10,7 @@ import {
   sendPasswordResetEmail,
 } from "firebase/auth";
 
-import {
-  auth,
-} from "../../lib/firebase";
+import { auth } from "../../lib/firebase";
 
 /*
  * ============================================================
@@ -28,6 +23,12 @@ import {
  * - Existing authentication error handling
  * - returnTo redirect after login
  * - returnTo parameter when navigating to signup
+ * - Existing Autivoya branding and layout
+ *
+ * Improvements:
+ * - Stronger internal redirect validation
+ * - Family Team invitation return navigation
+ * - Protection against unsafe redirect destinations
  *
  * ============================================================
  */
@@ -72,6 +73,58 @@ const inputStyle: React.CSSProperties = {
 
 /*
  * ============================================================
+ * SAFE RETURN LOCATION
+ * ============================================================
+ *
+ * Accept only safe internal application paths.
+ *
+ * Examples:
+ *
+ * /journey
+ * /community
+ * /pricing
+ * /family-organizer/invitations
+ *
+ * Reject:
+ *
+ * - External URLs
+ * - Protocol-relative URLs
+ * - Backslashes
+ * - Control characters
+ *
+ * Default destination: /journey
+ *
+ * ============================================================
+ */
+
+function getSafeReturnTo(): string {
+  const fallback = "/journey";
+
+  if (typeof window === "undefined") {
+    return fallback;
+  }
+
+  const params = new URLSearchParams(
+    window.location.search
+  );
+
+  const returnTo = params.get("returnTo");
+
+  if (
+    !returnTo ||
+    !returnTo.startsWith("/") ||
+    returnTo.startsWith("//") ||
+    returnTo.includes("\\") ||
+    /[\u0000-\u001F\u007F]/.test(returnTo)
+  ) {
+    return fallback;
+  }
+
+  return returnTo;
+}
+
+/*
+ * ============================================================
  * PAGE
  * ============================================================
  */
@@ -85,36 +138,6 @@ export default function LoginPage() {
 
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-
-  /*
-   * ============================================================
-   * DETERMINE RETURN LOCATION
-   * ============================================================
-   *
-   * Only local application paths are accepted.
-   */
-
-  function getReturnTo(): string {
-    if (typeof window === "undefined") {
-      return "/journey";
-    }
-
-    const params = new URLSearchParams(
-      window.location.search
-    );
-
-    const returnTo = params.get("returnTo");
-
-    if (
-      !returnTo ||
-      !returnTo.startsWith("/") ||
-      returnTo.startsWith("//")
-    ) {
-      return "/journey";
-    }
-
-    return returnTo;
-  }
 
   /*
    * ============================================================
@@ -139,16 +162,17 @@ export default function LoginPage() {
       );
 
       /*
-       * Return to the page that sent the user here.
+       * Return the authenticated user to the
+       * application page that initiated login.
        *
-       * Community → Community
-       * Journey   → Journey
-       * Pricing   → Pricing
+       * Family Team invitation:
+       * /family-organizer/invitations
        *
-       * Default: Journey
+       * Default:
+       * /journey
        */
 
-      const returnTo = getReturnTo();
+      const returnTo = getSafeReturnTo();
 
       window.location.href = returnTo;
     } catch (error: unknown) {
@@ -431,7 +455,9 @@ export default function LoginPage() {
             />
           </div>
 
-          {/* FORGOT PASSWORD */}
+          {/* ==================================================
+              FORGOT PASSWORD
+          ================================================== */}
 
           <div
             style={{
@@ -462,7 +488,9 @@ export default function LoginPage() {
             </button>
           </div>
 
-          {/* LOG IN */}
+          {/* ==================================================
+              LOG IN
+          ================================================== */}
 
           <button
             type="submit"
@@ -516,7 +544,7 @@ export default function LoginPage() {
 
           <Link
             href={`/signup?returnTo=${encodeURIComponent(
-              getReturnTo()
+              getSafeReturnTo()
             )}`}
             style={{
               display: "inline-block",
@@ -542,7 +570,7 @@ export default function LoginPage() {
           }}
         >
           <Link
-            href={getReturnTo()}
+            href={getSafeReturnTo()}
             style={{
               color: BRAND.navy,
               fontSize: 13,

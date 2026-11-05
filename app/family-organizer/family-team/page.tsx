@@ -8,7 +8,10 @@ import {
   useMemo,
   useState,
 } from "react";
-import type { FormEvent, CSSProperties } from "react";
+import type {
+  CSSProperties,
+  FormEvent,
+} from "react";
 
 import FamilyOrganizerWorkspaceSelector from "../../../components/familyOrganizer/FamilyOrganizerWorkspaceSelector";
 
@@ -22,20 +25,44 @@ import {
   getFamilyOrganizerMembershipsForChild,
   revokeFamilyOrganizerInvitation,
   revokeFamilyOrganizerMembership,
+  updateFamilyOrganizerMemberAccess,
 } from "../../../lib/familyOrganizer/familyOrganizerRepository";
 
 import type {
+  FamilyOrganizerAccessLevel,
   FamilyOrganizerInvitation,
   FamilyOrganizerMembership,
   FamilyOrganizerRelationship,
 } from "../../../lib/familyOrganizer/familyOrganizerTypes";
 
+import {
+  normalizeFamilyOrganizerAccessLevel,
+} from "../../../lib/familyOrganizer/familyOrganizerTypes";
+
 /*
+ * ============================================================
  * AUTIVOYA — FAMILY TEAM
+ * ============================================================
  *
- * Preserves the existing family-sharing repository,
- * authentication, workspace selection, invitation creation,
- * membership removal, and owner-only access controls.
+ * Primary owner:
+ * - Invite family members
+ * - View pending invitations
+ * - Cancel invitations
+ * - View active memberships
+ * - Assign member permissions
+ * - Remove members
+ *
+ * Shared member:
+ * - View their own access level
+ * - Access the canonical shared workspace
+ *
+ * Relationship and access level are independent.
+ *
+ * Legacy memberships default to Viewer.
+ *
+ * Permission enforcement remains server-side
+ * through Firestore security rules.
+ * ============================================================
  */
 
 const BRAND = {
@@ -130,6 +157,7 @@ type TeamRow = {
   email?: string;
   relationship: string;
   status: "pending" | "active";
+  accessLevel: FamilyOrganizerAccessLevel;
   invitationId?: string;
   membershipId?: string;
 };
@@ -148,10 +176,47 @@ const RELATIONSHIPS: {
   { value: "other", label: "Other" },
 ];
 
-function getRelationshipLabel(relationship: string): string {
+const ACCESS_LEVELS: {
+  value: FamilyOrganizerAccessLevel;
+  label: string;
+  description: string;
+}[] = [
+  {
+    value: "viewer",
+    label: "Viewer",
+    description: "Can view permitted shared information.",
+  },
+  {
+    value: "contributor",
+    label: "Contributor",
+    description:
+      "Can view shared information and make permitted progress updates once enabled.",
+  },
+  {
+    value: "administrator",
+    label: "Administrator",
+    description:
+      "Can manage permitted shared information once administrator workflows are enabled.",
+  },
+];
+
+function getRelationshipLabel(
+  relationship: string
+): string {
   return (
-    RELATIONSHIPS.find((item) => item.value === relationship)
-      ?.label ?? relationship
+    RELATIONSHIPS.find(
+      (item) => item.value === relationship
+    )?.label ?? relationship
+  );
+}
+
+function getAccessLabel(
+  accessLevel: FamilyOrganizerAccessLevel
+): string {
+  return (
+    ACCESS_LEVELS.find(
+      (item) => item.value === accessLevel
+    )?.label ?? "Viewer"
   );
 }
 
@@ -159,23 +224,36 @@ function getErrorMessage(
   error: unknown,
   fallback: string
 ): string {
-  if (error instanceof Error && error.message.trim()) {
+  if (
+    error instanceof Error &&
+    error.message.trim()
+  ) {
     return error.message;
   }
 
   return fallback;
 }
 
+/*
+ * ============================================================
+ * FAMILY MEMBER ROW
+ * ============================================================
+ */
+
 function TeamMemberRow({
   member,
   busy,
   canManage,
   onRemove,
+  onChangeAccess,
 }: {
   member: TeamRow;
   busy: boolean;
   canManage: boolean;
   onRemove: () => void;
+  onChangeAccess: (
+    accessLevel: FamilyOrganizerAccessLevel
+  ) => void;
 }) {
   const pending = member.status === "pending";
 
@@ -197,6 +275,7 @@ function TeamMemberRow({
           alignItems: "center",
           gap: 13,
           minWidth: 0,
+          flex: "1 1 220px",
         }}
       >
         <div
@@ -205,7 +284,9 @@ function TeamMemberRow({
             width: 42,
             height: 42,
             borderRadius: 999,
-            background: pending ? "#FFF3DC" : BRAND.lightTeal,
+            background: pending
+              ? "#FFF3DC"
+              : BRAND.lightTeal,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -235,7 +316,9 @@ function TeamMemberRow({
               fontSize: 12,
             }}
           >
-            {getRelationshipLabel(member.relationship)}
+            {getRelationshipLabel(
+              member.relationship
+            )}
           </div>
         </div>
       </div>
@@ -245,14 +328,19 @@ function TeamMemberRow({
           display: "flex",
           alignItems: "center",
           gap: 10,
+          flexWrap: "wrap",
         }}
       >
         <span
           style={{
             padding: "5px 9px",
             borderRadius: 999,
-            background: pending ? "#FFF3DC" : BRAND.lightTeal,
-            color: pending ? "#986018" : BRAND.darkTeal,
+            background: pending
+              ? "#FFF3DC"
+              : BRAND.lightTeal,
+            color: pending
+              ? "#986018"
+              : BRAND.darkTeal,
             fontSize: 10,
             fontWeight: 800,
             textTransform: "uppercase",
@@ -261,6 +349,70 @@ function TeamMemberRow({
         >
           {pending ? "Pending" : "Active"}
         </span>
+
+        {pending ? (
+          <span
+            style={{
+              padding: "5px 9px",
+              borderRadius: 999,
+              background: "#F5F3FF",
+              color: "#6D28D9",
+              fontSize: 10,
+              fontWeight: 800,
+            }}
+          >
+            Viewer on acceptance
+          </span>
+        ) : canManage && member.membershipId ? (
+          <select
+            aria-label={`Access level for ${
+              member.email || "family member"
+            }`}
+            value={member.accessLevel}
+            disabled={busy}
+            onChange={(event) => {
+              onChangeAccess(
+                event.target.value as
+                  FamilyOrganizerAccessLevel
+              );
+            }}
+            style={{
+              padding: "8px 10px",
+              borderRadius: 9,
+              border: `1px solid ${BRAND.border}`,
+              background: BRAND.white,
+              color: BRAND.darkNavy,
+              fontSize: 12,
+              fontWeight: 750,
+              cursor: busy
+                ? "not-allowed"
+                : "pointer",
+              opacity: busy ? 0.6 : 1,
+            }}
+          >
+            {ACCESS_LEVELS.map((level) => (
+              <option
+                key={level.value}
+                value={level.value}
+              >
+                {level.label}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span
+            style={{
+              padding: "5px 9px",
+              borderRadius: 999,
+              background: "#F5F3FF",
+              color: "#6D28D9",
+              fontSize: 10,
+              fontWeight: 800,
+            }}
+          >
+            {getAccessLabel(member.accessLevel)}
+          </span>
+        )}
 
         {canManage ? (
           <button
@@ -275,7 +427,9 @@ function TeamMemberRow({
               color: "#B91C1C",
               fontSize: 11,
               fontWeight: 800,
-              cursor: busy ? "not-allowed" : "pointer",
+              cursor: busy
+                ? "not-allowed"
+                : "pointer",
               opacity: busy ? 0.6 : 1,
             }}
           >
@@ -286,6 +440,12 @@ function TeamMemberRow({
     </div>
   );
 }
+
+/*
+ * ============================================================
+ * FAMILY TEAM PAGE
+ * ============================================================
+ */
 
 export default function FamilyTeamPage() {
   const {
@@ -304,132 +464,213 @@ export default function FamilyTeamPage() {
   const [memberships, setMemberships] =
     useState<FamilyOrganizerMembership[]>([]);
 
-  const [loadingTeam, setLoadingTeam] = useState(false);
-  const [teamError, setTeamError] = useState("");
-  const [inviteEmail, setInviteEmail] = useState("");
-
-  const [inviteRelationship, setInviteRelationship] =
-    useState<FamilyOrganizerRelationship>("parent");
-
-  const [sendingInvitation, setSendingInvitation] =
+  const [loadingTeam, setLoadingTeam] =
     useState(false);
 
-  const [invitationMessage, setInvitationMessage] =
+  const [teamError, setTeamError] =
     useState("");
 
-  const [invitationError, setInvitationError] =
+  const [teamMessage, setTeamMessage] =
     useState("");
 
-  const [actionId, setActionId] = useState("");
+  const [inviteEmail, setInviteEmail] =
+    useState("");
 
-  const selectedChildName = selectedWorkspace?.childName ?? "";
-  const isOwner = selectedWorkspace?.role === "owner";
+  const [
+    inviteRelationship,
+    setInviteRelationship,
+  ] = useState<FamilyOrganizerRelationship>(
+    "parent"
+  );
+
+  const [
+    sendingInvitation,
+    setSendingInvitation,
+  ] = useState(false);
+
+  const [
+    invitationMessage,
+    setInvitationMessage,
+  ] = useState("");
+
+  const [
+    invitationError,
+    setInvitationError,
+  ] = useState("");
+
+  const [actionId, setActionId] =
+    useState("");
+
+  const selectedChildName =
+    selectedWorkspace?.childName ?? "";
+
+  const isOwner =
+    selectedWorkspace?.role === "owner" &&
+    selectedWorkspace.ownerUserId ===
+      currentUser?.uid;
+
+  const currentAccessLevel =
+    selectedWorkspace?.role === "owner"
+      ? "Primary Owner"
+      : getAccessLabel(
+          normalizeFamilyOrganizerAccessLevel(
+            selectedWorkspace?.accessLevel
+          )
+        );
 
   /*
-   * Reset messages when changing child workspaces.
+   * Reset messages when switching workspaces.
    */
 
   useEffect(() => {
     setInvitationMessage("");
     setInvitationError("");
     setTeamError("");
+    setTeamMessage("");
   }, [
     selectedWorkspace?.ownerUserId,
     selectedWorkspace?.childId,
   ]);
 
   /*
-   * Load existing invitations and memberships.
+   * Load team data.
+   *
+   * Invitation and membership list reads are
+   * owner-only under the current Firestore rules.
+   *
+   * Shared members see their own workspace
+   * access without querying the owner's full
+   * invitation or membership list.
    */
 
-  const loadFamilyTeam = useCallback(async () => {
-    if (!currentUser || !selectedWorkspace) {
-      setInvitations([]);
-      setMemberships([]);
-      return;
-    }
+  const loadFamilyTeam = useCallback(
+    async () => {
+      if (
+        !currentUser ||
+        !selectedWorkspace ||
+        !isOwner
+      ) {
+        setInvitations([]);
+        setMemberships([]);
+        setLoadingTeam(false);
+        return;
+      }
 
-    try {
-      setLoadingTeam(true);
-      setTeamError("");
+      try {
+        setLoadingTeam(true);
+        setTeamError("");
 
-      const [childInvitations, childMemberships] =
-        await Promise.all([
+        const [
+          childInvitations,
+          childMemberships,
+        ] = await Promise.all([
           getFamilyOrganizerInvitationsForChild({
-            ownerUserId: selectedWorkspace.ownerUserId,
-            childId: selectedWorkspace.childId,
+            ownerUserId:
+              selectedWorkspace.ownerUserId,
+            childId:
+              selectedWorkspace.childId,
           }),
           getFamilyOrganizerMembershipsForChild({
-            ownerUserId: selectedWorkspace.ownerUserId,
-            childId: selectedWorkspace.childId,
+            ownerUserId:
+              selectedWorkspace.ownerUserId,
+            childId:
+              selectedWorkspace.childId,
           }),
         ]);
 
-      setInvitations(childInvitations);
-      setMemberships(childMemberships);
-    } catch (error) {
-      console.error("Unable to load Family Team:", error);
+        setInvitations(childInvitations);
+        setMemberships(childMemberships);
+      } catch (error) {
+        console.error(
+          "Unable to load Family Team:",
+          error
+        );
 
-      setInvitations([]);
-      setMemberships([]);
+        setInvitations([]);
+        setMemberships([]);
 
-      setTeamError(
-        getErrorMessage(
-          error,
-          "We couldn't load the Family Team right now."
-        )
-      );
-    } finally {
-      setLoadingTeam(false);
-    }
-  }, [currentUser, selectedWorkspace]);
+        setTeamError(
+          getErrorMessage(
+            error,
+            "We couldn't load the Family Team right now."
+          )
+        );
+      } finally {
+        setLoadingTeam(false);
+      }
+    },
+    [
+      currentUser,
+      selectedWorkspace,
+      isOwner,
+    ]
+  );
 
   useEffect(() => {
     void loadFamilyTeam();
   }, [loadFamilyTeam]);
 
   /*
-   * Build pending and active member rows.
+   * Build active and pending rows.
    */
 
-  const teamRows = useMemo<TeamRow[]>(() => {
-    const pendingRows = invitations
-      .filter((invitation) => invitation.status === "pending")
-      .map(
-        (invitation): TeamRow => ({
-          id: `invitation-${invitation.id}`,
-          invitationId: invitation.id,
-          email: invitation.invitedEmail,
-          relationship: invitation.relationship,
-          status: "pending",
-        })
-      );
-
-    const activeRows = memberships
-      .filter((membership) => membership.status === "active")
-      .map((membership): TeamRow => {
-        const sourceInvitation = invitations.find(
+  const teamRows = useMemo<TeamRow[]>(
+    () => {
+      const pendingRows = invitations
+        .filter(
           (invitation) =>
-            invitation.id === membership.invitationId
+            invitation.status === "pending"
+        )
+        .map(
+          (invitation): TeamRow => ({
+            id: `invitation-${invitation.id}`,
+            invitationId: invitation.id,
+            email: invitation.invitedEmail,
+            relationship:
+              invitation.relationship,
+            status: "pending",
+            accessLevel: "viewer",
+          })
         );
 
-        return {
-          id: `membership-${membership.id}`,
-          membershipId: membership.id,
-          email: sourceInvitation?.invitedEmail,
-          relationship: membership.relationship,
-          status: "active",
-        };
-      });
+      const activeRows = memberships
+        .filter(
+          (membership) =>
+            membership.status === "active"
+        )
+        .map((membership): TeamRow => {
+          const sourceInvitation =
+            invitations.find(
+              (invitation) =>
+                invitation.id ===
+                membership.invitationId
+            );
 
-    return [...activeRows, ...pendingRows];
-  }, [invitations, memberships]);
+          return {
+            id: `membership-${membership.id}`,
+            membershipId: membership.id,
+            email:
+              sourceInvitation?.invitedEmail,
+            relationship:
+              membership.relationship,
+            status: "active",
+            accessLevel:
+              normalizeFamilyOrganizerAccessLevel(
+                membership.accessLevel
+              ),
+          };
+        });
+
+      return [...activeRows, ...pendingRows];
+    },
+    [invitations, memberships]
+  );
 
   /*
    * Create invitation.
    *
-   * This calls the existing repository function.
-   * Email delivery is not assumed or confirmed here.
+   * New invitations remain Viewer-only.
+   * Owners can elevate an active member later.
    */
 
   async function handleInviteSubmit(
@@ -437,20 +678,28 @@ export default function FamilyTeamPage() {
   ) {
     event.preventDefault();
 
-    if (!currentUser || !selectedWorkspace || !isOwner) {
+    if (
+      !currentUser ||
+      !selectedWorkspace ||
+      !isOwner
+    ) {
       return;
     }
 
-    const email = inviteEmail.trim().toLowerCase();
+    const email =
+      inviteEmail.trim().toLowerCase();
 
     if (!email) {
-      setInvitationError("Enter an email address.");
+      setInvitationError(
+        "Enter an email address."
+      );
       return;
     }
 
     if (
       currentUser.email &&
-      email === currentUser.email.trim().toLowerCase()
+      email ===
+        currentUser.email.trim().toLowerCase()
     ) {
       setInvitationError(
         "You already own this child's Family Team."
@@ -464,11 +713,15 @@ export default function FamilyTeamPage() {
       setInvitationMessage("");
 
       await createFamilyOrganizerInvitation({
-        ownerUserId: selectedWorkspace.ownerUserId,
-        childId: selectedWorkspace.childId,
+        ownerUserId:
+          selectedWorkspace.ownerUserId,
+        childId:
+          selectedWorkspace.childId,
         invitedEmail: email,
         relationship: inviteRelationship,
-        invitedByUserId: currentUser.uid,
+        invitedByUserId:
+          currentUser.uid,
+        accessLevel: "viewer",
       });
 
       setInviteEmail("");
@@ -497,7 +750,7 @@ export default function FamilyTeamPage() {
   }
 
   /*
-   * Cancel pending invitation.
+   * Cancel invitation.
    */
 
   async function handleCancelInvitation(
@@ -508,11 +761,22 @@ export default function FamilyTeamPage() {
     try {
       setActionId(invitationId);
       setTeamError("");
+      setTeamMessage("");
 
-      await revokeFamilyOrganizerInvitation(invitationId);
+      await revokeFamilyOrganizerInvitation(
+        invitationId
+      );
+
       await loadFamilyTeam();
+
+      setTeamMessage(
+        "Invitation canceled."
+      );
     } catch (error) {
-      console.error("Unable to cancel invitation:", error);
+      console.error(
+        "Unable to cancel invitation:",
+        error
+      );
 
       setTeamError(
         getErrorMessage(
@@ -526,7 +790,7 @@ export default function FamilyTeamPage() {
   }
 
   /*
-   * Remove active member.
+   * Remove active membership.
    */
 
   async function handleRemoveMembership(
@@ -537,9 +801,17 @@ export default function FamilyTeamPage() {
     try {
       setActionId(membershipId);
       setTeamError("");
+      setTeamMessage("");
 
-      await revokeFamilyOrganizerMembership(membershipId);
+      await revokeFamilyOrganizerMembership(
+        membershipId
+      );
+
       await loadFamilyTeam();
+
+      setTeamMessage(
+        "Family member removed."
+      );
     } catch (error) {
       console.error(
         "Unable to remove Family Team member:",
@@ -556,6 +828,94 @@ export default function FamilyTeamPage() {
       setActionId("");
     }
   }
+
+  /*
+   * Update active member access.
+   *
+   * Only the primary owner may invoke
+   * the repository permission update.
+   */
+
+  async function handleChangeMemberAccess(
+    membershipId: string,
+    nextAccessLevel: FamilyOrganizerAccessLevel
+  ) {
+    if (
+      !isOwner ||
+      !currentUser ||
+      !membershipId
+    ) {
+      return;
+    }
+
+    const membership =
+      memberships.find(
+        (item) =>
+          item.id === membershipId
+      );
+
+    if (
+      !membership ||
+      membership.status !== "active"
+    ) {
+      return;
+    }
+
+    const previousAccessLevel =
+      normalizeFamilyOrganizerAccessLevel(
+        membership.accessLevel
+      );
+
+    if (
+      previousAccessLevel ===
+      nextAccessLevel
+    ) {
+      return;
+    }
+
+    try {
+      setActionId(membershipId);
+      setTeamError("");
+      setTeamMessage("");
+
+      await updateFamilyOrganizerMemberAccess({
+        membershipId,
+        accessLevel: nextAccessLevel,
+        updatedByUserId:
+          currentUser.uid,
+      });
+
+      await loadFamilyTeam();
+
+      setTeamMessage(
+        `Member access updated to ${getAccessLabel(
+          nextAccessLevel
+        )}.`
+      );
+    } catch (error) {
+      console.error(
+        "Unable to update member access:",
+        error
+      );
+
+      setTeamError(
+        getErrorMessage(
+          error,
+          "We couldn't update this member's permissions."
+        )
+      );
+
+      await loadFamilyTeam();
+    } finally {
+      setActionId("");
+    }
+  }
+
+  /*
+   * ============================================================
+   * RENDER
+   * ============================================================
+   */
 
   return (
     <main
@@ -574,7 +934,9 @@ export default function FamilyTeamPage() {
       >
         {/* PAGE INTRODUCTION */}
 
-        <section style={{ marginBottom: 28 }}>
+        <section
+          style={{ marginBottom: 28 }}
+        >
           <div
             style={{
               display: "inline-flex",
@@ -614,9 +976,10 @@ export default function FamilyTeamPage() {
               lineHeight: 1.7,
             }}
           >
-            Coordinate with the trusted family members
-            helping support your child. Each invited
-            person uses their own Autivoya account.
+            Coordinate with the trusted family
+            members helping support your child.
+            Each invited person uses their own
+            Autivoya account.
           </p>
         </section>
 
@@ -671,8 +1034,12 @@ export default function FamilyTeamPage() {
                 </div>
               ) : null}
 
-              {!loadingWorkspaces && workspaceError ? (
-                <div role="alert" style={styles.error}>
+              {!loadingWorkspaces &&
+              workspaceError ? (
+                <div
+                  role="alert"
+                  style={styles.error}
+                >
                   {workspaceError}
                 </div>
               ) : null}
@@ -682,7 +1049,9 @@ export default function FamilyTeamPage() {
               workspaces.length > 0 ? (
                 <FamilyOrganizerWorkspaceSelector
                   workspaces={workspaces}
-                  selectedWorkspace={selectedWorkspace}
+                  selectedWorkspace={
+                    selectedWorkspace
+                  }
                   onSelect={selectWorkspace}
                 />
               ) : null}
@@ -702,8 +1071,9 @@ export default function FamilyTeamPage() {
                   </div>
 
                   <p style={styles.body}>
-                    Start a Journey for a child or accept
-                    a Family Team invitation first.
+                    Start a Journey for a child
+                    or accept a Family Team
+                    invitation first.
                   </p>
 
                   <div
@@ -714,7 +1084,10 @@ export default function FamilyTeamPage() {
                       marginTop: 13,
                     }}
                   >
-                    <Link href="/journey" style={styles.link}>
+                    <Link
+                      href="/journey"
+                      style={styles.link}
+                    >
                       Go to My Journey
                     </Link>
 
@@ -737,7 +1110,8 @@ export default function FamilyTeamPage() {
                   <div
                     style={{
                       display: "flex",
-                      justifyContent: "space-between",
+                      justifyContent:
+                        "space-between",
                       alignItems: "center",
                       gap: 16,
                       flexWrap: "wrap",
@@ -745,53 +1119,30 @@ export default function FamilyTeamPage() {
                   >
                     <div>
                       <h2 style={styles.title}>
-                        {selectedChildName}&apos;s Family Team
+                        {selectedChildName}
+                        &apos;s Family Team
                       </h2>
 
                       <p style={styles.body}>
                         {isOwner
-                          ? "People who have access or a pending invitation appear here."
-                          : "You're viewing the Family Team connected to this shared child."}
+                          ? "Manage invitations, active members, and access permissions."
+                          : "View your access to this shared child workspace."}
                       </p>
                     </div>
 
-                    <div
+                    <span
                       style={{
-                        display: "flex",
-                        gap: 8,
-                        flexWrap: "wrap",
+                        padding: "6px 10px",
+                        borderRadius: 999,
+                        background:
+                          BRAND.lightTeal,
+                        color: BRAND.darkTeal,
+                        fontSize: 11,
+                        fontWeight: 800,
                       }}
                     >
-                      <span
-                        style={{
-                          padding: "5px 9px",
-                          borderRadius: 999,
-                          background: BRAND.lightTeal,
-                          color: BRAND.darkTeal,
-                          fontSize: 10,
-                          fontWeight: 800,
-                          textTransform: "uppercase",
-                        }}
-                      >
-                        Autivoya Premium
-                      </span>
-
-                      {!isOwner ? (
-                        <span
-                          style={{
-                            padding: "5px 9px",
-                            borderRadius: 999,
-                            background: BRAND.lightTeal,
-                            color: BRAND.navy,
-                            fontSize: 10,
-                            fontWeight: 800,
-                            textTransform: "uppercase",
-                          }}
-                        >
-                          Shared Access
-                        </span>
-                      ) : null}
-                    </div>
+                      {currentAccessLevel}
+                    </span>
                   </div>
 
                   {/* CURRENT USER */}
@@ -816,10 +1167,12 @@ export default function FamilyTeamPage() {
                         width: 42,
                         height: 42,
                         borderRadius: 999,
-                        background: BRAND.lightTeal,
+                        background:
+                          BRAND.lightTeal,
                         display: "flex",
                         alignItems: "center",
-                        justifyContent: "center",
+                        justifyContent:
+                          "center",
                         fontSize: 18,
                         flexShrink: 0,
                       }}
@@ -827,10 +1180,13 @@ export default function FamilyTeamPage() {
                       👤
                     </div>
 
-                    <div style={{ minWidth: 0 }}>
+                    <div
+                      style={{ minWidth: 0 }}
+                    >
                       <div
                         style={{
-                          color: BRAND.darkNavy,
+                          color:
+                            BRAND.darkNavy,
                           fontSize: 14,
                           fontWeight: 800,
                         }}
@@ -844,12 +1200,11 @@ export default function FamilyTeamPage() {
                           color: BRAND.muted,
                           fontSize: 12,
                           lineHeight: 1.5,
-                          overflowWrap: "anywhere",
+                          overflowWrap:
+                            "anywhere",
                         }}
                       >
-                        {isOwner
-                          ? "Account Owner"
-                          : "Family Team Member"}
+                        {currentAccessLevel}
 
                         {currentUser.email
                           ? ` • ${currentUser.email}`
@@ -860,118 +1215,169 @@ export default function FamilyTeamPage() {
 
                   {/* FAMILY MEMBERS */}
 
-                  <div style={{ marginTop: 24 }}>
-                    <h3
+                  {isOwner ? (
+                    <div
                       style={{
-                        margin: 0,
-                        color: BRAND.navy,
-                        fontSize: 13,
-                        fontWeight: 800,
+                        marginTop: 24,
                       }}
                     >
-                      Family members
-                    </h3>
-
-                    {loadingTeam ? (
-                      <p style={styles.body}>
-                        Loading Family Team...
-                      </p>
-                    ) : teamRows.length > 0 ? (
-                      <div>
-                        {teamRows.map((member) => (
-                          <TeamMemberRow
-                            key={member.id}
-                            member={member}
-                            canManage={isOwner}
-                            busy={
-                              actionId ===
-                              (member.invitationId ??
-                                member.membershipId ??
-                                "")
-                            }
-                            onRemove={() => {
-                              if (!isOwner) return;
-
-                              if (
-                                member.status === "pending" &&
-                                member.invitationId
-                              ) {
-                                void handleCancelInvitation(
-                                  member.invitationId
-                                );
-                                return;
-                              }
-
-                              if (
-                                member.status === "active" &&
-                                member.membershipId
-                              ) {
-                                void handleRemoveMembership(
-                                  member.membershipId
-                                );
-                              }
-                            }}
-                          />
-                        ))}
-                      </div>
-                    ) : (
-                      <div
+                      <h3
                         style={{
-                          ...styles.notice,
-                          marginTop: 12,
-                          background: BRAND.background,
+                          margin: 0,
+                          color: BRAND.navy,
+                          fontSize: 13,
+                          fontWeight: 800,
                         }}
                       >
+                        Family members
+                      </h3>
+
+                      {loadingTeam ? (
+                        <p style={styles.body}>
+                          Loading Family Team...
+                        </p>
+                      ) : teamRows.length > 0 ? (
+                        <div>
+                          {teamRows.map(
+                            (member) => (
+                              <TeamMemberRow
+                                key={member.id}
+                                member={member}
+                                canManage={
+                                  isOwner
+                                }
+                                busy={
+                                  actionId ===
+                                  (member.invitationId ??
+                                    member.membershipId ??
+                                    "")
+                                  ||
+                                  actionId ===
+                                    member.membershipId
+                                }
+                                onChangeAccess={(
+                                  accessLevel
+                                ) => {
+                                  if (
+                                    member.status ===
+                                      "active" &&
+                                    member.membershipId
+                                  ) {
+                                    void handleChangeMemberAccess(
+                                      member.membershipId,
+                                      accessLevel
+                                    );
+                                  }
+                                }}
+                                onRemove={() => {
+                                  if (
+                                    member.status ===
+                                      "pending" &&
+                                    member.invitationId
+                                  ) {
+                                    void handleCancelInvitation(
+                                      member.invitationId
+                                    );
+                                    return;
+                                  }
+
+                                  if (
+                                    member.status ===
+                                      "active" &&
+                                    member.membershipId
+                                  ) {
+                                    void handleRemoveMembership(
+                                      member.membershipId
+                                    );
+                                  }
+                                }}
+                              />
+                            )
+                          )}
+                        </div>
+                      ) : (
                         <div
                           style={{
-                            color: BRAND.darkNavy,
-                            fontSize: 13,
-                            fontWeight: 800,
+                            ...styles.notice,
+                            marginTop: 12,
+                            background:
+                              BRAND.background,
                           }}
                         >
-                          No other family members are
-                          connected yet.
+                          No other family members
+                          are connected yet.
                         </div>
+                      )}
 
-                        <p
+                      {teamError ? (
+                        <div
+                          role="alert"
+                          style={styles.error}
+                        >
+                          {teamError}
+                        </div>
+                      ) : null}
+
+                      {teamMessage ? (
+                        <div
+                          role="status"
                           style={{
-                            ...styles.body,
-                            marginBottom: 0,
+                            ...styles.notice,
+                            marginTop: 12,
                           }}
                         >
-                          {isOwner
-                            ? "Invite a trusted family member below to begin sharing this child's family workspace."
-                            : "The account owner manages invitations and access for this Family Team."}
-                        </p>
-                      </div>
-                    )}
-
-                    {teamError ? (
-                      <div role="alert" style={styles.error}>
-                        {teamError}
-                      </div>
-                    ) : null}
-                  </div>
+                          {teamMessage}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div
+                      style={{
+                        ...styles.notice,
+                        marginTop: 20,
+                      }}
+                    >
+                      Your access level is{" "}
+                      <strong>
+                        {currentAccessLevel}
+                      </strong>
+                      . The primary owner
+                      controls invitations and
+                      member permissions.
+                    </div>
+                  )}
                 </section>
 
                 {/* OWNER INVITATION FORM */}
 
                 {isOwner ? (
-                  <section style={styles.card}>
-                    <h2 style={styles.title}>
+                  <section
+                    style={styles.card}
+                  >
+                    <h2
+                      style={styles.title}
+                    >
                       Invite a family member
                     </h2>
 
-                    <p style={styles.body}>
-                      Invite someone you trust to collaborate
-                      around {selectedChildName}&apos;s
-                      Autivoya Journey. They use their own
+                    <p
+                      style={styles.body}
+                    >
+                      Invite someone you trust
+                      to collaborate around{" "}
+                      {selectedChildName}
+                      &apos;s Autivoya Journey.
+                      They use their own
                       Autivoya account.
                     </p>
 
                     <form
-                      onSubmit={handleInviteSubmit}
-                      style={{ marginTop: 22 }}
+                      onSubmit={
+                        handleInviteSubmit
+                      }
+                      style={{
+                        marginTop: 22,
+                      }}
                     >
                       <div
                         style={{
@@ -984,7 +1390,9 @@ export default function FamilyTeamPage() {
                         <div>
                           <label
                             htmlFor="invite-email"
-                            style={styles.label}
+                            style={
+                              styles.label
+                            }
                           >
                             Email
                           </label>
@@ -993,46 +1401,80 @@ export default function FamilyTeamPage() {
                             id="invite-email"
                             type="email"
                             required
-                            value={inviteEmail}
-                            onChange={(event) => {
-                              setInviteEmail(event.target.value);
-                              setInvitationError("");
-                              setInvitationMessage("");
+                            value={
+                              inviteEmail
+                            }
+                            onChange={(
+                              event
+                            ) => {
+                              setInviteEmail(
+                                event.target.value
+                              );
+                              setInvitationError(
+                                ""
+                              );
+                              setInvitationMessage(
+                                ""
+                              );
                             }}
                             placeholder="family@example.com"
-                            style={styles.input}
+                            style={
+                              styles.input
+                            }
                           />
                         </div>
 
                         <div>
                           <label
                             htmlFor="invite-relationship"
-                            style={styles.label}
+                            style={
+                              styles.label
+                            }
                           >
                             Relationship
                           </label>
 
                           <select
                             id="invite-relationship"
-                            value={inviteRelationship}
-                            onChange={(event) => {
+                            value={
+                              inviteRelationship
+                            }
+                            onChange={(
+                              event
+                            ) => {
                               setInviteRelationship(
                                 event.target.value as
                                   FamilyOrganizerRelationship
                               );
-                              setInvitationError("");
-                              setInvitationMessage("");
+                              setInvitationError(
+                                ""
+                              );
+                              setInvitationMessage(
+                                ""
+                              );
                             }}
-                            style={styles.input}
+                            style={
+                              styles.input
+                            }
                           >
-                            {RELATIONSHIPS.map((relationship) => (
-                              <option
-                                key={relationship.value}
-                                value={relationship.value}
-                              >
-                                {relationship.label}
-                              </option>
-                            ))}
+                            {RELATIONSHIPS.map(
+                              (
+                                relationship
+                              ) => (
+                                <option
+                                  key={
+                                    relationship.value
+                                  }
+                                  value={
+                                    relationship.value
+                                  }
+                                >
+                                  {
+                                    relationship.label
+                                  }
+                                </option>
+                              )
+                            )}
                           </select>
                         </div>
                       </div>
@@ -1043,15 +1485,30 @@ export default function FamilyTeamPage() {
                           marginTop: 18,
                         }}
                       >
-                        The invitation connects this person
-                        to the same child workspace. It does
-                        not create a separate copy of the
+                        Invitations begin with
+                        Viewer access. Once
+                        accepted, the primary
+                        owner can assign
+                        Contributor or
+                        Administrator access.
+
+                        The invitation connects
+                        the person to the same
+                        child workspace. It does
+                        not create a separate
                         child or Journey.
                       </div>
 
                       {invitationError ? (
-                        <div role="alert" style={styles.error}>
-                          {invitationError}
+                        <div
+                          role="alert"
+                          style={
+                            styles.error
+                          }
+                        >
+                          {
+                            invitationError
+                          }
                         </div>
                       ) : null}
 
@@ -1063,20 +1520,28 @@ export default function FamilyTeamPage() {
                             marginTop: 14,
                           }}
                         >
-                          {invitationMessage}
+                          {
+                            invitationMessage
+                          }
                         </div>
                       ) : null}
 
                       <button
                         type="submit"
-                        disabled={sendingInvitation}
+                        disabled={
+                          sendingInvitation
+                        }
                         style={{
                           ...styles.button,
                           marginTop: 18,
-                          opacity: sendingInvitation ? 0.65 : 1,
-                          cursor: sendingInvitation
-                            ? "not-allowed"
-                            : "pointer",
+                          opacity:
+                            sendingInvitation
+                              ? 0.65
+                              : 1,
+                          cursor:
+                            sendingInvitation
+                              ? "not-allowed"
+                              : "pointer",
                         }}
                       >
                         {sendingInvitation
@@ -1086,16 +1551,14 @@ export default function FamilyTeamPage() {
                     </form>
                   </section>
                 ) : (
-                  <section style={styles.notice}>
-                    <div
-                      style={{
-                        color: BRAND.darkTeal,
-                        fontSize: 13,
-                        fontWeight: 800,
-                      }}
-                    >
+                  <section
+                    style={
+                      styles.notice
+                    }
+                  >
+                    <strong>
                       Shared Family Access
-                    </div>
+                    </strong>
 
                     <p
                       style={{
@@ -1103,10 +1566,13 @@ export default function FamilyTeamPage() {
                         marginBottom: 0,
                       }}
                     >
-                      You have access to this child through
-                      a Family Team invitation. The account
-                      owner manages Family Team invitations
-                      and member access.
+                      You have access to
+                      this child through
+                      a Family Team
+                      invitation.
+                      The primary owner
+                      manages invitations
+                      and permissions.
                     </p>
                   </section>
                 )}
@@ -1119,28 +1585,89 @@ export default function FamilyTeamPage() {
                     marginTop: 18,
                   }}
                 >
-                  <div
+                  <h3
                     style={{
-                      color: BRAND.darkNavy,
-                      fontSize: 13,
+                      margin: 0,
+                      color:
+                        BRAND.darkNavy,
+                      fontSize: 14,
                       fontWeight: 800,
                     }}
                   >
                     How Family Team access works
+                  </h3>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        "repeat(auto-fit, minmax(200px, 1fr))",
+                      gap: 14,
+                      marginTop: 18,
+                    }}
+                  >
+                    {ACCESS_LEVELS.map(
+                      (level) => (
+                        <div
+                          key={
+                            level.value
+                          }
+                          style={{
+                            padding: 15,
+                            borderRadius: 12,
+                            background:
+                              BRAND.background,
+                            border: `1px solid ${BRAND.border}`,
+                          }}
+                        >
+                          <div
+                            style={{
+                              color:
+                                BRAND.darkNavy,
+                              fontSize: 13,
+                              fontWeight: 800,
+                            }}
+                          >
+                            {
+                              level.label
+                            }
+                          </div>
+
+                          <p
+                            style={{
+                              ...styles.body,
+                              marginBottom: 0,
+                            }}
+                          >
+                            {
+                              level.description
+                            }
+                          </p>
+                        </div>
+                      )
+                    )}
                   </div>
 
                   <p
                     style={{
                       ...styles.body,
                       marginBottom: 0,
+                      marginTop: 18,
                     }}
                   >
-                    Family Team members use their own
-                    Autivoya account while connecting to
-                    the same canonical child. This keeps
-                    the family working from one shared
-                    child workspace instead of creating
-                    separate profiles.
+                    The primary owner retains
+                    ownership and exclusive
+                    deletion rights. Family
+                    Team access does not grant
+                    access to private Vault
+                    documents, Navigator
+                    conversations, or account
+                    subscription settings.
+                    Contributor and
+                    Administrator workflows
+                    will be enabled only
+                    after their permissions
+                    are enforced and tested.
                   </p>
                 </section>
               </>

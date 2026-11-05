@@ -1,30 +1,25 @@
+
 /*
  * ============================================================
- * MYRIAD FAMILY ORGANIZER TYPES
+ * AUTIVOYA — FAMILY ORGANIZER TYPES
  * ============================================================
  *
- * Shared types for Family Organizer.
+ * Family Organizer allows authorized Autivoya users to
+ * collaborate around the SAME child and Journey while
+ * using their own individual accounts.
  *
- * Family Organizer allows authorized Myriad users to
- * collaborate around the SAME child and Journey while using
- * their own individual Myriad accounts.
- *
- * IMPORTANT:
- *
- * - A shared child is NOT duplicated.
- * - The existing owner + childId remain the canonical source.
- * - Invitations may use email for delivery/matching.
- * - Accepted access is tied to Firebase UID.
- * - Memberships retain the invitationId that authorized access.
- * - Support Team contacts do NOT automatically receive
- *   Myriad account access.
+ * - Shared children are never duplicated.
+ * - The original owner and childId remain canonical.
+ * - Invitations use email for delivery and matching.
+ * - Membership access is tied to Firebase UID.
+ * - Relationship and permissions are separate concepts.
+ * - The original owner retains ultimate control.
+ * - Support Team contacts do not automatically gain access.
  * ============================================================
  */
 
 /*
- * ============================================================
  * FAMILY RELATIONSHIP
- * ============================================================
  */
 
 export type FamilyOrganizerRelationship =
@@ -38,9 +33,12 @@ export type FamilyOrganizerRelationship =
   | "other";
 
 /*
- * ============================================================
  * MEMBERSHIP ROLE
- * ============================================================
+ *
+ * Identifies whether the user is the canonical owner
+ * or an invited family member.
+ *
+ * Do not use this field alone to determine permissions.
  */
 
 export type FamilyOrganizerMembershipRole =
@@ -48,9 +46,69 @@ export type FamilyOrganizerMembershipRole =
   | "family_member";
 
 /*
- * ============================================================
+ * ACCESS LEVEL
+ *
+ * Viewer:
+ *   Can view authorized shared information.
+ *
+ * Contributor:
+ *   Can view shared information and update permitted
+ *   collaborative records, including journey task progress.
+ *
+ * Administrator:
+ *   Can manage permitted shared information and
+ *   Family Team access.
+ *
+ * The canonical owner retains exclusive control over
+ * permanent deletion and ownership.
+ */
+
+export type FamilyOrganizerAccessLevel =
+  | "viewer"
+  | "contributor"
+  | "administrator";
+
+/*
+ * PERMISSION HELPERS
+ *
+ * Existing membership documents may not contain
+ * accessLevel. Treat them as Viewer until upgraded.
+ *
+ * These helpers are for UI/application behavior.
+ * Firestore rules must independently enforce access.
+ */
+
+export function normalizeFamilyOrganizerAccessLevel(
+  value: unknown
+): FamilyOrganizerAccessLevel {
+  if (
+    value === "viewer" ||
+    value === "contributor" ||
+    value === "administrator"
+  ) {
+    return value;
+  }
+
+  return "viewer";
+}
+
+export function canContributeToFamilyOrganizer(
+  accessLevel: FamilyOrganizerAccessLevel
+): boolean {
+  return (
+    accessLevel === "contributor" ||
+    accessLevel === "administrator"
+  );
+}
+
+export function canAdministerFamilyOrganizer(
+  accessLevel: FamilyOrganizerAccessLevel
+): boolean {
+  return accessLevel === "administrator";
+}
+
+/*
  * MEMBERSHIP STATUS
- * ============================================================
  */
 
 export type FamilyOrganizerMembershipStatus =
@@ -59,9 +117,7 @@ export type FamilyOrganizerMembershipStatus =
   | "left";
 
 /*
- * ============================================================
  * INVITATION STATUS
- * ============================================================
  */
 
 export type FamilyOrganizerInvitationStatus =
@@ -72,14 +128,11 @@ export type FamilyOrganizerInvitationStatus =
   | "expired";
 
 /*
- * ============================================================
  * CHILD REFERENCE
- * ============================================================
  *
  * Canonical child:
  *
  * users/{ownerUserId}/children/{childId}
- * ============================================================
  */
 
 export interface FamilyOrganizerChildReference {
@@ -88,42 +141,33 @@ export interface FamilyOrganizerChildReference {
 }
 
 /*
- * ============================================================
  * FAMILY MEMBERSHIP
- * ============================================================
  *
- * Represents an authenticated Myriad account that has access
- * to a specific canonical child.
+ * Represents an invited authenticated account with
+ * access to a specific canonical child.
  *
- * IMPORTANT:
- *
- * invitationId provides the authorization trail connecting
- * an invited family member to the invitation that originally
- * granted access.
- * ============================================================
+ * The invitationId maintains the authorization trail.
+ * Owner access does not require a membership document.
  */
 
 export interface FamilyOrganizerMembership
   extends FamilyOrganizerChildReference {
   id: string;
 
-  /*
-   * Invitation that authorized this membership.
-   *
-   * Owner access does not require a membership document.
-   * Therefore stored memberships are expected to represent
-   * invited family members.
-   */
   invitationId: string;
 
-  /*
-   * Firebase UID of the invited family member.
-   */
   memberUserId: string;
 
   role: FamilyOrganizerMembershipRole;
 
   relationship: FamilyOrganizerRelationship;
+
+  /*
+   * Optional for backward compatibility.
+   *
+   * Missing accessLevel means Viewer.
+   */
+  accessLevel?: FamilyOrganizerAccessLevel;
 
   status: FamilyOrganizerMembershipStatus;
 
@@ -132,34 +176,28 @@ export interface FamilyOrganizerMembership
    */
   createdAt: number;
 
-  /*
-   * Firebase UID of the owner who originally granted access.
-   */
   createdByUserId: string;
 
-  /*
-   * When invitation acceptance occurred.
-   */
   acceptedAt?: number;
 
-  /*
-   * When membership access ended.
-   */
   endedAt?: number;
+
+  /*
+   * Most recent permission change.
+   */
+  accessUpdatedAt?: number;
+
+  /*
+   * Firebase UID of the user who changed permissions.
+   */
+  accessUpdatedByUserId?: string;
 }
 
 /*
- * ============================================================
  * FAMILY INVITATION
- * ============================================================
  *
  * Email is used for invitation delivery and matching.
- *
- * Email is NOT the permanent authorization identity.
- *
- * Once accepted, access is tied to Firebase UID through the
- * corresponding FamilyOrganizerMembership.
- * ============================================================
+ * Once accepted, authorization uses the member's UID.
  */
 
 export interface FamilyOrganizerInvitation
@@ -170,23 +208,21 @@ export interface FamilyOrganizerInvitation
 
   relationship: FamilyOrganizerRelationship;
 
+  /*
+   * Optional for compatibility with existing invitations.
+   *
+   * Missing accessLevel means Viewer.
+   */
+  accessLevel?: FamilyOrganizerAccessLevel;
+
   status: FamilyOrganizerInvitationStatus;
 
-  /*
-   * Firebase UID of the canonical owner who sent the invite.
-   */
   invitedByUserId: string;
 
-  /*
-   * Milliseconds since Unix epoch.
-   */
   createdAt: number;
 
   expiresAt?: number;
 
-  /*
-   * Populated after successful acceptance.
-   */
   acceptedByUserId?: string;
 
   acceptedAt?: number;
@@ -197,15 +233,11 @@ export interface FamilyOrganizerInvitation
 }
 
 /*
- * ============================================================
  * SUPPORT TEAM
- * ============================================================
  *
- * Support Team members are contacts involved in supporting
- * the child.
- *
- * They DO NOT automatically receive Myriad account access.
- * ============================================================
+ * Contacts involved in supporting the child.
+ * These contacts do not automatically receive
+ * authenticated Autivoya account access.
  */
 
 export type FamilyOrganizerSupportTeamCategory =
@@ -244,13 +276,10 @@ export interface FamilyOrganizerSupportTeamMember
 }
 
 /*
- * ============================================================
  * SHARED CALENDAR
- * ============================================================
  *
- * Calendar events belong to the shared child workspace rather
- * than one individual family member's account.
- * ============================================================
+ * Events belong to the shared child workspace,
+ * not to an individual family member's account.
  */
 
 export type FamilyOrganizerCalendarEventType =
@@ -272,9 +301,6 @@ export interface FamilyOrganizerCalendarEvent
 
   eventType: FamilyOrganizerCalendarEventType;
 
-  /*
-   * Milliseconds since Unix epoch.
-   */
   startAt: number;
 
   endAt?: number;
@@ -293,9 +319,17 @@ export interface FamilyOrganizerCalendarEvent
 }
 
 /*
- * ============================================================
  * ACCESS CHECK
- * ============================================================
+ *
+ * Successful access includes the membership role
+ * and effective permission level.
+ *
+ * accessLevel is optional for compatibility with
+ * existing callers that return only role and IDs.
+ *
+ * When absent:
+ *   owner -> administrator
+ *   family_member -> viewer
  */
 
 export type FamilyOrganizerAccessResult =
@@ -303,6 +337,8 @@ export type FamilyOrganizerAccessResult =
       allowed: true;
 
       role: FamilyOrganizerMembershipRole;
+
+      accessLevel?: FamilyOrganizerAccessLevel;
 
       ownerUserId: string;
 

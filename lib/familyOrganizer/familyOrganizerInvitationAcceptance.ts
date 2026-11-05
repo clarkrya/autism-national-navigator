@@ -16,6 +16,22 @@ import type {
   FamilyOrganizerMembership,
 } from "./familyOrganizerTypes";
 
+/*
+ * ============================================================
+ * AUTIVOYA — FAMILY ORGANIZER INVITATION ACCEPTANCE
+ * ============================================================
+ *
+ * Accepts an invitation and creates an active Family Team
+ * membership.
+ *
+ * Important:
+ * - The child remains owned by the original owner.
+ * - No duplicate child or Journey is created.
+ * - New memberships default to Viewer access.
+ * - Membership and invitation updates are atomic.
+ * ============================================================
+ */
+
 export interface AcceptFamilyOrganizerInvitationInput {
   invitationId: string;
   currentUserId: string;
@@ -75,8 +91,12 @@ export async function acceptFamilyOrganizerInvitation(
     invitationId
   );
 
-  // The recipient can read their own invitation
-  // before becoming a family member.
+  /*
+   * ----------------------------------------------------------
+   * READ INVITATION
+   * ----------------------------------------------------------
+   */
+
   const invitationSnapshot = await getDoc(
     invitationReference
   );
@@ -103,6 +123,12 @@ export async function acceptFamilyOrganizerInvitation(
     "childId"
   );
 
+  /*
+   * ----------------------------------------------------------
+   * VALIDATE RECIPIENT
+   * ----------------------------------------------------------
+   */
+
   if (ownerUserId === currentUserId) {
     throw new Error(
       "The child owner already has access."
@@ -118,6 +144,12 @@ export async function acceptFamilyOrganizerInvitation(
     );
   }
 
+  /*
+   * ----------------------------------------------------------
+   * CANONICAL MEMBERSHIP ID
+   * ----------------------------------------------------------
+   */
+
   const membershipId =
     buildFamilyOrganizerMembershipId(
       ownerUserId,
@@ -131,18 +163,24 @@ export async function acceptFamilyOrganizerInvitation(
     membershipId
   );
 
+  /*
+   * ----------------------------------------------------------
+   * ACCEPT INVITATION ATOMICALLY
+   * ----------------------------------------------------------
+   */
+
   await runTransaction(db, async (transaction) => {
-    const invitationSnapshot =
+    const latestInvitationSnapshot =
       await transaction.get(invitationReference);
 
-    if (!invitationSnapshot.exists()) {
+    if (!latestInvitationSnapshot.exists()) {
       throw new Error(
         "This invitation no longer exists."
       );
     }
 
     const invitation =
-      invitationSnapshot.data() as Omit<
+      latestInvitationSnapshot.data() as Omit<
         FamilyOrganizerInvitation,
         "id"
       >;
@@ -192,6 +230,12 @@ export async function acceptFamilyOrganizerInvitation(
       );
     }
 
+    /*
+     * --------------------------------------------------------
+     * CREATE ACTIVE VIEWER MEMBERSHIP
+     * --------------------------------------------------------
+     */
+
     const now = Date.now();
 
     const membership: Omit<
@@ -205,6 +249,7 @@ export async function acceptFamilyOrganizerInvitation(
       role: "family_member",
       relationship: invitation.relationship,
       status: "active",
+      accessLevel: "viewer",
       createdAt: now,
       createdByUserId: invitation.invitedByUserId,
       acceptedAt: now,
@@ -215,12 +260,24 @@ export async function acceptFamilyOrganizerInvitation(
       membership
     );
 
+    /*
+     * --------------------------------------------------------
+     * MARK INVITATION ACCEPTED
+     * --------------------------------------------------------
+     */
+
     transaction.update(invitationReference, {
       status: "accepted",
       acceptedByUserId: currentUserId,
       acceptedAt: now,
     });
   });
+
+  /*
+   * ----------------------------------------------------------
+   * RETURN CANONICAL CHILD REFERENCE
+   * ----------------------------------------------------------
+   */
 
   return {
     invitationId,

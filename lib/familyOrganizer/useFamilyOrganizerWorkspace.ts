@@ -1,8 +1,10 @@
+
 "use client";
 
 import {
   useCallback,
   useEffect,
+  useRef,
   useState,
 } from "react";
 
@@ -28,20 +30,22 @@ import {
 
 /*
  * ============================================================
- * FAMILY ORGANIZER WORKSPACE HOOK
+ * AUTIVOYA — FAMILY ORGANIZER WORKSPACE HOOK
  * ============================================================
  *
  * Shared client-side workspace state for Family Organizer.
  *
- * This hook:
+ * Supports:
+ * - Firebase authentication
+ * - Owned and shared child workspaces
+ * - Saved workspace selection
+ * - Safe default workspace selection
+ * - Selection by canonical owner and child IDs
+ * - Membership change refreshes
+ * - Automatic selection of newly accepted shared children
  *
- * - waits for Firebase authentication
- * - loads owned + shared child workspaces
- * - restores the last accessible workspace
- * - selects a safe default when needed
- * - persists workspace selection
+ * Shared children remain under the original owner's UID.
  *
- * Shared children remain canonical under the owner's UID.
  * ============================================================
  */
 
@@ -74,6 +78,18 @@ export interface UseFamilyOrganizerWorkspaceResult {
 
   refreshWorkspaces:
     () => Promise<void>;
+}
+
+/*
+ * ============================================================
+ * MEMBERSHIP CHANGE EVENT
+ * ============================================================
+ */
+
+interface FamilyOrganizerMembershipChangeDetail {
+  ownerUserId?: string;
+  childId?: string;
+  membershipId?: string;
 }
 
 /*
@@ -141,6 +157,36 @@ export function useFamilyOrganizerWorkspace():
 
   /*
    * ==========================================================
+   * REQUEST TRACKING
+   * ==========================================================
+   *
+   * Prevent older asynchronous workspace requests
+   * from overwriting newer results.
+   *
+   * ==========================================================
+   */
+
+  const requestIdRef = useRef(0);
+
+  /*
+   * ==========================================================
+   * PENDING SHARED WORKSPACE SELECTION
+   * ==========================================================
+   *
+   * When an invitation is accepted, preserve the
+   * original owner and child IDs while workspaces
+   * are refreshed.
+   *
+   * ==========================================================
+   */
+
+  const pendingSelectionRef = useRef<{
+    ownerUserId: string;
+    childId: string;
+  } | null>(null);
+
+  /*
+   * ==========================================================
    * AUTH
    * ==========================================================
    */
@@ -171,6 +217,17 @@ export function useFamilyOrganizerWorkspace():
   const refreshWorkspaces =
     useCallback(
       async () => {
+        /*
+         * Assign a unique ID to this request.
+         */
+
+        const requestId =
+          ++requestIdRef.current;
+
+        /*
+         * Handle signed-out users.
+         */
+
         if (!currentUser) {
           setWorkspaces(
             []
@@ -179,6 +236,17 @@ export function useFamilyOrganizerWorkspace():
           setSelectedWorkspace(
             null
           );
+
+          setError(
+            ""
+          );
+
+          setLoading(
+            false
+          );
+
+          pendingSelectionRef.current =
+            null;
 
           clearFamilyOrganizerWorkspaceSelection();
 
@@ -194,27 +262,76 @@ export function useFamilyOrganizerWorkspace():
             ""
           );
 
+          /*
+           * Load owned and shared child workspaces.
+           */
+
           const loadedWorkspaces =
             await getFamilyOrganizerWorkspaces(
               currentUser.uid
             );
 
+          /*
+           * Ignore stale requests.
+           */
+
+          if (
+            requestId !==
+            requestIdRef.current
+          ) {
+            return;
+          }
+
           setWorkspaces(
             loadedWorkspaces
           );
 
-          const savedSelection =
-            getSavedFamilyOrganizerWorkspaceSelection();
+          /*
+           * Check whether an accepted invitation
+           * requested a specific shared child.
+           */
 
-          const nextWorkspace =
-            resolveDefaultFamilyOrganizerWorkspace(
-              loadedWorkspaces,
-              savedSelection
-            );
+          const pendingSelection =
+            pendingSelectionRef.current;
+
+          let nextWorkspace:
+            FamilyOrganizerWorkspaceChild | null =
+              null;
+
+          if (pendingSelection) {
+            nextWorkspace =
+              loadedWorkspaces.find(
+                (workspace) =>
+                  workspace.ownerUserId ===
+                    pendingSelection.ownerUserId &&
+                  workspace.childId ===
+                    pendingSelection.childId
+              ) ?? null;
+          }
+
+          /*
+           * Fall back to the saved selection or
+           * another accessible workspace.
+           */
+
+          if (!nextWorkspace) {
+            const savedSelection =
+              getSavedFamilyOrganizerWorkspaceSelection();
+
+            nextWorkspace =
+              resolveDefaultFamilyOrganizerWorkspace(
+                loadedWorkspaces,
+                savedSelection
+              );
+          }
 
           setSelectedWorkspace(
             nextWorkspace
           );
+
+          /*
+           * Persist the selected workspace.
+           */
 
           if (nextWorkspace) {
             saveFamilyOrganizerWorkspaceSelection(
@@ -225,7 +342,34 @@ export function useFamilyOrganizerWorkspace():
           } else {
             clearFamilyOrganizerWorkspaceSelection();
           }
+
+          /*
+           * Clear the pending selection only after
+           * the requested shared child is found.
+           */
+
+          if (
+            pendingSelection &&
+            nextWorkspace?.ownerUserId ===
+              pendingSelection.ownerUserId &&
+            nextWorkspace?.childId ===
+              pendingSelection.childId
+          ) {
+            pendingSelectionRef.current =
+              null;
+          }
         } catch (loadError) {
+          /*
+           * Ignore errors from stale requests.
+           */
+
+          if (
+            requestId !==
+            requestIdRef.current
+          ) {
+            return;
+          }
+
           console.error(
             "Unable to load Family Organizer workspaces:",
             loadError
@@ -245,9 +389,19 @@ export function useFamilyOrganizerWorkspace():
             )
           );
         } finally {
-          setLoading(
-            false
-          );
+          /*
+           * Only the latest request can update
+           * the loading state.
+           */
+
+          if (
+            requestId ===
+            requestIdRef.current
+          ) {
+            setLoading(
+              false
+            );
+          }
         }
       },
       [currentUser]
@@ -272,6 +426,91 @@ export function useFamilyOrganizerWorkspace():
 
   /*
    * ==========================================================
+   * MEMBERSHIP CHANGE LISTENER
+   * ==========================================================
+   *
+   * Triggered after a Family Team invitation
+   * is successfully accepted.
+   *
+   * Refresh the available workspaces and select
+   * the newly shared child.
+   *
+   * ==========================================================
+   */
+
+  useEffect(() => {
+    if (
+      !authReady ||
+      !currentUser
+    ) {
+      return;
+    }
+
+    function handleMembershipChanged(
+      event: Event
+    ) {
+      const customEvent =
+        event as CustomEvent<
+          FamilyOrganizerMembershipChangeDetail
+        >;
+
+      const detail =
+        customEvent.detail;
+
+      /*
+       * Preserve the canonical child reference.
+       */
+
+      if (
+        detail &&
+        typeof detail.ownerUserId ===
+          "string" &&
+        typeof detail.childId ===
+          "string"
+      ) {
+        const ownerUserId =
+          detail.ownerUserId.trim();
+
+        const childId =
+          detail.childId.trim();
+
+        if (
+          ownerUserId &&
+          childId
+        ) {
+          pendingSelectionRef.current = {
+            ownerUserId,
+            childId,
+          };
+        }
+      }
+
+      /*
+       * Reload owned and shared workspaces.
+       */
+
+      void refreshWorkspaces();
+    }
+
+    window.addEventListener(
+      "family-organizer-membership-changed",
+      handleMembershipChanged
+    );
+
+    return () => {
+      window.removeEventListener(
+        "family-organizer-membership-changed",
+        handleMembershipChanged
+      );
+    };
+  }, [
+    authReady,
+    currentUser,
+    refreshWorkspaces,
+  ]);
+
+  /*
+   * ==========================================================
    * SELECT WORKSPACE
    * ==========================================================
    */
@@ -282,8 +521,13 @@ export function useFamilyOrganizerWorkspace():
         workspace:
           FamilyOrganizerWorkspaceChild
       ) => {
-        const accessible =
-          workspaces.some(
+        /*
+         * Only allow selection of a workspace
+         * present in the accessible workspace list.
+         */
+
+        const accessibleWorkspace =
+          workspaces.find(
             (candidate) =>
               candidate.ownerUserId ===
                 workspace.ownerUserId &&
@@ -291,17 +535,25 @@ export function useFamilyOrganizerWorkspace():
                 workspace.childId
           );
 
-        if (!accessible) {
+        if (!accessibleWorkspace) {
           return;
         }
 
+        /*
+         * Cancel any pending automatic selection
+         * when the user explicitly chooses a child.
+         */
+
+        pendingSelectionRef.current =
+          null;
+
         setSelectedWorkspace(
-          workspace
+          accessibleWorkspace
         );
 
         saveFamilyOrganizerWorkspaceSelection(
           buildFamilyOrganizerWorkspaceSelection(
-            workspace
+            accessibleWorkspace
           )
         );
       },
@@ -333,6 +585,11 @@ export function useFamilyOrganizerWorkspace():
           return false;
         }
 
+        /*
+         * Find the canonical child among accessible
+         * workspaces.
+         */
+
         const workspace =
           workspaces.find(
             (candidate) =>
@@ -345,6 +602,9 @@ export function useFamilyOrganizerWorkspace():
         if (!workspace) {
           return false;
         }
+
+        pendingSelectionRef.current =
+          null;
 
         setSelectedWorkspace(
           workspace
@@ -360,6 +620,29 @@ export function useFamilyOrganizerWorkspace():
       },
       [workspaces]
     );
+
+  /*
+   * ==========================================================
+   * CLEANUP
+   * ==========================================================
+   *
+   * Invalidate outstanding requests when
+   * the component unmounts.
+   *
+   * ==========================================================
+   */
+
+  useEffect(() => {
+    return () => {
+      requestIdRef.current += 1;
+    };
+  }, []);
+
+  /*
+   * ==========================================================
+   * RETURN
+   * ==========================================================
+   */
 
   return {
     currentUser,

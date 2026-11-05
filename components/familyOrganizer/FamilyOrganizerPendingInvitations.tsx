@@ -1,3 +1,4 @@
+
 "use client";
 
 import {
@@ -5,6 +6,8 @@ import {
   useEffect,
   useState,
 } from "react";
+
+import { useRouter } from "next/navigation";
 
 import type {
   User,
@@ -35,20 +38,32 @@ import FamilyOrganizerInvitationCard from "./FamilyOrganizerInvitationCard";
 
 /*
  * ============================================================
- * FAMILY ORGANIZER PENDING INVITATIONS
+ * AUTIVOYA — FAMILY ORGANIZER PENDING INVITATIONS
  * ============================================================
  *
- * Displays pending Family Organizer invitations for the
+ * Displays pending Family Team invitations for the
  * currently authenticated user's email address.
+ *
+ * Preserves:
+ * - Firebase authentication monitoring
+ * - Pending invitation loading
+ * - Shared child name resolution
+ * - Invitation acceptance and decline
+ * - Invitation removal after completion
+ * - Membership change notifications
+ * - Existing component styling
+ *
+ * Improvements:
+ * - Navigation after successful invitation acceptance
+ * - Preservation of canonical child identifiers
+ * - No duplicate child or Journey creation
+ *
  * ============================================================
  */
 
 interface PendingInvitationRecord {
-  invitation:
-    FamilyOrganizerInvitation;
-
-  childName:
-    string;
+  invitation: FamilyOrganizerInvitation;
+  childName: string;
 }
 
 /*
@@ -77,6 +92,8 @@ function getErrorMessage(
  */
 
 export default function FamilyOrganizerPendingInvitations() {
+  const router = useRouter();
+
   const [
     currentUser,
     setCurrentUser,
@@ -146,6 +163,10 @@ export default function FamilyOrganizerPendingInvitations() {
             []
           );
 
+          setError(
+            ""
+          );
+
           return;
         }
 
@@ -192,14 +213,15 @@ export default function FamilyOrganizerPendingInvitations() {
                     /*
                      * The invited user may not yet have
                      * membership access to read the canonical
-                     * child. The invitation still remains
-                     * valid and can be displayed.
+                     * child.
+                     *
+                     * The invitation remains valid and
+                     * can still be displayed.
                      */
                   }
 
                   return {
                     invitation,
-
                     childName,
                   };
                 }
@@ -254,6 +276,16 @@ export default function FamilyOrganizerPendingInvitations() {
    * ==========================================================
    * ACTION COMPLETE
    * ==========================================================
+   *
+   * After a successful invitation response:
+   *
+   * 1. Remove the completed invitation.
+   * 2. Notify the application of membership changes.
+   * 3. Navigate accepted members to Family Organizer.
+   *
+   * Declined invitations do not trigger navigation.
+   *
+   * ==========================================================
    */
 
   const handleComplete =
@@ -262,6 +294,11 @@ export default function FamilyOrganizerPendingInvitations() {
         result:
           FamilyOrganizerInvitationActionResult
       ) => {
+        /*
+         * Remove the completed invitation from
+         * the pending invitation list.
+         */
+
         setInvitations(
           (currentInvitations) =>
             currentInvitations.filter(
@@ -271,10 +308,21 @@ export default function FamilyOrganizerPendingInvitations() {
             )
         );
 
+        /*
+         * Handle successful acceptance.
+         */
+
         if (
           result.action ===
           "accepted"
         ) {
+          /*
+           * Notify other Family Organizer components
+           * that a membership has changed.
+           *
+           * Preserve the original owner and child IDs.
+           */
+
           window.dispatchEvent(
             new CustomEvent(
               "family-organizer-membership-changed",
@@ -292,9 +340,26 @@ export default function FamilyOrganizerPendingInvitations() {
               }
             )
           );
+
+          /*
+           * Navigate to the Family Organizer.
+           *
+           * The shared workspace must resolve the
+           * canonical ownerUserId and childId
+           * through the accepted membership.
+           *
+           * This component does not create a child
+           * or Journey under the invited user's UID.
+           */
+
+          router.push(
+            "/family-organizer"
+          );
+
+          router.refresh();
         }
       },
-      []
+      [router]
     );
 
   /*

@@ -224,8 +224,8 @@ export default function FamilyOrganizerInvitationsPage() {
             </p>
 
             <Link
-              href="/login"
-              style={{
+  href="/login?returnTo=%2Ffamily-organizer%2Finvitations"
+  style={{
                 display: "inline-flex",
                 marginTop: 18,
                 padding: "10px 16px",

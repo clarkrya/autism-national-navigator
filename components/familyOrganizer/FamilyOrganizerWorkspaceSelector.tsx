@@ -1,48 +1,49 @@
+
 "use client";
 
 import type {
   FamilyOrganizerWorkspaceChild,
 } from "../../lib/familyOrganizer/familyOrganizerWorkspace";
 
+import {
+  normalizeFamilyOrganizerAccessLevel,
+} from "../../lib/familyOrganizer/familyOrganizerTypes";
+
 /*
  * ============================================================
- * FAMILY ORGANIZER WORKSPACE SELECTOR
+ * AUTIVOYA — FAMILY ORGANIZER WORKSPACE SELECTOR
  * ============================================================
  *
- * Lets a user switch between:
+ * Switch between:
+ * - Children owned by the signed-in user
+ * - Children shared through Family Team
  *
- * - children they own
- * - children shared with them through Family Team
+ * Always preserve ownerUserId and childId.
  *
- * Selection preserves BOTH ownerUserId and childId.
+ * Permission labels:
+ * - Primary Owner
+ * - Viewer
+ * - Contributor
+ * - Administrator
+ *
+ * Legacy memberships default to Viewer.
  * ============================================================
  */
 
 interface FamilyOrganizerWorkspaceSelectorProps {
-  workspaces:
-    FamilyOrganizerWorkspaceChild[];
+  workspaces: FamilyOrganizerWorkspaceChild[];
 
-  selectedWorkspace:
-    FamilyOrganizerWorkspaceChild | null;
+  selectedWorkspace: FamilyOrganizerWorkspaceChild | null;
 
-  onSelect:
-    (
-      workspace:
-        FamilyOrganizerWorkspaceChild
-    ) => void;
+  onSelect: (
+    workspace: FamilyOrganizerWorkspaceChild
+  ) => void;
 
   disabled?: boolean;
 }
 
-/*
- * ============================================================
- * WORKSPACE KEY
- * ============================================================
- */
-
 function buildWorkspaceKey(
-  workspace:
-    FamilyOrganizerWorkspaceChild
+  workspace: FamilyOrganizerWorkspaceChild
 ): string {
   return [
     workspace.ownerUserId,
@@ -50,11 +51,96 @@ function buildWorkspaceKey(
   ].join("::");
 }
 
-/*
- * ============================================================
- * COMPONENT
- * ============================================================
- */
+function getWorkspaceAccessLabel(
+  workspace: FamilyOrganizerWorkspaceChild
+): string {
+  if (workspace.role !== "family_member") {
+    return "Primary Owner";
+  }
+
+  const accessLevel =
+    normalizeFamilyOrganizerAccessLevel(
+      workspace.accessLevel
+    );
+
+  switch (accessLevel) {
+    case "administrator":
+      return "Administrator";
+
+    case "contributor":
+      return "Contributor";
+
+    default:
+      return "Viewer";
+  }
+}
+
+function getWorkspaceAccessColors(
+  workspace: FamilyOrganizerWorkspaceChild
+): {
+  background: string;
+  color: string;
+} {
+  if (workspace.role !== "family_member") {
+    return {
+      background: "#EFF6FF",
+      color: "#1D4ED8",
+    };
+  }
+
+  const accessLevel =
+    normalizeFamilyOrganizerAccessLevel(
+      workspace.accessLevel
+    );
+
+  switch (accessLevel) {
+    case "administrator":
+      return {
+        background: "#FDF2F8",
+        color: "#9D174D",
+      };
+
+    case "contributor":
+      return {
+        background: "#ECFDF5",
+        color: "#047857",
+      };
+
+    default:
+      return {
+        background: "#F5F3FF",
+        color: "#6D28D9",
+      };
+  }
+}
+
+function WorkspaceAccessBadge({
+  workspace,
+}: {
+  workspace: FamilyOrganizerWorkspaceChild;
+}) {
+  const colors =
+    getWorkspaceAccessColors(workspace);
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        padding: "5px 9px",
+        borderRadius: "999px",
+        background: colors.background,
+        color: colors.color,
+        fontSize: "10px",
+        fontWeight: 800,
+        letterSpacing: "0.03em",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {getWorkspaceAccessLabel(workspace)}
+    </span>
+  );
+}
 
 export default function FamilyOrganizerWorkspaceSelector({
   workspaces,
@@ -62,29 +148,18 @@ export default function FamilyOrganizerWorkspaceSelector({
   onSelect,
   disabled = false,
 }: FamilyOrganizerWorkspaceSelectorProps) {
-  /*
-   * ----------------------------------------------------------
-   * NO WORKSPACES
-   * ----------------------------------------------------------
-   */
-
-  if (
-    workspaces.length === 0
-  ) {
+  if (workspaces.length === 0) {
     return null;
   }
 
   /*
    * ----------------------------------------------------------
-   * ONE WORKSPACE
+   * SINGLE WORKSPACE
    * ----------------------------------------------------------
    */
 
-  if (
-    workspaces.length === 1
-  ) {
-    const workspace =
-      workspaces[0];
+  if (workspaces.length === 1) {
+    const workspace = workspaces[0];
 
     return (
       <div
@@ -109,42 +184,26 @@ export default function FamilyOrganizerWorkspaceSelector({
           style={{
             display: "inline-flex",
             alignItems: "center",
-            gap: "7px",
+            gap: "8px",
             padding: "7px 11px",
             borderRadius: "999px",
-            background:
-              workspace.role ===
-              "family_member"
-                ? "#F5F3FF"
-                : "#EFF6FF",
-            color:
-              workspace.role ===
-              "family_member"
-                ? "#6D28D9"
-                : "#1D4ED8",
-            fontSize: "12px",
-            fontWeight: 800,
+            background: "#F8FAFC",
+            border: "1px solid #E2E8F0",
           }}
         >
-          <span>
+          <span
+            style={{
+              color: "#0F172A",
+              fontSize: "12px",
+              fontWeight: 800,
+            }}
+          >
             {workspace.childName}
           </span>
 
-          {workspace.role ===
-          "family_member" ? (
-            <span
-              style={{
-                fontSize: "9px",
-                textTransform:
-                  "uppercase",
-                letterSpacing:
-                  "0.04em",
-                opacity: 0.8,
-              }}
-            >
-              Shared
-            </span>
-          ) : null}
+          <WorkspaceAccessBadge
+            workspace={workspace}
+          />
         </div>
       </div>
     );
@@ -156,12 +215,16 @@ export default function FamilyOrganizerWorkspaceSelector({
    * ----------------------------------------------------------
    */
 
-  const selectedKey =
-    selectedWorkspace
-      ? buildWorkspaceKey(
-          selectedWorkspace
-        )
-      : "";
+  const selectedKey = selectedWorkspace
+    ? buildWorkspaceKey(selectedWorkspace)
+    : "";
+
+  const activeWorkspace =
+    workspaces.find(
+      (workspace) =>
+        buildWorkspaceKey(workspace) ===
+        selectedKey
+    ) ?? null;
 
   return (
     <div
@@ -188,28 +251,21 @@ export default function FamilyOrganizerWorkspaceSelector({
         value={selectedKey}
         disabled={disabled}
         onChange={(event) => {
-          const nextKey =
-            event.target.value;
-
           const nextWorkspace =
             workspaces.find(
               (workspace) =>
-                buildWorkspaceKey(
-                  workspace
-                ) === nextKey
+                buildWorkspaceKey(workspace) ===
+                event.target.value
             );
 
           if (nextWorkspace) {
-            onSelect(
-              nextWorkspace
-            );
+            onSelect(nextWorkspace);
           }
         }}
         style={{
           minWidth: "210px",
           padding: "9px 36px 9px 12px",
-          border:
-            "1px solid #CBD5E1",
+          border: "1px solid #CBD5E1",
           borderRadius: "10px",
           background: disabled
             ? "#F1F5F9"
@@ -223,49 +279,28 @@ export default function FamilyOrganizerWorkspaceSelector({
           outline: "none",
         }}
       >
-        {workspaces.map(
-          (workspace) => {
-            const key =
-              buildWorkspaceKey(
-                workspace
-              );
+        {workspaces.map((workspace) => {
+          const key =
+            buildWorkspaceKey(workspace);
 
-            const label =
-              workspace.role ===
-              "family_member"
-                ? `${workspace.childName} — Shared`
-                : workspace.childName;
+          const accessLabel =
+            getWorkspaceAccessLabel(workspace);
 
-            return (
-              <option
-                key={key}
-                value={key}
-              >
-                {label}
-              </option>
-            );
-          }
-        )}
+          return (
+            <option
+              key={key}
+              value={key}
+            >
+              {workspace.childName} — {accessLabel}
+            </option>
+          );
+        })}
       </select>
 
-      {selectedWorkspace?.role ===
-      "family_member" ? (
-        <span
-          style={{
-            padding: "5px 8px",
-            borderRadius: "999px",
-            background: "#F5F3FF",
-            color: "#6D28D9",
-            fontSize: "9px",
-            fontWeight: 850,
-            textTransform:
-              "uppercase",
-            letterSpacing:
-              "0.05em",
-          }}
-        >
-          Shared Family Access
-        </span>
+      {activeWorkspace ? (
+        <WorkspaceAccessBadge
+          workspace={activeWorkspace}
+        />
       ) : null}
     </div>
   );
