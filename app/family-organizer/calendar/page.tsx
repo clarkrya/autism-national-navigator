@@ -6,6 +6,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import type { CSSProperties, FormEvent } from "react";
@@ -17,6 +18,15 @@ import {
 } from "../../../lib/familyOrganizer/useFamilyOrganizerWorkspace";
 
 import {
+  canContributeToFamilyOrganizerWorkspace,
+  canAdministerFamilyOrganizerWorkspace,
+} from "../../../lib/familyOrganizer/familyOrganizerWorkspace";
+
+import {
+  getActiveFamilyOrganizerMembershipsForUser,
+} from "../../../lib/familyOrganizer/familyOrganizerRepository";
+
+import {
   createFamilyOrganizerCalendarEvent,
   deleteFamilyOrganizerCalendarEvent,
   getFamilyOrganizerCalendarEvents,
@@ -26,15 +36,27 @@ import {
 import type {
   FamilyOrganizerCalendarEvent,
   FamilyOrganizerCalendarEventType,
+  FamilyOrganizerMembership,
 } from "../../../lib/familyOrganizer/familyOrganizerTypes";
 
 /*
- * AUTIVOYA — SHARED CALENDAR
+ * ============================================================
+ * AUTIVOYA — SHARED FAMILY CALENDAR
+ * ============================================================
  *
- * Events remain in the canonical child workspace:
+ * Canonical Firestore path:
+ *
  * users/{ownerUserId}/children/{childId}/calendarEvents
  *
- * Authorized Family Team members access the same calendar.
+ * Permissions:
+ * Owner: Full access
+ * Viewer: Read only
+ * Contributor: Create, edit, remove own events
+ * Administrator: Full calendar access
+ *
+ * Memberships are loaded for the authenticated user
+ * and passed to every calendar repository operation.
+ * ============================================================
  */
 
 const BRAND = {
@@ -93,7 +115,10 @@ function getErrorMessage(
   error: unknown,
   fallback: string
 ): string {
-  if (error instanceof Error && error.message.trim()) {
+  if (
+    error instanceof Error &&
+    error.message.trim()
+  ) {
     return error.message;
   }
 
@@ -104,8 +129,9 @@ function getEventTypeLabel(
   eventType: FamilyOrganizerCalendarEventType
 ): string {
   return (
-    EVENT_TYPES.find((item) => item.value === eventType)
-      ?.label ?? "Other"
+    EVENT_TYPES.find(
+      (item) => item.value === eventType
+    )?.label ?? "Other"
   );
 }
 
@@ -125,12 +151,17 @@ function formatEventTime(
     return "All day";
   }
 
-  const formatter = new Intl.DateTimeFormat(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  const formatter = new Intl.DateTimeFormat(
+    undefined,
+    {
+      hour: "numeric",
+      minute: "2-digit",
+    }
+  );
 
-  const start = formatter.format(new Date(event.startAt));
+  const start = formatter.format(
+    new Date(event.startAt)
+  );
 
   if (typeof event.endAt !== "number") {
     return start;
@@ -151,31 +182,50 @@ function buildTimestamp(
   }
 
   if (allDay) {
-    return new Date(`${date}T00:00:00`).getTime();
+    return new Date(
+      `${date}T00:00:00`
+    ).getTime();
   }
 
   if (!time) {
     return Number.NaN;
   }
 
-  return new Date(`${date}T${time}:00`).getTime();
+  return new Date(
+    `${date}T${time}:00`
+  ).getTime();
 }
 
-function toDateInputValue(timestamp: number): string {
+function toDateInputValue(
+  timestamp: number
+): string {
   const date = new Date(timestamp);
 
   const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
+
+  const month = String(
+    date.getMonth() + 1
+  ).padStart(2, "0");
+
+  const day = String(
+    date.getDate()
+  ).padStart(2, "0");
 
   return `${year}-${month}-${day}`;
 }
 
-function toTimeInputValue(timestamp: number): string {
+function toTimeInputValue(
+  timestamp: number
+): string {
   const date = new Date(timestamp);
 
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const hours = String(
+    date.getHours()
+  ).padStart(2, "0");
+
+  const minutes = String(
+    date.getMinutes()
+  ).padStart(2, "0");
 
   return `${hours}:${minutes}`;
 }
@@ -187,14 +237,17 @@ const styles: Record<string, CSSProperties> = {
     borderRadius: 18,
     padding: 26,
     marginBottom: 18,
-    boxShadow: "0 8px 24px rgba(23,59,82,0.04)",
+    boxShadow:
+      "0 8px 24px rgba(23,59,82,0.04)",
   },
+
   heading: {
     margin: 0,
     color: BRAND.darkNavy,
     fontSize: 20,
     fontWeight: 800,
   },
+
   label: {
     display: "block",
     color: BRAND.navy,
@@ -202,6 +255,7 @@ const styles: Record<string, CSSProperties> = {
     fontWeight: 800,
     marginBottom: 7,
   },
+
   input: {
     width: "100%",
     boxSizing: "border-box",
@@ -213,6 +267,7 @@ const styles: Record<string, CSSProperties> = {
     fontSize: 14,
     fontFamily: "inherit",
   },
+
   button: {
     padding: "11px 17px",
     border: "none",
@@ -223,17 +278,20 @@ const styles: Record<string, CSSProperties> = {
     fontWeight: 800,
     cursor: "pointer",
   },
+
   link: {
     color: BRAND.darkTeal,
     fontSize: 13,
     fontWeight: 800,
     textDecoration: "none",
   },
+
   body: {
     color: BRAND.muted,
     fontSize: 13,
     lineHeight: 1.65,
   },
+
   error: {
     marginTop: 14,
     padding: "11px 13px",
@@ -243,6 +301,7 @@ const styles: Record<string, CSSProperties> = {
     color: "#B91C1C",
     fontSize: 12,
   },
+
   success: {
     marginTop: 14,
     padding: "11px 13px",
@@ -269,29 +328,110 @@ export default function FamilyOrganizerCalendarPage() {
     FamilyOrganizerCalendarEvent[]
   >([]);
 
-  const [loadingEvents, setLoadingEvents] = useState(false);
-  const [calendarError, setCalendarError] = useState("");
+  const [memberships, setMemberships] = useState<
+    FamilyOrganizerMembership[]
+  >([]);
 
-  const [form, setForm] = useState<CalendarFormState>(
-    getEmptyForm()
-  );
+  const [loadingEvents, setLoadingEvents] =
+    useState(false);
 
-  const [editingEventId, setEditingEventId] = useState<
-    string | null
-  >(null);
+  const [calendarError, setCalendarError] =
+    useState("");
+
+  const [form, setForm] =
+    useState<CalendarFormState>(
+      getEmptyForm()
+    );
+
+  const [editingEventId, setEditingEventId] =
+    useState<string | null>(null);
 
   const [saving, setSaving] = useState(false);
-  const [deletingEventId, setDeletingEventId] = useState("");
-  const [formError, setFormError] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
+
+  const [deletingEventId, setDeletingEventId] =
+    useState("");
+
+  const [formError, setFormError] =
+    useState("");
+
+  const [successMessage, setSuccessMessage] =
+    useState("");
+
+  const requestIdRef = useRef(0);
 
   /*
-   * LOAD SHARED CALENDAR EVENTS
+   * ==========================================================
+   * ACCESS LEVEL
+   * ==========================================================
+   */
+
+  const canEditCalendar = selectedWorkspace
+    ? canContributeToFamilyOrganizerWorkspace(
+        selectedWorkspace
+      )
+    : false;
+
+  const canAdministerCalendar = selectedWorkspace
+    ? canAdministerFamilyOrganizerWorkspace(
+        selectedWorkspace
+      )
+    : false;
+
+  const canModifyEvent = useCallback(
+    (event: FamilyOrganizerCalendarEvent) => {
+      if (!currentUser || !canEditCalendar) {
+        return false;
+      }
+
+      return (
+        canAdministerCalendar ||
+        event.createdByUserId === currentUser.uid
+      );
+    },
+    [
+      currentUser,
+      canEditCalendar,
+      canAdministerCalendar,
+    ]
+  );
+
+  /*
+   * ==========================================================
+   * LOAD MEMBERSHIPS
+   * ==========================================================
+   */
+
+  const fetchMemberships = useCallback(
+    async (): Promise<
+      FamilyOrganizerMembership[]
+    > => {
+      if (!currentUser) {
+        return [];
+      }
+
+      return (
+        await getActiveFamilyOrganizerMembershipsForUser(
+          currentUser.uid
+        )
+      );
+    },
+    [currentUser]
+  );
+
+  /*
+   * ==========================================================
+   * LOAD SHARED CALENDAR
+   * ==========================================================
    */
 
   const loadEvents = useCallback(async () => {
+    const requestId =
+      ++requestIdRef.current;
+
     if (!currentUser || !selectedWorkspace) {
       setEvents([]);
+      setMemberships([]);
+      setLoadingEvents(false);
       return;
     }
 
@@ -299,15 +439,28 @@ export default function FamilyOrganizerCalendarPage() {
       setLoadingEvents(true);
       setCalendarError("");
 
+      const activeMemberships =
+        await fetchMemberships();
+
       const loadedEvents =
         await getFamilyOrganizerCalendarEvents(
           currentUser.uid,
           selectedWorkspace.ownerUserId,
-          selectedWorkspace.childId
+          selectedWorkspace.childId,
+          activeMemberships
         );
 
+      if (requestId !== requestIdRef.current) {
+        return;
+      }
+
+      setMemberships(activeMemberships);
       setEvents(loadedEvents);
     } catch (error) {
+      if (requestId !== requestIdRef.current) {
+        return;
+      }
+
       console.error(
         "Unable to load Family Organizer calendar:",
         error
@@ -322,16 +475,29 @@ export default function FamilyOrganizerCalendarPage() {
         )
       );
     } finally {
-      setLoadingEvents(false);
+      if (requestId === requestIdRef.current) {
+        setLoadingEvents(false);
+      }
     }
-  }, [currentUser, selectedWorkspace]);
+  }, [
+    currentUser,
+    selectedWorkspace?.ownerUserId,
+    selectedWorkspace?.childId,
+    fetchMemberships,
+  ]);
 
   useEffect(() => {
     void loadEvents();
+
+    return () => {
+      requestIdRef.current += 1;
+    };
   }, [loadEvents]);
 
   /*
-   * RESET FORM WHEN CHILD WORKSPACE CHANGES
+   * ==========================================================
+   * RESET WHEN CHILD CHANGES
+   * ==========================================================
    */
 
   useEffect(() => {
@@ -346,10 +512,15 @@ export default function FamilyOrganizerCalendarPage() {
   ]);
 
   /*
-   * UPCOMING AND PAST EVENTS
+   * ==========================================================
+   * UPCOMING / PAST EVENTS
+   * ==========================================================
    */
 
-  const { upcomingEvents, pastEvents } = useMemo(() => {
+  const {
+    upcomingEvents,
+    pastEvents,
+  } = useMemo(() => {
     const now = Date.now();
 
     const upcoming = events
@@ -357,14 +528,18 @@ export default function FamilyOrganizerCalendarPage() {
         (event) =>
           (event.endAt ?? event.startAt) >= now
       )
-      .sort((a, b) => a.startAt - b.startAt);
+      .sort(
+        (a, b) => a.startAt - b.startAt
+      );
 
     const past = events
       .filter(
         (event) =>
           (event.endAt ?? event.startAt) < now
       )
-      .sort((a, b) => b.startAt - a.startAt);
+      .sort(
+        (a, b) => b.startAt - a.startAt
+      );
 
     return {
       upcomingEvents: upcoming,
@@ -373,10 +548,14 @@ export default function FamilyOrganizerCalendarPage() {
   }, [events]);
 
   /*
+   * ==========================================================
    * FORM HELPERS
+   * ==========================================================
    */
 
-  function updateForm<K extends keyof CalendarFormState>(
+  function updateForm<
+    K extends keyof CalendarFormState
+  >(
     key: K,
     value: CalendarFormState[K]
   ) {
@@ -396,12 +575,18 @@ export default function FamilyOrganizerCalendarPage() {
   }
 
   /*
-   * EDIT EXISTING EVENT
+   * ==========================================================
+   * EDIT EVENT
+   * ==========================================================
    */
 
   function beginEditing(
     event: FamilyOrganizerCalendarEvent
   ) {
+    if (!canModifyEvent(event)) {
+      return;
+    }
+
     setEditingEventId(event.id);
 
     setForm({
@@ -431,7 +616,9 @@ export default function FamilyOrganizerCalendarPage() {
   }
 
   /*
-   * CREATE OR UPDATE EVENT
+   * ==========================================================
+   * CREATE / UPDATE EVENT
+   * ==========================================================
    */
 
   async function handleSubmit(
@@ -439,8 +626,31 @@ export default function FamilyOrganizerCalendarPage() {
   ) {
     event.preventDefault();
 
-    if (!currentUser || !selectedWorkspace) {
+    if (
+      !currentUser ||
+      !selectedWorkspace ||
+      !canEditCalendar
+    ) {
+      setFormError(
+        "You do not have permission to edit this calendar."
+      );
       return;
+    }
+
+    if (editingEventId) {
+      const existingEvent = events.find(
+        (item) => item.id === editingEventId
+      );
+
+      if (
+        !existingEvent ||
+        !canModifyEvent(existingEvent)
+      ) {
+        setFormError(
+          "You cannot edit this calendar event."
+        );
+        return;
+      }
     }
 
     const title = form.title.trim();
@@ -462,7 +672,9 @@ export default function FamilyOrganizerCalendarPage() {
     );
 
     if (!Number.isFinite(startAt)) {
-      setFormError("Enter a valid event date and time.");
+      setFormError(
+        "Enter a valid event date and time."
+      );
       return;
     }
 
@@ -476,7 +688,9 @@ export default function FamilyOrganizerCalendarPage() {
       );
 
       if (!Number.isFinite(endAt)) {
-        setFormError("Enter a valid end time.");
+        setFormError(
+          "Enter a valid end time."
+        );
         return;
       }
 
@@ -493,14 +707,20 @@ export default function FamilyOrganizerCalendarPage() {
       setFormError("");
       setSuccessMessage("");
 
+      const activeMemberships =
+        await fetchMemberships();
+
       const eventData = {
         currentUserId: currentUser.uid,
         ownerUserId: selectedWorkspace.ownerUserId,
         childId: selectedWorkspace.childId,
+        memberships: activeMemberships,
         title,
         eventType: form.eventType,
         startAt,
-        ...(endAt !== undefined ? { endAt } : {}),
+        ...(endAt !== undefined
+          ? { endAt }
+          : {}),
         allDay: form.allDay,
         location: form.location,
         notes: form.notes,
@@ -512,13 +732,20 @@ export default function FamilyOrganizerCalendarPage() {
           eventId: editingEventId,
         });
 
-        setSuccessMessage("Calendar event updated.");
+        setSuccessMessage(
+          "Calendar event updated."
+        );
       } else {
-        await createFamilyOrganizerCalendarEvent(eventData);
+        await createFamilyOrganizerCalendarEvent(
+          eventData
+        );
 
-        setSuccessMessage("Calendar event added.");
+        setSuccessMessage(
+          "Calendar event added."
+        );
       }
 
+      setMemberships(activeMemberships);
       setForm(getEmptyForm());
       setEditingEventId(null);
 
@@ -541,11 +768,33 @@ export default function FamilyOrganizerCalendarPage() {
   }
 
   /*
+   * ==========================================================
    * DELETE EVENT
+   * ==========================================================
    */
 
-  async function handleDelete(eventId: string) {
-    if (!currentUser || !selectedWorkspace) {
+  async function handleDelete(
+    eventId: string
+  ) {
+    if (
+      !currentUser ||
+      !selectedWorkspace ||
+      !canEditCalendar
+    ) {
+      return;
+    }
+
+    const existingEvent = events.find(
+      (event) => event.id === eventId
+    );
+
+    if (
+      !existingEvent ||
+      !canModifyEvent(existingEvent)
+    ) {
+      setCalendarError(
+        "You cannot remove this calendar event."
+      );
       return;
     }
 
@@ -561,11 +810,15 @@ export default function FamilyOrganizerCalendarPage() {
       setDeletingEventId(eventId);
       setCalendarError("");
 
+      const activeMemberships =
+        await fetchMemberships();
+
       await deleteFamilyOrganizerCalendarEvent({
         currentUserId: currentUser.uid,
         ownerUserId: selectedWorkspace.ownerUserId,
         childId: selectedWorkspace.childId,
         eventId,
+        memberships: activeMemberships,
       });
 
       if (editingEventId === eventId) {
@@ -591,30 +844,41 @@ export default function FamilyOrganizerCalendarPage() {
   }
 
   /*
+   * ==========================================================
    * EVENT DISPLAY
+   * ==========================================================
    */
 
   function renderEvent(
     event: FamilyOrganizerCalendarEvent
   ) {
+    const canModify = canModifyEvent(event);
+
     return (
       <article
         key={event.id}
         style={{
           padding: "18px 0",
-          borderBottom: `1px solid ${BRAND.border}`,
+          borderBottom:
+            `1px solid ${BRAND.border}`,
         }}
       >
         <div
           style={{
             display: "flex",
-            justifyContent: "space-between",
+            justifyContent:
+              "space-between",
             alignItems: "flex-start",
             gap: 18,
             flexWrap: "wrap",
           }}
         >
-          <div style={{ flex: 1, minWidth: 220 }}>
+          <div
+            style={{
+              flex: 1,
+              minWidth: 220,
+            }}
+          >
             <div
               style={{
                 display: "flex",
@@ -638,15 +902,20 @@ export default function FamilyOrganizerCalendarPage() {
                 style={{
                   padding: "4px 8px",
                   borderRadius: 999,
-                  background: BRAND.lightTeal,
+                  background:
+                    BRAND.lightTeal,
                   color: BRAND.darkTeal,
                   fontSize: 9,
                   fontWeight: 800,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.04em",
+                  textTransform:
+                    "uppercase",
+                  letterSpacing:
+                    "0.04em",
                 }}
               >
-                {getEventTypeLabel(event.eventType)}
+                {getEventTypeLabel(
+                  event.eventType
+                )}
               </span>
             </div>
 
@@ -658,7 +927,9 @@ export default function FamilyOrganizerCalendarPage() {
                 fontWeight: 700,
               }}
             >
-              {formatEventDate(event.startAt)}
+              {formatEventDate(
+                event.startAt
+              )}
               {" • "}
               {formatEventTime(event)}
             </div>
@@ -683,7 +954,8 @@ export default function FamilyOrganizerCalendarPage() {
                   color: BRAND.muted,
                   fontSize: 12,
                   lineHeight: 1.6,
-                  whiteSpace: "pre-wrap",
+                  whiteSpace:
+                    "pre-wrap",
                 }}
               >
                 {event.notes}
@@ -691,72 +963,96 @@ export default function FamilyOrganizerCalendarPage() {
             ) : null}
           </div>
 
-          <div
-            style={{
-              display: "flex",
-              gap: 8,
-              flexShrink: 0,
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => beginEditing(event)}
+          {canModify ? (
+            <div
               style={{
-                padding: "7px 10px",
-                borderRadius: 8,
-                border: `1px solid ${BRAND.border}`,
-                background: BRAND.white,
-                color: BRAND.darkTeal,
-                fontSize: 11,
-                fontWeight: 800,
-                cursor: "pointer",
+                display: "flex",
+                gap: 8,
+                flexShrink: 0,
               }}
             >
-              Edit
-            </button>
+              <button
+                type="button"
+                onClick={() =>
+                  beginEditing(event)
+                }
+                style={{
+                  padding: "7px 10px",
+                  borderRadius: 8,
+                  border:
+                    `1px solid ${BRAND.border}`,
+                  background:
+                    BRAND.white,
+                  color:
+                    BRAND.darkTeal,
+                  fontSize: 11,
+                  fontWeight: 800,
+                  cursor: "pointer",
+                }}
+              >
+                Edit
+              </button>
 
-            <button
-              type="button"
-              disabled={deletingEventId === event.id}
-              onClick={() => {
-                void handleDelete(event.id);
-              }}
-              style={{
-                padding: "7px 10px",
-                borderRadius: 8,
-                border: "1px solid #FECACA",
-                background: BRAND.white,
-                color: "#B91C1C",
-                fontSize: 11,
-                fontWeight: 800,
-                cursor:
-                  deletingEventId === event.id
-                    ? "not-allowed"
-                    : "pointer",
-                opacity:
-                  deletingEventId === event.id ? 0.6 : 1,
-              }}
-            >
-              {deletingEventId === event.id
-                ? "Removing..."
-                : "Remove"}
-            </button>
-          </div>
+              <button
+                type="button"
+                disabled={
+                  deletingEventId ===
+                  event.id
+                }
+                onClick={() => {
+                  void handleDelete(
+                    event.id
+                  );
+                }}
+                style={{
+                  padding: "7px 10px",
+                  borderRadius: 8,
+                  border:
+                    "1px solid #FECACA",
+                  background:
+                    BRAND.white,
+                  color: "#B91C1C",
+                  fontSize: 11,
+                  fontWeight: 800,
+                  cursor:
+                    deletingEventId ===
+                    event.id
+                      ? "not-allowed"
+                      : "pointer",
+                  opacity:
+                    deletingEventId ===
+                    event.id
+                      ? 0.6
+                      : 1,
+                }}
+              >
+                {deletingEventId ===
+                event.id
+                  ? "Removing..."
+                  : "Remove"}
+              </button>
+            </div>
+          ) : null}
         </div>
       </article>
     );
   }
 
   /*
+   * ==========================================================
    * PAGE
+   * ==========================================================
    */
 
   return (
     <main
       style={{
-        minHeight: "calc(100vh - 72px)",
-        background: BRAND.background,
-        padding: "48px 24px 72px",
+        minHeight:
+          "calc(100vh - 72px)",
+        background:
+          BRAND.background,
+        padding:
+          "48px 24px 72px",
       }}
     >
       <div
@@ -766,20 +1062,26 @@ export default function FamilyOrganizerCalendarPage() {
           margin: "0 auto",
         }}
       >
-        {/* PAGE INTRODUCTION */}
-
-        <section style={{ marginBottom: 28 }}>
+        <section
+          style={{
+            marginBottom: 28,
+          }}
+        >
           <div
             style={{
-              display: "inline-flex",
+              display:
+                "inline-flex",
               padding: "6px 10px",
               borderRadius: 999,
-              background: BRAND.lightTeal,
+              background:
+                BRAND.lightTeal,
               color: BRAND.darkTeal,
               fontSize: 11,
               fontWeight: 800,
-              textTransform: "uppercase",
-              letterSpacing: "0.05em",
+              textTransform:
+                "uppercase",
+              letterSpacing:
+                "0.05em",
               marginBottom: 16,
             }}
           >
@@ -789,7 +1091,8 @@ export default function FamilyOrganizerCalendarPage() {
           <h1
             style={{
               margin: 0,
-              color: BRAND.darkNavy,
+              color:
+                BRAND.darkNavy,
               fontSize: 36,
               lineHeight: 1.15,
               fontWeight: 850,
@@ -800,20 +1103,21 @@ export default function FamilyOrganizerCalendarPage() {
 
           <p
             style={{
-              margin: "12px 0 0",
+              margin:
+                "12px 0 0",
               maxWidth: 760,
               color: BRAND.muted,
               fontSize: 16,
               lineHeight: 1.7,
             }}
           >
-            Keep appointments, therapy, school meetings,
-            IEP dates, evaluations, deadlines, and other
-            important events visible to your Family Team.
+            Keep appointments, therapy,
+            school meetings, IEP dates,
+            evaluations, deadlines, and
+            other important events visible
+            to your Family Team.
           </p>
         </section>
-
-        {/* AUTHENTICATION */}
 
         {!authReady ? (
           <section style={styles.card}>
@@ -823,24 +1127,28 @@ export default function FamilyOrganizerCalendarPage() {
           </section>
         ) : null}
 
-        {authReady && !currentUser ? (
+        {authReady &&
+        !currentUser ? (
           <section style={styles.card}>
             <h2 style={styles.heading}>
               Sign in to use the Shared Calendar
             </h2>
 
             <p style={styles.body}>
-              Sign in to your Autivoya account to access
-              your family's shared calendar.
+              Sign in to your Autivoya account
+              to access your family's shared
+              calendar.
             </p>
 
             <Link
               href="/login"
               style={{
                 ...styles.button,
-                display: "inline-flex",
+                display:
+                  "inline-flex",
                 marginTop: 12,
-                textDecoration: "none",
+                textDecoration:
+                  "none",
               }}
             >
               Sign In
@@ -848,9 +1156,10 @@ export default function FamilyOrganizerCalendarPage() {
           </section>
         ) : null}
 
-        {authReady && currentUser ? (
+        {authReady &&
+        currentUser ? (
           <>
-            {/* CHILD WORKSPACE SELECTOR */}
+            {/* WORKSPACE SELECTOR */}
 
             <section style={styles.card}>
               {loadingWorkspaces ? (
@@ -859,8 +1168,12 @@ export default function FamilyOrganizerCalendarPage() {
                 </div>
               ) : null}
 
-              {!loadingWorkspaces && workspaceError ? (
-                <div role="alert" style={styles.error}>
+              {!loadingWorkspaces &&
+              workspaceError ? (
+                <div
+                  role="alert"
+                  style={styles.error}
+                >
                   {workspaceError}
                 </div>
               ) : null}
@@ -870,8 +1183,12 @@ export default function FamilyOrganizerCalendarPage() {
               workspaces.length > 0 ? (
                 <FamilyOrganizerWorkspaceSelector
                   workspaces={workspaces}
-                  selectedWorkspace={selectedWorkspace}
-                  onSelect={selectWorkspace}
+                  selectedWorkspace={
+                    selectedWorkspace
+                  }
+                  onSelect={
+                    selectWorkspace
+                  }
                 />
               ) : null}
 
@@ -879,30 +1196,35 @@ export default function FamilyOrganizerCalendarPage() {
               !workspaceError &&
               workspaces.length === 0 ? (
                 <div style={styles.body}>
-                  No child workspace is available yet.
+                  No child workspace is
+                  available yet.
                 </div>
               ) : null}
             </section>
 
             {selectedWorkspace ? (
               <>
-                {/* SELECTED CHILD BANNER */}
+                {/* CHILD BANNER */}
 
                 <section
                   style={{
                     background:
                       "linear-gradient(135deg, #EAF6F5 0%, #F7FAFB 100%)",
-                    border: "1px solid #CFE7E5",
+                    border:
+                      "1px solid #CFE7E5",
                     borderRadius: 16,
-                    padding: "20px 22px",
+                    padding:
+                      "20px 22px",
                     marginBottom: 18,
                   }}
                 >
                   <div
                     style={{
                       display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
+                      justifyContent:
+                        "space-between",
+                      alignItems:
+                        "center",
                       gap: 14,
                       flexWrap: "wrap",
                     }}
@@ -910,25 +1232,31 @@ export default function FamilyOrganizerCalendarPage() {
                     <div>
                       <div
                         style={{
-                          color: BRAND.navy,
+                          color:
+                            BRAND.navy,
                           fontSize: 16,
                           fontWeight: 800,
                         }}
                       >
-                        {selectedWorkspace.childName}
+                        {
+                          selectedWorkspace.childName
+                        }
                         &apos;s Shared Calendar
                       </div>
 
                       <div
                         style={{
                           marginTop: 5,
-                          color: BRAND.muted,
+                          color:
+                            BRAND.muted,
                           fontSize: 12,
                           lineHeight: 1.6,
                         }}
                       >
-                        Events added here are shared with
-                        authorized Family Team members.
+                        Events added here
+                        are shared with
+                        authorized Family
+                        Team members.
                       </div>
                     </div>
 
@@ -936,320 +1264,489 @@ export default function FamilyOrganizerCalendarPage() {
                     "family_member" ? (
                       <span
                         style={{
-                          padding: "5px 9px",
-                          borderRadius: 999,
-                          background: BRAND.white,
-                          border: "1px solid #CFE7E5",
-                          color: BRAND.darkTeal,
-                          fontSize: 9,
+                          padding:
+                            "5px 9px",
+                          borderRadius:
+                            999,
+                          background:
+                            BRAND.white,
+                          border:
+                            "1px solid #CFE7E5",
+                          color:
+                            BRAND.darkTeal,
+                          fontSize: 10,
                           fontWeight: 850,
-                          textTransform: "uppercase",
-                          letterSpacing: "0.05em",
+                          textTransform:
+                            "uppercase",
                         }}
                       >
-                        Shared Family Access
+                        {
+                          selectedWorkspace.accessLevel ??
+                          "viewer"
+                        }{" "}
+                        Access
                       </span>
                     ) : null}
                   </div>
                 </section>
 
-                {/* ADD / EDIT EVENT */}
+                {/* ADD / EDIT FORM */}
 
-                <section style={styles.card}>
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      gap: 12,
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <h2 style={styles.heading}>
-                      {editingEventId
-                        ? "Edit Event"
-                        : "Add Event"}
-                    </h2>
-
-                    {editingEventId ? (
-                      <button
-                        type="button"
-                        onClick={resetForm}
-                        style={{
-                          border: "none",
-                          background: "transparent",
-                          color: BRAND.darkTeal,
-                          fontSize: 12,
-                          fontWeight: 800,
-                          cursor: "pointer",
-                        }}
-                      >
-                        Cancel Edit
-                      </button>
-                    ) : null}
-                  </div>
-
-                  <form
-                    onSubmit={handleSubmit}
-                    style={{ marginTop: 20 }}
-                  >
+                {canEditCalendar ? (
+                  <section style={styles.card}>
                     <div
                       style={{
-                        display: "grid",
-                        gridTemplateColumns:
-                          "repeat(auto-fit, minmax(220px, 1fr))",
-                        gap: 14,
+                        display:
+                          "flex",
+                        justifyContent:
+                          "space-between",
+                        alignItems:
+                          "center",
+                        gap: 12,
+                        flexWrap:
+                          "wrap",
                       }}
                     >
-                      <div>
-                        <label
-                          htmlFor="calendar-title"
-                          style={styles.label}
-                        >
-                          Event Title
-                        </label>
+                      <h2
+                        style={
+                          styles.heading
+                        }
+                      >
+                        {editingEventId
+                          ? "Edit Event"
+                          : "Add Event"}
+                      </h2>
 
-                        <input
-                          id="calendar-title"
-                          type="text"
-                          required
-                          value={form.title}
-                          onChange={(event) =>
-                            updateForm(
-                              "title",
-                              event.target.value
-                            )
+                      {editingEventId ? (
+                        <button
+                          type="button"
+                          onClick={
+                            resetForm
                           }
-                          placeholder="e.g. Speech therapy"
-                          style={styles.input}
-                        />
-                      </div>
-
-                      <div>
-                        <label
-                          htmlFor="calendar-type"
-                          style={styles.label}
+                          style={{
+                            border:
+                              "none",
+                            background:
+                              "transparent",
+                            color:
+                              BRAND.darkTeal,
+                            fontSize: 12,
+                            fontWeight: 800,
+                            cursor:
+                              "pointer",
+                          }}
                         >
-                          Type
-                        </label>
-
-                        <select
-                          id="calendar-type"
-                          value={form.eventType}
-                          onChange={(event) =>
-                            updateForm(
-                              "eventType",
-                              event.target
-                                .value as FamilyOrganizerCalendarEventType
-                            )
-                          }
-                          style={styles.input}
-                        >
-                          {EVENT_TYPES.map((item) => (
-                            <option
-                              key={item.value}
-                              value={item.value}
-                            >
-                              {item.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label
-                          htmlFor="calendar-date"
-                          style={styles.label}
-                        >
-                          Date
-                        </label>
-
-                        <input
-                          id="calendar-date"
-                          type="date"
-                          required
-                          value={form.date}
-                          onChange={(event) =>
-                            updateForm(
-                              "date",
-                              event.target.value
-                            )
-                          }
-                          style={styles.input}
-                        />
-                      </div>
-
-                      {!form.allDay ? (
-                        <>
-                          <div>
-                            <label
-                              htmlFor="calendar-start"
-                              style={styles.label}
-                            >
-                              Start Time
-                            </label>
-
-                            <input
-                              id="calendar-start"
-                              type="time"
-                              required
-                              value={form.startTime}
-                              onChange={(event) =>
-                                updateForm(
-                                  "startTime",
-                                  event.target.value
-                                )
-                              }
-                              style={styles.input}
-                            />
-                          </div>
-
-                          <div>
-                            <label
-                              htmlFor="calendar-end"
-                              style={styles.label}
-                            >
-                              End Time
-                            </label>
-
-                            <input
-                              id="calendar-end"
-                              type="time"
-                              value={form.endTime}
-                              onChange={(event) =>
-                                updateForm(
-                                  "endTime",
-                                  event.target.value
-                                )
-                              }
-                              style={styles.input}
-                            />
-                          </div>
-                        </>
+                          Cancel Edit
+                        </button>
                       ) : null}
-
-                      <div>
-                        <label
-                          htmlFor="calendar-location"
-                          style={styles.label}
-                        >
-                          Location
-                        </label>
-
-                        <input
-                          id="calendar-location"
-                          type="text"
-                          value={form.location}
-                          onChange={(event) =>
-                            updateForm(
-                              "location",
-                              event.target.value
-                            )
-                          }
-                          placeholder="Optional"
-                          style={styles.input}
-                        />
-                      </div>
                     </div>
 
-                    <label
+                    <form
+                      onSubmit={
+                        handleSubmit
+                      }
                       style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 9,
-                        marginTop: 16,
-                        color: BRAND.navy,
-                        fontSize: 13,
-                        fontWeight: 700,
-                        cursor: "pointer",
+                        marginTop: 20,
                       }}
                     >
-                      <input
-                        type="checkbox"
-                        checked={form.allDay}
-                        onChange={(event) =>
-                          updateForm(
-                            "allDay",
-                            event.target.checked
-                          )
-                        }
+                      <div
                         style={{
-                          accentColor: BRAND.darkTeal,
+                          display:
+                            "grid",
+                          gridTemplateColumns:
+                            "repeat(auto-fit, minmax(220px, 1fr))",
+                          gap: 14,
                         }}
-                      />
-                      All-day event
-                    </label>
-
-                    <div style={{ marginTop: 16 }}>
-                      <label
-                        htmlFor="calendar-notes"
-                        style={styles.label}
                       >
-                        Notes
+                        <div>
+                          <label
+                            htmlFor="calendar-title"
+                            style={
+                              styles.label
+                            }
+                          >
+                            Event Title
+                          </label>
+
+                          <input
+                            id="calendar-title"
+                            type="text"
+                            required
+                            value={
+                              form.title
+                            }
+                            onChange={(
+                              event
+                            ) =>
+                              updateForm(
+                                "title",
+                                event
+                                  .target
+                                  .value
+                              )
+                            }
+                            placeholder="e.g. Speech therapy"
+                            style={
+                              styles.input
+                            }
+                          />
+                        </div>
+
+                        <div>
+                          <label
+                            htmlFor="calendar-type"
+                            style={
+                              styles.label
+                            }
+                          >
+                            Type
+                          </label>
+
+                          <select
+                            id="calendar-type"
+                            value={
+                              form.eventType
+                            }
+                            onChange={(
+                              event
+                            ) =>
+                              updateForm(
+                                "eventType",
+                                event
+                                  .target
+                                  .value as FamilyOrganizerCalendarEventType
+                              )
+                            }
+                            style={
+                              styles.input
+                            }
+                          >
+                            {EVENT_TYPES.map(
+                              (
+                                item
+                              ) => (
+                                <option
+                                  key={
+                                    item.value
+                                  }
+                                  value={
+                                    item.value
+                                  }
+                                >
+                                  {
+                                    item.label
+                                  }
+                                </option>
+                              )
+                            )}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label
+                            htmlFor="calendar-date"
+                            style={
+                              styles.label
+                            }
+                          >
+                            Date
+                          </label>
+
+                          <input
+                            id="calendar-date"
+                            type="date"
+                            required
+                            value={
+                              form.date
+                            }
+                            onChange={(
+                              event
+                            ) =>
+                              updateForm(
+                                "date",
+                                event
+                                  .target
+                                  .value
+                              )
+                            }
+                            style={
+                              styles.input
+                            }
+                          />
+                        </div>
+
+                        {!form.allDay ? (
+                          <>
+                            <div>
+                              <label
+                                htmlFor="calendar-start"
+                                style={
+                                  styles.label
+                                }
+                              >
+                                Start Time
+                              </label>
+
+                              <input
+                                id="calendar-start"
+                                type="time"
+                                required
+                                value={
+                                  form.startTime
+                                }
+                                onChange={(
+                                  event
+                                ) =>
+                                  updateForm(
+                                    "startTime",
+                                    event
+                                      .target
+                                      .value
+                                  )
+                                }
+                                style={
+                                  styles.input
+                                }
+                              />
+                            </div>
+
+                            <div>
+                              <label
+                                htmlFor="calendar-end"
+                                style={
+                                  styles.label
+                                }
+                              >
+                                End Time
+                              </label>
+
+                              <input
+                                id="calendar-end"
+                                type="time"
+                                value={
+                                  form.endTime
+                                }
+                                onChange={(
+                                  event
+                                ) =>
+                                  updateForm(
+                                    "endTime",
+                                    event
+                                      .target
+                                      .value
+                                  )
+                                }
+                                style={
+                                  styles.input
+                                }
+                              />
+                            </div>
+                          </>
+                        ) : null}
+
+                        <div>
+                          <label
+                            htmlFor="calendar-location"
+                            style={
+                              styles.label
+                            }
+                          >
+                            Location
+                          </label>
+
+                          <input
+                            id="calendar-location"
+                            type="text"
+                            value={
+                              form.location
+                            }
+                            onChange={(
+                              event
+                            ) =>
+                              updateForm(
+                                "location",
+                                event
+                                  .target
+                                  .value
+                              )
+                            }
+                            placeholder="Optional"
+                            style={
+                              styles.input
+                            }
+                          />
+                        </div>
+                      </div>
+
+                      <label
+                        style={{
+                          display:
+                            "flex",
+                          alignItems:
+                            "center",
+                          gap: 9,
+                          marginTop: 16,
+                          color:
+                            BRAND.navy,
+                          fontSize: 13,
+                          fontWeight: 700,
+                          cursor:
+                            "pointer",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={
+                            form.allDay
+                          }
+                          onChange={(
+                            event
+                          ) =>
+                            updateForm(
+                              "allDay",
+                              event
+                                .target
+                                .checked
+                            )
+                          }
+                          style={{
+                            accentColor:
+                              BRAND.darkTeal,
+                          }}
+                        />
+                        All-day event
                       </label>
 
-                      <textarea
-                        id="calendar-notes"
-                        value={form.notes}
-                        onChange={(event) =>
-                          updateForm(
-                            "notes",
-                            event.target.value
-                          )
-                        }
-                        placeholder="Optional details or reminders"
-                        rows={4}
+                      <div
                         style={{
-                          ...styles.input,
-                          lineHeight: 1.6,
-                          resize: "vertical",
+                          marginTop: 16,
                         }}
-                      />
-                    </div>
-
-                    {formError ? (
-                      <div
-                        role="alert"
-                        style={styles.error}
                       >
-                        {formError}
-                      </div>
-                    ) : null}
+                        <label
+                          htmlFor="calendar-notes"
+                          style={
+                            styles.label
+                          }
+                        >
+                          Notes
+                        </label>
 
-                    {successMessage ? (
-                      <div
-                        role="status"
-                        style={styles.success}
+                        <textarea
+                          id="calendar-notes"
+                          value={
+                            form.notes
+                          }
+                          onChange={(
+                            event
+                          ) =>
+                            updateForm(
+                              "notes",
+                              event
+                                .target
+                                .value
+                            )
+                          }
+                          placeholder="Optional details or reminders"
+                          rows={4}
+                          style={{
+                            ...styles.input,
+                            lineHeight: 1.6,
+                            resize:
+                              "vertical",
+                          }}
+                        />
+                      </div>
+
+                      {formError ? (
+                        <div
+                          role="alert"
+                          style={
+                            styles.error
+                          }
+                        >
+                          {formError}
+                        </div>
+                      ) : null}
+
+                      {successMessage ? (
+                        <div
+                          role="status"
+                          style={
+                            styles.success
+                          }
+                        >
+                          {
+                            successMessage
+                          }
+                        </div>
+                      ) : null}
+
+                      <button
+                        type="submit"
+                        disabled={
+                          saving
+                        }
+                        style={{
+                          ...styles.button,
+                          marginTop: 18,
+                          cursor: saving
+                            ? "not-allowed"
+                            : "pointer",
+                          opacity: saving
+                            ? 0.65
+                            : 1,
+                        }}
                       >
-                        {successMessage}
-                      </div>
-                    ) : null}
-
-                    <button
-                      type="submit"
-                      disabled={saving}
-                      style={{
-                        ...styles.button,
-                        marginTop: 18,
-                        cursor: saving
-                          ? "not-allowed"
-                          : "pointer",
-                        opacity: saving ? 0.65 : 1,
-                      }}
+                        {saving
+                          ? "Saving..."
+                          : editingEventId
+                            ? "Save Changes"
+                            : "Add to Calendar"}
+                      </button>
+                    </form>
+                  </section>
+                ) : (
+                  <section
+                    style={
+                      styles.card
+                    }
+                  >
+                    <h2
+                      style={
+                        styles.heading
+                      }
                     >
-                      {saving
-                        ? "Saving..."
-                        : editingEventId
-                          ? "Save Changes"
-                          : "Add to Calendar"}
-                    </button>
-                  </form>
-                </section>
+                      Read-Only Calendar
+                    </h2>
+
+                    <p
+                      style={
+                        styles.body
+                      }
+                    >
+                      You can view all
+                      shared calendar
+                      events. Adding or
+                      editing events
+                      requires Contributor
+                      or Administrator
+                      access.
+                    </p>
+                  </section>
+                )}
 
                 {/* UPCOMING EVENTS */}
 
-                <section style={styles.card}>
-                  <h2 style={styles.heading}>
+                <section
+                  style={
+                    styles.card
+                  }
+                >
+                  <h2
+                    style={
+                      styles.heading
+                    }
+                  >
                     Upcoming
                   </h2>
 
@@ -1265,32 +1762,39 @@ export default function FamilyOrganizerCalendarPage() {
                   ) : null}
 
                   {!loadingEvents &&
-                  upcomingEvents.length === 0 ? (
+                  upcomingEvents.length ===
+                    0 &&
+                  !calendarError ? (
                     <div
                       style={{
                         marginTop: 14,
                         padding: 18,
                         borderRadius: 12,
-                        background: BRAND.lightTeal,
-                        color: BRAND.navy,
+                        background:
+                          BRAND.lightTeal,
+                        color:
+                          BRAND.navy,
                         fontSize: 12,
                         lineHeight: 1.6,
                       }}
                     >
-                      No upcoming events yet. Add an
-                      appointment, meeting, deadline, or
-                      other important date above.
+                      No upcoming events
+                      yet.
                     </div>
                   ) : null}
 
                   {!loadingEvents
-                    ? upcomingEvents.map(renderEvent)
+                    ? upcomingEvents.map(
+                        renderEvent
+                      )
                     : null}
 
                   {calendarError ? (
                     <div
                       role="alert"
-                      style={styles.error}
+                      style={
+                        styles.error
+                      }
                     >
                       {calendarError}
                     </div>
@@ -1299,24 +1803,39 @@ export default function FamilyOrganizerCalendarPage() {
 
                 {/* PAST EVENTS */}
 
-                {pastEvents.length > 0 ? (
-                  <section style={styles.card}>
-                    <h2 style={styles.heading}>
+                {pastEvents.length >
+                0 ? (
+                  <section
+                    style={
+                      styles.card
+                    }
+                  >
+                    <h2
+                      style={
+                        styles.heading
+                      }
+                    >
                       Past Events
                     </h2>
 
-                    {pastEvents.map(renderEvent)}
+                    {pastEvents.map(
+                      renderEvent
+                    )}
                   </section>
                 ) : null}
               </>
             ) : null}
 
-            {/* BACK NAVIGATION */}
-
-            <div style={{ marginTop: 28 }}>
+            <div
+              style={{
+                marginTop: 28,
+              }}
+            >
               <Link
                 href="/family-organizer"
-                style={styles.link}
+                style={
+                  styles.link
+                }
               >
                 ← Back to Family Organizer
               </Link>
