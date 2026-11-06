@@ -2,9 +2,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { CSSProperties } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { usePathname } from "next/navigation";
 import { signOut } from "firebase/auth";
+
 import { auth } from "../../lib/firebase";
 import { watchAuthState } from "../../lib/auth";
 
@@ -22,12 +25,6 @@ type SupportTool = {
   href: string;
 };
 
-/*
- * ============================================================
- * AUTIVOYA BRAND COLORS
- * ============================================================
- */
-
 const COLORS = {
   navy: "#204D6A",
   teal: "#58AAA7",
@@ -37,16 +34,6 @@ const COLORS = {
   border: "#E2E8F0",
   lightTeal: "#EAF7F5",
 };
-
-/*
- * ============================================================
- * AUTIVOYA SUPPORT TOOLS
- * ============================================================
- *
- * Updated display names only.
- * All existing destination URLs are preserved.
- * ============================================================
- */
 
 const supportTools: SupportTool[] = [
   {
@@ -89,6 +76,22 @@ const supportTools: SupportTool[] = [
 
 /*
  * ============================================================
+ * ACTIVE ROUTE HELPER
+ * ============================================================
+ */
+
+function isActiveRoute(
+  pathname: string,
+  href: string
+): boolean {
+  return (
+    pathname === href ||
+    pathname.startsWith(`${href}/`)
+  );
+}
+
+/*
+ * ============================================================
  * STANDARD NAVIGATION LINK
  * ============================================================
  */
@@ -98,18 +101,25 @@ function NavigationLink({
   label,
   onClick,
 }: NavigationLinkProps) {
+  const pathname = usePathname() ?? "";
+  const active = isActiveRoute(pathname, href);
+
   return (
     <Link
       href={href}
       onClick={onClick}
+      aria-current={active ? "page" : undefined}
       style={{
-        color: COLORS.text,
-        fontSize: "14px",
-        fontWeight: 700,
+        color: active ? COLORS.navy : COLORS.text,
+        background: active
+          ? COLORS.lightTeal
+          : "transparent",
+        fontSize: 14,
+        fontWeight: active ? 800 : 700,
         textDecoration: "none",
         whiteSpace: "nowrap",
         padding: "8px 10px",
-        borderRadius: "8px",
+        borderRadius: 8,
       }}
     >
       {label}
@@ -125,28 +135,34 @@ function NavigationLink({
 
 function SupportToolLink({
   tool,
+  pathname,
   onClick,
 }: {
   tool: SupportTool;
+  pathname: string;
   onClick: () => void;
 }) {
-  // Identify the featured tool by its destination,
-  // so renaming it does not remove its highlight.
-
-  const featured = tool.href === "/navigator";
+  const active = isActiveRoute(
+    pathname,
+    tool.href
+  );
 
   return (
     <Link
       href={tool.href}
       role="menuitem"
+      aria-current={active ? "page" : undefined}
       onClick={onClick}
       style={{
         display: "block",
-        padding: "11px",
-        borderRadius: "9px",
-        background: featured
+        padding: 11,
+        borderRadius: 9,
+        background: active
           ? COLORS.lightTeal
           : "transparent",
+        border: active
+          ? `1px solid ${COLORS.teal}`
+          : "1px solid transparent",
         textDecoration: "none",
       }}
     >
@@ -155,16 +171,16 @@ function SupportToolLink({
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          gap: "10px",
+          gap: 10,
         }}
       >
         <span
           style={{
-            color: featured
+            color: active
               ? COLORS.navy
               : COLORS.text,
-            fontSize: "13px",
-            fontWeight: featured ? 800 : 750,
+            fontSize: 13,
+            fontWeight: active ? 800 : 750,
           }}
         >
           {tool.title}
@@ -174,10 +190,10 @@ function SupportToolLink({
           style={{
             flexShrink: 0,
             padding: "3px 7px",
-            borderRadius: "999px",
+            borderRadius: 999,
             background: COLORS.lightTeal,
             color: COLORS.navy,
-            fontSize: "9px",
+            fontSize: 9,
             fontWeight: 800,
             textTransform: "uppercase",
             letterSpacing: "0.04em",
@@ -189,9 +205,9 @@ function SupportToolLink({
 
       <div
         style={{
-          marginTop: "4px",
+          marginTop: 4,
           color: COLORS.muted,
-          fontSize: "10px",
+          fontSize: 10,
           lineHeight: 1.45,
         }}
       >
@@ -208,8 +224,12 @@ function SupportToolLink({
  */
 
 export default function AppHeader() {
-  const [currentUserEmail, setCurrentUserEmail] =
-    useState<string | null>(null);
+  const pathname = usePathname() ?? "";
+
+  const [
+    currentUserEmail,
+    setCurrentUserEmail,
+  ] = useState<string | null>(null);
 
   const [openMenu, setOpenMenu] =
     useState<OpenMenu>(null);
@@ -217,33 +237,50 @@ export default function AppHeader() {
   const [loggingOut, setLoggingOut] =
     useState(false);
 
+  const supportToolActive = supportTools.some(
+    (tool) =>
+      isActiveRoute(pathname, tool.href)
+  );
+
   /*
-   * ==========================================================
-   * AUTHENTICATION STATE
-   * ==========================================================
+   * AUTHENTICATION
    */
 
   useEffect(() => {
-    const unsubscribe = watchAuthState((user) => {
-      setCurrentUserEmail(user?.email ?? null);
-    });
+    const unsubscribe = watchAuthState(
+      (user) => {
+        setCurrentUserEmail(
+          user?.email ?? null
+        );
+      }
+    );
 
     return () => unsubscribe();
   }, []);
 
   /*
-   * ==========================================================
-   * CLOSE MENUS WHEN CLICKING OUTSIDE
-   * ==========================================================
+   * CLOSE MENU WHEN ROUTE CHANGES
    */
 
   useEffect(() => {
-    function handleDocumentClick(event: MouseEvent) {
+    setOpenMenu(null);
+  }, [pathname]);
+
+  /*
+   * CLOSE MENU ON OUTSIDE CLICK
+   */
+
+  useEffect(() => {
+    function handleDocumentClick(
+      event: MouseEvent
+    ) {
       const target = event.target;
 
       if (
         target instanceof Element &&
-        !target.closest("[data-header-menu]")
+        !target.closest(
+          "[data-header-menu]"
+        )
       ) {
         setOpenMenu(null);
       }
@@ -263,13 +300,13 @@ export default function AppHeader() {
   }, []);
 
   /*
-   * ==========================================================
-   * CLOSE MENUS WITH ESCAPE KEY
-   * ==========================================================
+   * CLOSE MENU WITH ESCAPE
    */
 
   useEffect(() => {
-    function handleEscape(event: KeyboardEvent) {
+    function handleEscape(
+      event: KeyboardEvent
+    ) {
       if (event.key === "Escape") {
         setOpenMenu(null);
       }
@@ -289,9 +326,7 @@ export default function AppHeader() {
   }, []);
 
   /*
-   * ==========================================================
    * MENU CONTROLS
-   * ==========================================================
    */
 
   function closeMenus() {
@@ -300,20 +335,22 @@ export default function AppHeader() {
 
   function toggleSupportMenu() {
     setOpenMenu((current) =>
-      current === "support" ? null : "support"
+      current === "support"
+        ? null
+        : "support"
     );
   }
 
   function toggleAccountMenu() {
     setOpenMenu((current) =>
-      current === "account" ? null : "account"
+      current === "account"
+        ? null
+        : "account"
     );
   }
 
   /*
-   * ==========================================================
    * LOGOUT
-   * ==========================================================
    */
 
   async function handleLogout() {
@@ -326,60 +363,59 @@ export default function AppHeader() {
       setOpenMenu(null);
       window.location.href = "/";
     } catch (error) {
-      console.error("Logout error:", error);
+      console.error(
+        "Logout error:",
+        error
+      );
       setLoggingOut(false);
     }
   }
 
   /*
-   * ==========================================================
-   * SHARED MENU STYLES
-   * ==========================================================
+   * SHARED STYLES
    */
 
-  const menuStyle: React.CSSProperties = {
+  const menuStyle: CSSProperties = {
     position: "absolute",
     right: 0,
     top: "calc(100% + 8px)",
     background: "#FFFFFF",
     border: `1px solid ${COLORS.border}`,
-    borderRadius: "14px",
+    borderRadius: 14,
     boxShadow:
       "0 12px 30px rgba(15, 23, 42, 0.12)",
-    padding: "8px",
+    padding: 8,
     overflow: "hidden",
     zIndex: 1001,
   };
 
-  const dropdownButtonStyle: React.CSSProperties = {
+  const dropdownButtonStyle: CSSProperties = {
     display: "flex",
     alignItems: "center",
-    gap: "7px",
+    gap: 7,
     border: `1px solid ${COLORS.navy}`,
     background: COLORS.navy,
     color: "#FFFFFF",
     padding: "9px 14px",
-    borderRadius: "9px",
-    fontSize: "14px",
+    borderRadius: 9,
+    fontSize: 14,
     fontWeight: 800,
     cursor: "pointer",
     whiteSpace: "nowrap",
   };
 
-  const accountLinkStyle: React.CSSProperties = {
+  const accountLinkStyle: CSSProperties = {
     display: "block",
     padding: "10px 11px",
-    borderRadius: "8px",
+    borderRadius: 8,
     color: COLORS.text,
-    fontSize: "14px",
+    fontSize: 14,
     fontWeight: 700,
     textDecoration: "none",
   };
 
   /*
-   * ==========================================================
-   * HEADER RENDER
-   * ==========================================================
+   * HEADER
    */
 
   return (
@@ -389,26 +425,26 @@ export default function AppHeader() {
         top: 0,
         zIndex: 1000,
         width: "100%",
-        background: "rgba(255, 255, 255, 0.97)",
-        borderBottom: `1px solid ${COLORS.border}`,
+        background:
+          "rgba(255, 255, 255, 0.97)",
+        borderBottom:
+          `1px solid ${COLORS.border}`,
         backdropFilter: "blur(10px)",
       }}
     >
       <div
         style={{
-          maxWidth: "1200px",
+          maxWidth: 1200,
           margin: "0 auto",
           padding: "0 24px",
-          minHeight: "72px",
+          minHeight: 72,
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          gap: "20px",
+          gap: 20,
         }}
       >
-        {/* ==================================================
-            AUTIVOYA LOGO AND BRAND
-        ================================================== */}
+        {/* LOGO */}
 
         <Link
           href="/"
@@ -417,7 +453,7 @@ export default function AppHeader() {
           style={{
             display: "flex",
             alignItems: "center",
-            gap: "10px",
+            gap: 10,
             color: COLORS.navy,
             textDecoration: "none",
             minWidth: 0,
@@ -425,9 +461,9 @@ export default function AppHeader() {
         >
           <div
             style={{
-              width: "48px",
-              height: "48px",
-              borderRadius: "12px",
+              width: 48,
+              height: 48,
+              borderRadius: 12,
               background: "#FFFFFF",
               display: "flex",
               alignItems: "center",
@@ -453,7 +489,7 @@ export default function AppHeader() {
           <div style={{ minWidth: 0 }}>
             <div
               style={{
-                fontSize: "22px",
+                fontSize: 22,
                 fontWeight: 850,
                 lineHeight: 1.15,
                 color: COLORS.navy,
@@ -462,28 +498,31 @@ export default function AppHeader() {
               }}
             >
               Autiv
-              <span style={{ color: COLORS.gold }}>
+              <span
+                style={{
+                  color: COLORS.gold,
+                }}
+              >
                 oya
               </span>
             </div>
 
             <div
               style={{
-                marginTop: "3px",
-                fontSize: "10px",
+                marginTop: 3,
+                fontSize: 10,
                 lineHeight: 1.2,
                 color: COLORS.muted,
                 whiteSpace: "nowrap",
               }}
             >
-              Every journey is unique. Every step matters.
+              Every journey is unique.
+              Every step matters.
             </div>
           </div>
         </Link>
 
-        {/* ==================================================
-            MAIN NAVIGATION
-        ================================================== */}
+        {/* MAIN NAVIGATION */}
 
         <nav
           aria-label="Main navigation"
@@ -491,7 +530,7 @@ export default function AppHeader() {
             display: "flex",
             alignItems: "center",
             justifyContent: "flex-end",
-            gap: "4px",
+            gap: 4,
             flexWrap: "wrap",
           }}
         >
@@ -501,44 +540,60 @@ export default function AppHeader() {
             onClick={closeMenus}
           />
 
-          {/* ================================================
-              SUPPORT TOOLS DROPDOWN
-          ================================================ */}
+          {/* SUPPORT TOOLS */}
 
           <div
             data-header-menu
-            style={{ position: "relative" }}
+            style={{
+              position: "relative",
+            }}
           >
             <button
               type="button"
-              aria-expanded={openMenu === "support"}
+              aria-expanded={
+                openMenu === "support"
+              }
               aria-haspopup="menu"
-              onClick={toggleSupportMenu}
+              onClick={
+                toggleSupportMenu
+              }
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: "6px",
+                gap: 6,
                 border: "none",
                 background:
-                  openMenu === "support"
+                  openMenu === "support" ||
+                  supportToolActive
                     ? COLORS.lightTeal
                     : "transparent",
-                color: COLORS.text,
+                color: supportToolActive
+                  ? COLORS.navy
+                  : COLORS.text,
                 padding: "8px 10px",
-                borderRadius: "8px",
-                fontSize: "14px",
-                fontWeight: 700,
+                borderRadius: 8,
+                fontSize: 14,
+                fontWeight:
+                  supportToolActive
+                    ? 800
+                    : 700,
                 cursor: "pointer",
                 whiteSpace: "nowrap",
               }}
             >
-              <span>Support Tools</span>
+              <span>
+                Support Tools
+              </span>
 
               <span
                 aria-hidden="true"
-                style={{ fontSize: "9px" }}
+                style={{
+                  fontSize: 9,
+                }}
               >
-                {openMenu === "support" ? "▲" : "▼"}
+                {openMenu === "support"
+                  ? "▲"
+                  : "▼"}
               </span>
             </button>
 
@@ -547,23 +602,25 @@ export default function AppHeader() {
                 role="menu"
                 style={{
                   ...menuStyle,
-                  width: "340px",
-                  maxWidth: "calc(100vw - 32px)",
+                  width: 340,
+                  maxWidth:
+                    "calc(100vw - 32px)",
                 }}
               >
-                {/* AUTIVOYA SUPPORT TOOLS HEADING */}
-
                 <div
                   style={{
-                    padding: "10px 11px 12px",
-                    borderBottom: "1px solid #F1F5F9",
-                    marginBottom: "4px",
+                    padding:
+                      "10px 11px 12px",
+                    borderBottom:
+                      "1px solid #F1F5F9",
+                    marginBottom: 4,
                   }}
                 >
                   <div
                     style={{
-                      color: COLORS.navy,
-                      fontSize: "13px",
+                      color:
+                        COLORS.navy,
+                      fontSize: 13,
                       fontWeight: 800,
                     }}
                   >
@@ -572,26 +629,35 @@ export default function AppHeader() {
 
                   <div
                     style={{
-                      marginTop: "4px",
-                      color: COLORS.muted,
-                      fontSize: "10px",
+                      marginTop: 4,
+                      color:
+                        COLORS.muted,
+                      fontSize: 10,
                       lineHeight: 1.45,
                     }}
                   >
-                    Personalized tools to support your
-                    family's journey.
+                    Personalized tools to
+                    support your family's
+                    journey.
                   </div>
                 </div>
 
-                {/* PREMIUM FEATURE LINKS */}
-
-                {supportTools.map((tool) => (
-                  <SupportToolLink
-                    key={tool.href}
-                    tool={tool}
-                    onClick={closeMenus}
-                  />
-                ))}
+                {supportTools.map(
+                  (tool) => (
+                    <SupportToolLink
+                      key={
+                        tool.href
+                      }
+                      tool={tool}
+                      pathname={
+                        pathname
+                      }
+                      onClick={
+                        closeMenus
+                      }
+                    />
+                  )
+                )}
               </div>
             )}
           </div>
@@ -604,33 +670,43 @@ export default function AppHeader() {
             onClick={closeMenus}
           />
 
-          {/* ================================================
-              ACCOUNT DROPDOWN
-          ================================================ */}
+          {/* ACCOUNT */}
 
           <div
             data-header-menu
             style={{
               position: "relative",
-              marginLeft: "4px",
+              marginLeft: 4,
             }}
           >
             <button
               type="button"
-              aria-expanded={openMenu === "account"}
+              aria-expanded={
+                openMenu === "account"
+              }
               aria-haspopup="menu"
-              onClick={toggleAccountMenu}
-              style={dropdownButtonStyle}
+              onClick={
+                toggleAccountMenu
+              }
+              style={
+                dropdownButtonStyle
+              }
             >
               <span>
-                {currentUserEmail ? "Account" : "Log In"}
+                {currentUserEmail
+                  ? "Account"
+                  : "Log In"}
               </span>
 
               <span
                 aria-hidden="true"
-                style={{ fontSize: "10px" }}
+                style={{
+                  fontSize: 10,
+                }}
               >
-                {openMenu === "account" ? "▲" : "▼"}
+                {openMenu === "account"
+                  ? "▲"
+                  : "▼"}
               </span>
             </button>
 
@@ -639,31 +715,34 @@ export default function AppHeader() {
                 role="menu"
                 style={{
                   ...menuStyle,
-                  width: currentUserEmail
-                    ? "250px"
-                    : "220px",
+                  width:
+                    currentUserEmail
+                      ? 250
+                      : 220,
                 }}
               >
                 {currentUserEmail ? (
                   <>
-                    {/* SIGNED-IN USER */}
-
                     <div
                       style={{
-                        padding: "10px 11px 12px",
+                        padding:
+                          "10px 11px 12px",
                         borderBottom:
                           "1px solid #F1F5F9",
-                        marginBottom: "4px",
+                        marginBottom: 4,
                       }}
                     >
                       <div
                         style={{
-                          color: COLORS.muted,
-                          fontSize: "11px",
+                          color:
+                            COLORS.muted,
+                          fontSize: 11,
                           fontWeight: 800,
-                          textTransform: "uppercase",
-                          letterSpacing: "0.06em",
-                          marginBottom: "4px",
+                          textTransform:
+                            "uppercase",
+                          letterSpacing:
+                            "0.06em",
+                          marginBottom: 4,
                         }}
                       >
                         Signed in as
@@ -671,12 +750,16 @@ export default function AppHeader() {
 
                       <div
                         style={{
-                          color: COLORS.navy,
-                          fontSize: "13px",
+                          color:
+                            COLORS.navy,
+                          fontSize: 13,
                           fontWeight: 700,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
+                          overflow:
+                            "hidden",
+                          textOverflow:
+                            "ellipsis",
+                          whiteSpace:
+                            "nowrap",
                         }}
                       >
                         {currentUserEmail}
@@ -686,8 +769,12 @@ export default function AppHeader() {
                     <Link
                       href="/journey"
                       role="menuitem"
-                      onClick={closeMenus}
-                      style={accountLinkStyle}
+                      onClick={
+                        closeMenus
+                      }
+                      style={
+                        accountLinkStyle
+                      }
                     >
                       My Journey
                     </Link>
@@ -695,8 +782,12 @@ export default function AppHeader() {
                     <Link
                       href="/pricing"
                       role="menuitem"
-                      onClick={closeMenus}
-                      style={accountLinkStyle}
+                      onClick={
+                        closeMenus
+                      }
+                      style={
+                        accountLinkStyle
+                      }
                     >
                       Pricing
                     </Link>
@@ -704,22 +795,32 @@ export default function AppHeader() {
                     <button
                       type="button"
                       role="menuitem"
-                      onClick={handleLogout}
-                      disabled={loggingOut}
+                      onClick={
+                        handleLogout
+                      }
+                      disabled={
+                        loggingOut
+                      }
                       style={{
                         width: "100%",
-                        display: "block",
-                        textAlign: "left",
+                        display:
+                          "block",
+                        textAlign:
+                          "left",
                         border: "none",
-                        background: "transparent",
-                        padding: "10px 11px",
-                        borderRadius: "8px",
-                        color: "#B91C1C",
-                        fontSize: "14px",
+                        background:
+                          "transparent",
+                        padding:
+                          "10px 11px",
+                        borderRadius: 8,
+                        color:
+                          "#B91C1C",
+                        fontSize: 14,
                         fontWeight: 700,
-                        cursor: loggingOut
-                          ? "default"
-                          : "pointer",
+                        cursor:
+                          loggingOut
+                            ? "default"
+                            : "pointer",
                       }}
                     >
                       {loggingOut
@@ -729,13 +830,15 @@ export default function AppHeader() {
                   </>
                 ) : (
                   <>
-                    {/* SIGNED-OUT USER */}
-
                     <Link
                       href="/login"
                       role="menuitem"
-                      onClick={closeMenus}
-                      style={accountLinkStyle}
+                      onClick={
+                        closeMenus
+                      }
+                      style={
+                        accountLinkStyle
+                      }
                     >
                       Log In
                     </Link>
@@ -743,10 +846,13 @@ export default function AppHeader() {
                     <Link
                       href="/signup"
                       role="menuitem"
-                      onClick={closeMenus}
+                      onClick={
+                        closeMenus
+                      }
                       style={{
                         ...accountLinkStyle,
-                        color: COLORS.navy,
+                        color:
+                          COLORS.navy,
                         fontWeight: 800,
                       }}
                     >
