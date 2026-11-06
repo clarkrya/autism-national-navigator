@@ -7,6 +7,7 @@ import {
   getDocs,
   orderBy,
   query,
+  runTransaction,
   setDoc,
 } from "firebase/firestore";
 
@@ -17,20 +18,12 @@ import { db } from "./firebase";
 /**
  * AUTIVOYA JOURNEY REPOSITORY
  *
- * Supports:
- * - Multiple children
- * - Current journeys
- * - Saved child profiles
- * - Task progress
- * - Archived journeys
- * - Legacy journey retrieval
- * - Child journey deletion
- *
  * Firestore structure:
  *
  * users/{userId}/children/{childId}
  * users/{userId}/children/{childId}/journeys/current
  * users/{userId}/children/{childId}/pastJourneys/{journeyId}
+ * users/{userId}/children/{childId}/taskProgress/current
  *
  * Legacy:
  * users/{userId}/journeys/current
@@ -102,13 +95,6 @@ function requireUserId(userId: string): void {
   }
 }
 
-/**
- * Validates a child ID and returns it as a string.
- *
- * FamilyProfile.childId is optional in the profile type.
- * Returning a validated string resolves TypeScript errors
- * without inventing or replacing the child's actual ID.
- */
 function requireChildId(
   childId: string | undefined | null
 ): string {
@@ -230,6 +216,24 @@ function getLegacyCurrentJourneyRef(userId: string) {
   );
 }
 
+function getSharedTaskProgressRef(
+  ownerUserId: string,
+  childId: string
+) {
+  requireUserId(ownerUserId);
+  const validChildId = requireChildId(childId);
+
+  return doc(
+    db,
+    "users",
+    ownerUserId,
+    "children",
+    validChildId,
+    "taskProgress",
+    "current"
+  );
+}
+
 // ============================================================
 // NORMALIZATION
 // ============================================================
@@ -301,9 +305,66 @@ function normalizeSavedJourney(
 }
 
 // ============================================================
+// GET SHARED FAMILY TEAM TASK PROGRESS
+// ============================================================
+
+/**
+ * Retrieves shared task-completion overrides for
+ * the specified current Journey.
+ *
+ * Progress from a different Journey is ignored.
+ */
+export async function getSharedTaskProgress(
+  ownerUserId: string,
+  childId: string,
+  journeyId: string
+): Promise<Record<string, boolean>> {
+  requireUserId(ownerUserId);
+  requireChildId(childId);
+  requireJourneyId(journeyId);
+
+  const snapshot = await getDoc(
+    getSharedTaskProgressRef(ownerUserId, childId)
+  );
+
+  if (!snapshot.exists()) {
+    return {};
+  }
+
+  const data = snapshot.data();
+
+  if (data.journeyId !== journeyId) {
+    return {};
+  }
+
+  const statuses = data.completedByTaskId;
+
+  if (
+    !statuses ||
+    typeof statuses !== "object" ||
+    Array.isArray(statuses)
+  ) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(statuses).filter(
+      ([, value]) => typeof value === "boolean"
+    )
+  ) as Record<string, boolean>;
+}
+
+// ============================================================
 // GET CURRENT JOURNEY
 // ============================================================
 
+/**
+ * Loads the canonical current Journey and applies
+ * any matching Family Team task-completion overrides.
+ *
+ * Original task descriptions, priorities and other
+ * AI-generated content remain unchanged.
+ */
 export async function getCurrentJourney(
   userId: string,
   childId: string
@@ -319,10 +380,34 @@ export async function getCurrentJourney(
     return null;
   }
 
-  return normalizeSavedJourney(
+  const savedJourney = normalizeSavedJourney(
     snapshot.data(),
     userId
   );
+
+  if (!savedJourney) {
+    return null;
+  }
+
+  const progress = await getSharedTaskProgress(
+    userId,
+    childId,
+    savedJourney.journeyId
+  );
+
+  return {
+    ...savedJourney,
+    journey: {
+      ...savedJourney.journey,
+      tasks: (savedJourney.journey.tasks || []).map(
+        (task) => ({
+          ...task,
+          completed:
+            progress[task.id] ?? task.completed,
+        })
+      ),
+    },
+  };
 }
 
 // ============================================================
@@ -490,7 +575,6 @@ export async function saveCurrentJourney(
     childId
   );
 
-  // Preserve existing journey ID whenever possible.
   const existingSnapshot = await getDoc(currentRef);
 
   let existingJourney: SavedJourney | null = null;
@@ -555,7 +639,6 @@ export async function saveCurrentJourney(
       savedJourney.journeyReason;
   }
 
-  // Save the child record before the active journey.
   await saveChildRecord(userId, familyProfile);
 
   await setDoc(
@@ -571,6 +654,12 @@ export async function saveCurrentJourney(
 // SAVE TASK PROGRESS
 // ============================================================
 
+/**
+ * Owner-only task progress saving.
+ *
+ * Shared Family Team members must use
+ * saveSharedTaskProgress() instead.
+ */
 export async function saveTaskProgress(
   userId: string,
   familyProfile: FamilyProfile,
@@ -591,7 +680,6 @@ export async function saveTaskProgress(
     childId
   );
 
-  // Keep the existing journey ID when tasks change.
   const existingSnapshot = await getDoc(currentRef);
 
   const existingJourney = existingSnapshot.exists()
@@ -642,6 +730,113 @@ export async function saveTaskProgress(
       merge: true,
     }
   );
+}
+
+// ============================================================
+// SAVE SHARED FAMILY TEAM TASK PROGRESS
+// ============================================================
+
+/**
+ * Saves a shared member's task-completion change
+ * without modifying the owner's Journey document
+ * or child profile.
+ *
+ * Firestore Security Rules must independently verify
+ * that the member has permission to write.
+ */
+export async function saveSharedTaskProgress(
+  ownerUserId: string,
+  childId: string,
+  taskId: string,
+  completed: boolean
+): Promise<void> {
+  requireUserId(ownerUserId);
+  requireChildId(childId);
+
+  if (
+    typeof taskId !== "string" ||
+    !taskId.trim()
+  ) {
+    throw new Error("A task ID is required.");
+  }
+
+  if (typeof completed !== "boolean") {
+    throw new Error(
+      "Task completion must be a boolean."
+    );
+  }
+
+  const currentRef = getChildCurrentJourneyRef(
+    ownerUserId,
+    childId
+  );
+
+  const progressRef = getSharedTaskProgressRef(
+    ownerUserId,
+    childId
+  );
+
+  await runTransaction(db, async (transaction) => {
+    const journeySnapshot =
+      await transaction.get(currentRef);
+
+    if (!journeySnapshot.exists()) {
+      throw new Error(
+        "Current Journey not found."
+      );
+    }
+
+    const savedJourney = normalizeSavedJourney(
+      journeySnapshot.data(),
+      ownerUserId
+    );
+
+    if (!savedJourney) {
+      throw new Error(
+        "Journey data is invalid."
+      );
+    }
+
+    const taskExists =
+      (savedJourney.journey.tasks || []).some(
+        (task) => task.id === taskId
+      );
+
+    if (!taskExists) {
+      throw new Error(
+        "Task not found in current Journey."
+      );
+    }
+
+    const progressSnapshot =
+      await transaction.get(progressRef);
+
+    const existingProgress =
+      progressSnapshot.exists()
+        ? progressSnapshot.data()
+        : null;
+
+    const existingStatuses =
+      existingProgress?.journeyId ===
+        savedJourney.journeyId &&
+      existingProgress?.completedByTaskId &&
+      typeof existingProgress.completedByTaskId ===
+        "object" &&
+      !Array.isArray(
+        existingProgress.completedByTaskId
+      )
+        ? existingProgress.completedByTaskId
+        : {};
+
+    transaction.set(progressRef, {
+      journeyId: savedJourney.journeyId,
+      completedByTaskId: {
+        ...existingStatuses,
+        [taskId]: completed,
+      },
+      updatedAt: Date.now(),
+    });
+  });
 }
 
 // ============================================================
@@ -710,7 +905,6 @@ export async function archiveCurrentJourney(
       archivedJourney.journeyReason;
   }
 
-  // Save the archived journey first.
   await setDoc(
     getPastJourneyRef(
       userId,
@@ -720,8 +914,6 @@ export async function archiveCurrentJourney(
     archiveData
   );
 
-  // Remove the active journey so the next journey
-  // receives a new journey ID.
   await deleteDoc(currentRef);
 
   return archivedJourney;
@@ -894,17 +1086,10 @@ export async function getPastJourney(
 // ============================================================
 
 /**
- * Deletes child-scoped journey data in the correct order:
+ * Deletes child-scoped Journey records.
  *
- * 1. Past journeys
- * 2. Current journey
- * 3. Child record
- *
- * Firestore does not automatically delete subcollections
- * when a parent document is deleted.
- *
- * Firebase Security Rules remain responsible for
- * enforcing account-level access permissions.
+ * Firestore does not automatically delete
+ * subcollections when a parent is deleted.
  */
 export async function deleteChildJourneyData(
   userId: string,
@@ -923,7 +1108,6 @@ export async function deleteChildJourneyData(
     );
   }
 
-  // Delete all archived journeys.
   const pastJourneysSnapshot = await getDocs(
     getPastJourneysCollection(userId, childId)
   );
@@ -937,7 +1121,10 @@ export async function deleteChildJourneyData(
     );
   }
 
-  // Delete the active journey.
+  await deleteDoc(
+    getSharedTaskProgressRef(userId, childId)
+  );
+
   await deleteDoc(
     getChildCurrentJourneyRef(
       userId,
@@ -945,6 +1132,5 @@ export async function deleteChildJourneyData(
     )
   );
 
-  // Delete the child record last.
   await deleteDoc(childRef);
 }

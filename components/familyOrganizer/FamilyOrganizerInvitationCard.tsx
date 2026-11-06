@@ -267,7 +267,7 @@ export default function FamilyOrganizerInvitationCard({
             }}
           >
             Accepting this invitation will add{" "}
-            {displayChildName} to your Family Organizer so you can collaborate using your own Myriad account.
+            {displayChildName} to your Family Organizer so you can collaborate using your own Autivoya account.
           </p>
         </div>
 

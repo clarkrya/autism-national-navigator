@@ -27,6 +27,7 @@ import {
   getCurrentJourney,
   saveCurrentJourney,
   saveTaskProgress,
+  saveSharedTaskProgress,
 } from "../../lib/journeyRepository";
 import {
   getCurrentStageNumber,
@@ -269,13 +270,23 @@ export default function JourneyDashboard({
 
         if (!active) return;
 
-        if (
-          savedJourney &&
-          savedJourney.stageNumber >= 1
-        ) {
+        if (savedJourney) {
           setJourneyStageNumber(
-            savedJourney.stageNumber
+            Math.max(1, savedJourney.stageNumber)
           );
+
+          // Synchronize Family Team task progress.
+          const updatedTasks =
+            savedJourney.journey.tasks || [];
+
+          setPersonalizedJourney(
+            savedJourney.journey
+          );
+
+          setTasks(updatedTasks);
+          tasksRef.current = updatedTasks;
+
+          setTaskSaveStatus("idle");
         } else {
           const lastCompletedStage =
             await getCurrentStageNumber(
@@ -292,7 +303,7 @@ export default function JourneyDashboard({
         }
       } catch (error) {
         console.error(
-          "Unable to determine journey stage:",
+          "Unable to load Journey progress:",
           error
         );
 
@@ -394,18 +405,39 @@ export default function JourneyDashboard({
       taskSaveQueueRef.current
         .catch(() => undefined)
         .then(async () => {
-          await saveTaskProgress(
-            targetOwnerUserId,
-            familyProfile,
-            journeyToSave,
-            {
-              stageNumber: journeyStageNumber,
-              journeyReason:
-                journeyStageNumber === 1
-                  ? "initial"
-                  : "tasks_completed",
+          if (isSharedJourney) {
+            if (!familyProfile.childId) {
+              throw new Error("Child ID is missing.");
             }
-          );
+        
+            const changedTask = nextTasks.find(
+              (task) => task.id === taskId
+            );
+        
+            if (!changedTask) {
+              throw new Error("Task not found.");
+            }
+        
+            await saveSharedTaskProgress(
+              targetOwnerUserId,
+              familyProfile.childId,
+              taskId,
+              changedTask.completed
+            );
+          } else {
+            await saveTaskProgress(
+              targetOwnerUserId,
+              familyProfile,
+              journeyToSave,
+              {
+                stageNumber: journeyStageNumber,
+                journeyReason:
+                  journeyStageNumber === 1
+                    ? "initial"
+                    : "tasks_completed",
+              }
+            );
+          }
         });
 
     taskSaveQueueRef.current = pendingSave;
@@ -432,7 +464,7 @@ export default function JourneyDashboard({
   }
 
   async function handleSaveJourney() {
-    if (!canEdit || savingJourney) return;
+    if (!canGenerateNextStage || savingJourney) return;
 
     setSaveMessage("");
     setSaveError("");
@@ -526,9 +558,35 @@ export default function JourneyDashboard({
     try {
       await taskSaveQueueRef.current;
 
+      // Retrieve the latest saved Journey and Family Team progress.
+      const latestSavedJourney = familyProfile.childId
+        ? await getCurrentJourney(
+            targetOwnerUserId,
+            familyProfile.childId
+          )
+        : null;
+
+      if (latestSavedJourney) {
+        const latestTasks =
+          latestSavedJourney.journey.tasks || [];
+
+        tasksRef.current = latestTasks;
+        setTasks(latestTasks);
+
+        if (
+          latestTasks.length === 0 ||
+          !latestTasks.every((task) => task.completed)
+        ) {
+          throw new Error(
+            "Some tasks are not yet complete. Refresh your Journey to review the latest Family Team progress."
+          );
+        }
+      }
+
       const idToken =
         await currentUser.getIdToken();
 
+      
       const completedTaskIds = tasksRef.current
         .filter((task) => task.completed)
         .map((task) => task.id);
@@ -1170,9 +1228,9 @@ export default function JourneyDashboard({
         </section>
       )}
 
-      {/* SAVE JOURNEY */}
+     {/* SAVE JOURNEY */}
 
-      {canEdit && (
+{canGenerateNextStage && (
         <section style={sectionStyle}>
           <div
             style={{

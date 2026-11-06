@@ -62,9 +62,12 @@ type ChildWorkspace = {
 };
 
 type PreviousChildSnapshot = {
+  ownerUserId: string;
   childId: string;
   familyProfile: FamilyProfile;
-  journey: PersonalizedJourney;
+  journey: PersonalizedJourney | null;
+  journeyId?: string;
+  savedJourneyLoaded: boolean;
 };
 
 type JourneyRecord = NonNullable<
@@ -568,8 +571,7 @@ export default function JourneyBuilder() {
         }
 
         const workspaces = [
-          ...unique.values(),
-        ];
+          ...Array.from(unique.values()),        ];
 
         if (
           requestId !== requestIdRef.current
@@ -974,7 +976,7 @@ export default function JourneyBuilder() {
       );
 
       setSelectedChildId(
-        profileForGeneration.childId
+        profileForGeneration.childId || ""
       );
     }
 
@@ -1060,22 +1062,34 @@ export default function JourneyBuilder() {
   }
 
   function addAnotherChild() {
-    if (!canManageChild) return;
+    const user = auth.currentUser;
 
-    if (
-      personalizedJourney &&
-      familyProfile.childId
-    ) {
+    if (!user) {
+      setJourneyActionError("Please sign in to add your own child.");
+      return;
+    }
+
+    // Adding a personal child is an account-level action, not a
+    // permission on whichever shared child is currently selected.
+    if (!addingChildDraft && selectedChildId) {
       setPreviousChildSnapshot({
-        childId:
-          familyProfile.childId,
+        ownerUserId: canonicalOwnerUserId,
+        childId: selectedChildId,
         familyProfile,
-        journey:
-          personalizedJourney,
+        journey: personalizedJourney,
+        journeyId: currentJourneyId,
+        savedJourneyLoaded,
       });
+    } else {
+      setPreviousChildSnapshot(null);
     }
 
     const newChildId = createChildId();
+
+    // Invalidate pending workspace loads so they cannot overwrite
+    // the new personal-child draft.
+    ++requestIdRef.current;
+    selectedWorkspaceRef.current = "";
 
     setAddingChildDraft(true);
     setShowStartNewJourneyConfirm(false);
@@ -1084,39 +1098,21 @@ export default function JourneyBuilder() {
     setRemoveChildError(null);
     setPersonalizedJourney(null);
     setCurrentJourneyId(undefined);
-    setFamilyProfile(
-      createBlankProfile(newChildId)
-    );
+    setFamilyProfile(createBlankProfile(newChildId));
     setSelectedChildId(newChildId);
-    setSelectedOwnerUserId(
-      auth.currentUser?.uid || ""
-    );
+    setSelectedOwnerUserId(user.uid);
     setStep(0);
     setError(null);
     setSavedJourneyLoaded(false);
+    setCheckingSavedJourney(false);
 
-    window.scrollTo({
-      top: 0,
-      behavior: "smooth",
-    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function cancelAddingChild() {
-    if (!previousChildSnapshot) return;
+    const previous = previousChildSnapshot;
+    if (!previous) return;
 
-    setFamilyProfile(
-      previousChildSnapshot.familyProfile
-    );
-
-    setSelectedChildId(
-      previousChildSnapshot.childId
-    );
-
-    setPersonalizedJourney(
-      previousChildSnapshot.journey
-    );
-
-    setSavedJourneyLoaded(true);
     setAddingChildDraft(false);
     setPreviousChildSnapshot(null);
     setStep(0);
@@ -1124,15 +1120,25 @@ export default function JourneyBuilder() {
     setJourneyActionError(null);
     setRemoveChildError(null);
 
-    const user = auth.currentUser;
+    // Restore the actual previous workspace, including its owner.
+    // A shared child must never be treated as belonging to this user.
+    const previousWorkspace = childWorkspaces.find(
+      (workspace) =>
+        workspace.ownerUserId === previous.ownerUserId &&
+        workspace.childId === previous.childId
+    );
 
+    if (previousWorkspace) {
+      void selectWorkspace(previousWorkspace);
+      return;
+    }
+
+    // If the workspace list changed, reload before selecting it.
+    const user = auth.currentUser;
     if (user) {
       void loadWorkspaces(
         user.uid,
-        workspaceKey(
-          user.uid,
-          previousChildSnapshot.childId
-        )
+        workspaceKey(previous.ownerUserId, previous.childId)
       );
     }
   }

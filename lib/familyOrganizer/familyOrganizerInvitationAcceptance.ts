@@ -217,18 +217,21 @@ export async function acceptFamilyOrganizerInvitation(
         "This invitation has expired."
       );
     }
-
+    console.log(
+      "[Family Organizer] Checking existing membership",
+      membershipReference.path
+    );
     const existingMembership =
       await transaction.get(membershipReference);
-
-    if (
-      existingMembership.exists() &&
-      existingMembership.data().status === "active"
-    ) {
-      throw new Error(
-        "This account already has access."
+      console.log(
+        "[Family Organizer] Membership read succeeded",
+        existingMembership.exists()
       );
-    }
+      if (existingMembership.exists()) {
+        throw new Error(
+          "A previous Family Team membership already exists for this child. Please ask the child owner to review your access."
+        );
+      }
 
     /*
      * --------------------------------------------------------
