@@ -1,7 +1,9 @@
 
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
+import StripeCheckoutButton from "../../components/StripeCheckoutButton";
 
 import {
   PLAN_DEFINITIONS,
@@ -9,21 +11,7 @@ import {
   type SubscriptionPlan,
 } from "../../lib/subscriptionTypes";
 
-/*
- * ============================================================
- * AUTIVOYA PRICING PAGE
- * ============================================================
- *
- * Pricing is currently informational.
- * Payment processing is not yet connected.
- *
- * Existing plan definitions, features, prices, and
- * signup destinations are preserved.
- *
- * Tester access redemption remains available through
- * its existing backend, but is no longer shown here.
- * ============================================================
- */
+type BillingInterval = "monthly" | "annual";
 
 const planOrder: SubscriptionPlan[] = [
   "free",
@@ -37,63 +25,39 @@ function getFeatureLabel(feature: string): string {
   switch (feature) {
     case "initial_journey":
       return "Personalized autism journey";
-
     case "save_journey":
       return "Save your journey";
-
     case "next_journey":
       return "Continue to What's Next";
-
     case "journey_history":
       return "Journey History";
-
     case "community_read":
       return "Read community posts";
-
     case "community_participate":
       return "Post in the Community";
-
     case "ask_navigator":
       return "Ask Your Autivoya Navigator";
-
     case "advanced_resources":
       return "Advanced personalized resources";
-
     case "meeting_prep":
       return "Meeting preparation tools";
-
     case "document_vault":
       return "Document organization";
-
     case "ai_progress_insights":
       return "AI progress insights";
-
     case "family_organizer":
       return "Family organizer tools";
-
     case "human_navigator":
       return "Human Navigator support";
-
     default:
       return feature;
   }
 }
 
-function getPlanDescription(
-  plan: SubscriptionPlan
-): string {
-  return PLAN_DEFINITIONS[plan].shortDescription;
-}
-
-function getMonthlyPrice(
-  plan: SubscriptionPlan
-): string {
-  return formatPlanPrice(
-    PLAN_DEFINITIONS[plan].monthlyPriceCents
-  );
-}
-
 export default function PricingPage() {
+  const [interval, setInterval] =
+    useState<BillingInterval>("monthly");
+
   return (
     <main
       style={{
@@ -103,14 +67,10 @@ export default function PricingPage() {
         padding: "70px 24px 100px",
       }}
     >
-      {/* ================================================
-          PAGE HEADING
-      ================================================= */}
-
       <section
         style={{
           maxWidth: "850px",
-          margin: "0 auto 55px",
+          margin: "0 auto 35px",
           textAlign: "center",
         }}
       >
@@ -152,9 +112,51 @@ export default function PricingPage() {
         </div>
       </section>
 
-      {/* ================================================
-          PRICING PLANS
-      ================================================= */}
+      {/* BILLING INTERVAL SELECTOR */}
+
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          gap: "10px",
+          marginBottom: "45px",
+        }}
+      >
+        {(["monthly", "annual"] as const).map(
+          (option) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => setInterval(option)}
+              aria-pressed={interval === option}
+              style={{
+                padding: "11px 22px",
+                borderRadius: "999px",
+                border:
+                  interval === option
+                    ? "2px solid #2563EB"
+                    : "1px solid #CBD5E1",
+                background:
+                  interval === option
+                    ? "#EFF6FF"
+                    : "#FFFFFF",
+                color:
+                  interval === option
+                    ? "#1D4ED8"
+                    : "#475569",
+                fontWeight: 800,
+                cursor: "pointer",
+              }}
+            >
+              {option === "monthly"
+                ? "Monthly"
+                : "Annual"}
+            </button>
+          )
+        )}
+      </div>
+
+      {/* PRICING PLANS */}
 
       <section
         style={{
@@ -177,6 +179,16 @@ export default function PricingPage() {
           const isPremiumPlus =
             planOption === "premium_plus";
 
+          const isFree = planOption === "free";
+
+          const selectedPrice =
+            isFree
+              ? 0
+              : interval === "annual"
+                ? definition.annualPriceCents ??
+                  definition.monthlyPriceCents
+                : definition.monthlyPriceCents;
+
           return (
             <section
               key={planOption}
@@ -195,8 +207,6 @@ export default function PricingPage() {
                   : "0 8px 24px rgba(15, 23, 42, 0.05)",
               }}
             >
-              {/* PLAN BADGE */}
-
               {definition.badge && (
                 <div
                   style={{
@@ -218,8 +228,6 @@ export default function PricingPage() {
                   {definition.badge}
                 </div>
               )}
-
-              {/* PLAN NAME */}
 
               <div
                 style={{
@@ -255,10 +263,8 @@ export default function PricingPage() {
                   lineHeight: 1.55,
                 }}
               >
-                {getPlanDescription(planOption)}
+                {definition.shortDescription}
               </p>
-
-              {/* MONTHLY PRICE */}
 
               <div
                 style={{
@@ -276,42 +282,44 @@ export default function PricingPage() {
                     lineHeight: 1,
                   }}
                 >
-                  {getMonthlyPrice(planOption)}
+                  {formatPlanPrice(selectedPrice)}
                 </span>
 
-                {planOption !== "free" && (
+                {!isFree && (
                   <span
                     style={{
                       color: "#94A3B8",
                       fontSize: "13px",
                     }}
                   >
-                    / month
+                    / {interval === "monthly"
+                      ? "month"
+                      : "year"}
                   </span>
                 )}
               </div>
 
-              {/* ANNUAL PRICE */}
-
-              {definition.annualPriceCents !== null && (
-                <div
-                  style={{
-                    marginTop: "7px",
-                    color: "#64748B",
-                    fontSize: "12px",
-                  }}
-                >
-                  Annual plan:{" "}
-                  {formatPlanPrice(
-                    definition.annualPriceCents
-                  )}
-                </div>
-              )}
-
-              {/* PLAN ACTION */}
+              {!isFree &&
+                definition.annualPriceCents !== null && (
+                  <div
+                    style={{
+                      marginTop: "7px",
+                      color: "#64748B",
+                      fontSize: "12px",
+                    }}
+                  >
+                    {interval === "monthly"
+                      ? `Annual plan: ${formatPlanPrice(
+                          definition.annualPriceCents
+                        )}`
+                      : `Monthly plan: ${formatPlanPrice(
+                          definition.monthlyPriceCents
+                        )}/month`}
+                  </div>
+                )}
 
               <div style={{ marginTop: "25px" }}>
-                {planOption === "free" ? (
+                {isFree ? (
                   <Link
                     href="/journey"
                     style={{
@@ -330,34 +338,26 @@ export default function PricingPage() {
                     Start Free
                   </Link>
                 ) : (
-                  <Link
-                    href={`/signup?returnTo=${encodeURIComponent(
-                      pricingReturnTo
-                    )}`}
-                    style={{
-                      display: "block",
-                      textAlign: "center",
-                      padding: "13px 18px",
-                      borderRadius: "10px",
-                      border: "none",
-                      background: isPremium
+                  <StripeCheckoutButton
+                    plan={
+                      isPremium
+                        ? "premium"
+                        : "premium_plus"
+                    }
+                    interval={interval}
+                    label={
+                      isPremium
+                        ? "Upgrade to Premium"
+                        : "Upgrade to Premium+"
+                    }
+                    backgroundColor={
+                      isPremium
                         ? "#2563EB"
-                        : "#0F766E",
-                      color: "#FFFFFF",
-                      fontSize: "14px",
-                      fontWeight: 800,
-                      textDecoration: "none",
-                      boxSizing: "border-box",
-                    }}
-                  >
-                    {isPremium
-                      ? "Upgrade to Premium"
-                      : "Upgrade to Premium+"}
-                  </Link>
+                        : "#0F766E"
+                    }
+                  />
                 )}
               </div>
-
-              {/* INCLUDED FEATURES */}
 
               <div
                 style={{
@@ -420,9 +420,7 @@ export default function PricingPage() {
         })}
       </section>
 
-      {/* ================================================
-          VALUE MESSAGE
-      ================================================= */}
+      {/* VALUE MESSAGE */}
 
       <section
         style={{
@@ -462,9 +460,7 @@ export default function PricingPage() {
         </p>
       </section>
 
-      {/* ================================================
-          FOOTER NAVIGATION
-      ================================================= */}
+      {/* FOOTER NAVIGATION */}
 
       <div
         style={{
