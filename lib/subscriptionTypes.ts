@@ -1,20 +1,31 @@
+
 /*
  * ============================================================
- * SUBSCRIPTION TYPES
+ * AUTIVOYA SUBSCRIPTION TYPES
  * ============================================================
  *
- * Defines the product's subscription plans and feature model.
+ * Central definitions for subscription plans, billing status,
+ * feature access, and subscription records.
  *
- * CURRENT PLANS
+ * CURRENT PLANS:
  *
  * guest
  * free
  * premium
  * premium_plus
  *
- * This file does NOT connect to Stripe.
+ * Stripe billing integration:
  *
- * Stripe/subscription verification will be added later.
+ * - Tracks verified subscription status
+ * - Supports monthly and annual billing
+ * - Supports pending subscription changes
+ * - Tracks Stripe customer and subscription IDs
+ * - Supports scheduled downgrades
+ *
+ * IMPORTANT:
+ *
+ * Subscription access must be verified server-side.
+ * The browser must never grant itself paid access.
  * ============================================================
  */
 
@@ -34,12 +45,34 @@ export type SubscriptionPlan =
 
 /*
  * ============================================================
+ * PAID SUBSCRIPTION PLANS
+ * ============================================================
+ */
+
+export type PaidSubscriptionPlan =
+  | "premium"
+  | "premium_plus";
+
+
+/*
+ * ============================================================
+ * BILLING INTERVAL
+ * ============================================================
+ */
+
+export type SubscriptionBillingInterval =
+  | "monthly"
+  | "annual";
+
+
+/*
+ * ============================================================
  * SUBSCRIPTION STATUS
  * ============================================================
  *
- * This represents the billing/account state.
+ * Represents the verified billing/account state.
  *
- * We are defining it now so Stripe can plug into it later.
+ * Stripe webhooks will update these values.
  */
 
 export type SubscriptionStatus =
@@ -56,10 +89,8 @@ export type SubscriptionStatus =
  * FEATURE KEYS
  * ============================================================
  *
- * Keep feature names centralized.
- *
- * This prevents subscription logic from being scattered
- * throughout the application.
+ * Centralized feature definitions prevent subscription logic
+ * from being scattered throughout Autivoya.
  */
 
 export type SubscriptionFeature =
@@ -83,37 +114,123 @@ export type SubscriptionFeature =
  * SUBSCRIPTION RECORD
  * ============================================================
  *
- * This is the shape we will eventually store for an account.
+ * Firestore location:
  *
- * Stripe will eventually provide the verified billing state.
+ * users/{userId}/subscription/current
+ *
+ * This record represents the user's subscription state.
  *
  * IMPORTANT:
  *
- * The browser should NOT be trusted to set premium status.
+ * Paid subscription updates must originate from trusted
+ * server-side Stripe billing logic.
  *
- * Later, the server/webhook will update this record.
+ * Tester access is stored separately and is not modified
+ * by Stripe subscription updates.
+ * ============================================================
  */
 
 export type SubscriptionRecord = {
+
+  /*
+   * ----------------------------------------------------------
+   * ACCOUNT IDENTITY
+   * ----------------------------------------------------------
+   */
+
   userId: string;
+
+
+  /*
+   * ----------------------------------------------------------
+   * CONFIRMED SUBSCRIPTION
+   * ----------------------------------------------------------
+   *
+   * plan represents the currently granted subscription tier.
+   *
+   * Pending changes must not automatically modify this value.
+   */
 
   plan: SubscriptionPlan;
 
   status: SubscriptionStatus;
 
+
   /*
-   * Stripe customer/subscription IDs will eventually live here.
+   * ----------------------------------------------------------
+   * STRIPE IDENTIFIERS
+   * ----------------------------------------------------------
    */
 
   stripeCustomerId?: string;
 
   stripeSubscriptionId?: string;
 
+
+  /*
+   * ----------------------------------------------------------
+   * CURRENT BILLING PERIOD
+   * ----------------------------------------------------------
+   *
+   * Timestamps are stored in milliseconds.
+   */
+
   currentPeriodStart?: number;
 
   currentPeriodEnd?: number;
 
   cancelAtPeriodEnd?: boolean;
+
+
+  /*
+   * ----------------------------------------------------------
+   * CONFIRMED BILLING INTERVAL
+   * ----------------------------------------------------------
+   */
+
+  billingInterval?: SubscriptionBillingInterval;
+
+
+  /*
+   * ----------------------------------------------------------
+   * PENDING SUBSCRIPTION CHANGE
+   * ----------------------------------------------------------
+   *
+   * These fields describe a requested change that has not
+   * necessarily taken effect.
+   *
+   * Examples:
+   *
+   * Premium -> Premium+
+   * Premium+ -> Premium
+   * Monthly -> Annual
+   *
+   * A pending plan must never grant additional feature access.
+   */
+
+  pendingPlan?: PaidSubscriptionPlan;
+
+  pendingBillingInterval?: SubscriptionBillingInterval;
+
+
+  /*
+   * ----------------------------------------------------------
+   * PENDING STRIPE BILLING REFERENCES
+   * ----------------------------------------------------------
+   *
+   * Used to track payment-dependent and scheduled changes.
+   */
+
+  pendingInvoiceId?: string;
+
+  stripeScheduleId?: string;
+
+
+  /*
+   * ----------------------------------------------------------
+   * RECORD TIMESTAMPS
+   * ----------------------------------------------------------
+   */
 
   createdAt: number;
 
@@ -126,10 +243,13 @@ export type SubscriptionRecord = {
  * PLAN DISPLAY INFORMATION
  * ============================================================
  *
- * Used by the future pricing/upgrade UI.
+ * Product definitions used by the pricing interface.
+ *
+ * These are not proof of subscription ownership.
  */
 
 export type PlanDefinition = {
+
   id: SubscriptionPlan;
 
   name: string;
@@ -145,6 +265,7 @@ export type PlanDefinition = {
   badge?: string;
 
   features: SubscriptionFeature[];
+
 };
 
 
@@ -153,55 +274,71 @@ export type PlanDefinition = {
  * PLAN DEFINITIONS
  * ============================================================
  *
- * These are PRODUCT definitions, not billing records.
+ * Existing Autivoya pricing is preserved.
  *
- * Prices are planning values only until we connect Stripe.
+ * Free:
+ * $0
+ *
+ * Premium:
+ * $12.99 monthly
+ * $99 annually
+ *
+ * Premium+:
+ * $39.99 monthly
+ * $299 annually
+ * ============================================================
  */
 
-export const PLAN_DEFINITIONS:
-  Record<
-    SubscriptionPlan,
-    PlanDefinition
-  > = {
+export const PLAN_DEFINITIONS: Record<
+  SubscriptionPlan,
+  PlanDefinition
+> = {
+
+  /*
+   * ----------------------------------------------------------
+   * GUEST
+   * ----------------------------------------------------------
+   */
 
   guest: {
-    id:
-      "guest",
 
-    name:
-      "Guest",
+    id: "guest",
+
+    name: "Guest",
 
     shortDescription:
       "Explore your personalized autism journey.",
 
-    monthlyPriceCents:
-      0,
+    monthlyPriceCents: 0,
 
-    annualPriceCents:
-      null,
+    annualPriceCents: null,
 
     features: [
       "initial_journey",
       "community_read",
     ],
+
   },
 
 
-  free: {
-    id:
-      "free",
+  /*
+   * ----------------------------------------------------------
+   * FREE
+   * ----------------------------------------------------------
+   */
 
-    name:
-      "Free",
+  free: {
+
+    id: "free",
+
+    name: "Free",
 
     shortDescription:
       "Save your journey and keep moving forward.",
 
-    monthlyPriceCents:
-      0,
+    monthlyPriceCents: 0,
 
-    annualPriceCents:
-      null,
+    annualPriceCents: null,
 
     features: [
       "initial_journey",
@@ -210,30 +347,32 @@ export const PLAN_DEFINITIONS:
       "journey_history",
       "community_read",
     ],
+
   },
 
 
-  premium: {
-    id:
-      "premium",
+  /*
+   * ----------------------------------------------------------
+   * PREMIUM
+   * ----------------------------------------------------------
+   */
 
-    name:
-      "Premium",
+  premium: {
+
+    id: "premium",
+
+    name: "Premium",
 
     shortDescription:
       "Get deeper personalization and ongoing support tools.",
 
-    monthlyPriceCents:
-      1299,
+    monthlyPriceCents: 1299,
 
-    annualPriceCents:
-      9900,
+    annualPriceCents: 9900,
 
-    highlighted:
-      true,
+    highlighted: true,
 
-    badge:
-      "Most Popular",
+    badge: "Most Popular",
 
     features: [
       "initial_journey",
@@ -249,24 +388,28 @@ export const PLAN_DEFINITIONS:
       "ai_progress_insights",
       "family_organizer",
     ],
+
   },
 
 
-  premium_plus: {
-    id:
-      "premium_plus",
+  /*
+   * ----------------------------------------------------------
+   * PREMIUM+
+   * ----------------------------------------------------------
+   */
 
-    name:
-      "Premium+",
+  premium_plus: {
+
+    id: "premium_plus",
+
+    name: "Premium+",
 
     shortDescription:
       "Additional support when your family needs more guidance.",
 
-    monthlyPriceCents:
-      3999,
+    monthlyPriceCents: 3999,
 
-    annualPriceCents:
-      29900,
+    annualPriceCents: 29900,
 
     features: [
       "initial_journey",
@@ -283,6 +426,7 @@ export const PLAN_DEFINITIONS:
       "family_organizer",
       "human_navigator",
     ],
+
   },
 
 };
@@ -298,9 +442,8 @@ export function getPlanDefinition(
   plan: SubscriptionPlan
 ): PlanDefinition {
 
-  return PLAN_DEFINITIONS[
-    plan
-  ];
+  return PLAN_DEFINITIONS[plan];
+
 }
 
 
@@ -309,12 +452,15 @@ export function getPlanDefinition(
  * FEATURE ACCESS
  * ============================================================
  *
- * This answers:
+ * Determines whether a plan includes a feature.
  *
- * "Does this plan include this feature?"
+ * IMPORTANT:
  *
- * It does NOT determine whether the current user actually owns
- * that plan.
+ * This does not verify whether the user owns the plan.
+ *
+ * Actual subscription access must be determined from
+ * verified subscription records or valid tester access.
+ * ============================================================
  */
 
 export function planIncludesFeature(
@@ -324,9 +470,44 @@ export function planIncludesFeature(
 
   return PLAN_DEFINITIONS[
     plan
-  ].features.includes(
-    feature
+  ].features.includes(feature);
+
+}
+
+
+/*
+ * ============================================================
+ * PAID PLAN VALIDATION
+ * ============================================================
+ */
+
+export function isPaidSubscriptionPlan(
+  plan: unknown
+): plan is PaidSubscriptionPlan {
+
+  return (
+    plan === "premium" ||
+    plan === "premium_plus"
   );
+
+}
+
+
+/*
+ * ============================================================
+ * BILLING INTERVAL VALIDATION
+ * ============================================================
+ */
+
+export function isSubscriptionBillingInterval(
+  interval: unknown
+): interval is SubscriptionBillingInterval {
+
+  return (
+    interval === "monthly" ||
+    interval === "annual"
+  );
+
 }
 
 
@@ -344,17 +525,14 @@ export function formatPlanPrice(
     return "Free";
   }
 
-
   return (
     cents / 100
   ).toLocaleString(
     "en-US",
     {
-      style:
-        "currency",
-
-      currency:
-        "USD",
+      style: "currency",
+      currency: "USD",
     }
   );
+
 }
