@@ -30,11 +30,15 @@ function validPlan(value: unknown): value is PaidPlan {
   return value === "premium" || value === "premium_plus";
 }
 
-function validInterval(value: unknown): value is BillingInterval {
+function validInterval(
+  value: unknown
+): value is BillingInterval {
   return value === "monthly" || value === "annual";
 }
 
-function selectionFromPrice(priceId: string): Selection | null {
+function selectionFromPrice(
+  priceId: string
+): Selection | null {
   for (const plan of ["premium", "premium_plus"] as const) {
     for (const interval of ["monthly", "annual"] as const) {
       if (STRIPE_PRICE_IDS[plan][interval] === priceId) {
@@ -51,9 +55,14 @@ function fail(error: string, status = 400) {
 }
 
 function customerId(
-  customer: string | Stripe.Customer | Stripe.DeletedCustomer
+  customer:
+    | string
+    | Stripe.Customer
+    | Stripe.DeletedCustomer
 ): string {
-  return typeof customer === "string" ? customer : customer.id;
+  return typeof customer === "string"
+    ? customer
+    : customer.id;
 }
 
 function getInvoiceId(
@@ -61,29 +70,61 @@ function getInvoiceId(
 ): string | null {
   if (!invoice) return null;
 
-  return typeof invoice === "string" ? invoice : invoice.id;
+  return typeof invoice === "string"
+    ? invoice
+    : invoice.id;
 }
 
-function formatAmount(amount: number, currency: string): string {
+function formatAmount(
+  amount: number,
+  currency: string
+): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: currency.toUpperCase(),
   }).format(amount / 100);
 }
 
-function getPhaseEnd(
-  start: number,
+/**
+ * Calculate the end of one billing cycle using
+ * calendar months or years, not fixed day counts.
+ *
+ * Example:
+ * December 10, 2026 + 1 month = January 10, 2027.
+ *
+ * The schedule releases the subscription at this
+ * date, allowing Stripe to continue normal billing.
+ */
+function getNextBillingDate(
+  startTimestamp: number,
   interval: BillingInterval
 ): number {
-  const date = new Date(start * 1000);
+  const date = new Date(startTimestamp * 1000);
 
-  if (interval === "annual") {
-    date.setUTCFullYear(date.getUTCFullYear() + 1);
-  } else {
-    date.setUTCMonth(date.getUTCMonth() + 1);
-  }
+  const year = date.getUTCFullYear();
+  const month = date.getUTCMonth();
+  const day = date.getUTCDate();
 
-  return Math.floor(date.getTime() / 1000);
+  const targetMonth =
+    month + (interval === "annual" ? 12 : 1);
+
+  // Find the last valid day of the target month.
+  const lastDay = new Date(
+    Date.UTC(year, targetMonth + 1, 0)
+  ).getUTCDate();
+
+  const nextDate = new Date(
+    Date.UTC(
+      year,
+      targetMonth,
+      Math.min(day, lastDay),
+      date.getUTCHours(),
+      date.getUTCMinutes(),
+      date.getUTCSeconds()
+    )
+  );
+
+  return Math.floor(nextDate.getTime() / 1000);
 }
 
 export async function POST(request: NextRequest) {
@@ -104,7 +145,8 @@ export async function POST(request: NextRequest) {
   }
 
   if (
-    (body.action !== "preview" && body.action !== "confirm") ||
+    (body.action !== "preview" &&
+      body.action !== "confirm") ||
     !validPlan(body.plan) ||
     !validInterval(body.interval)
   ) {
@@ -129,24 +171,37 @@ export async function POST(request: NextRequest) {
       !record ||
       typeof record.stripeSubscriptionId !== "string"
     ) {
-      return fail("No paid subscription found.", 404);
+      return fail(
+        "No paid subscription found.",
+        404
+      );
     }
 
-    const subscription = await stripe.subscriptions.retrieve(
-      record.stripeSubscriptionId
-    );
+    const subscription =
+      await stripe.subscriptions.retrieve(
+        record.stripeSubscriptionId
+      );
 
-    if (subscription.metadata.firebaseUid !== uid) {
-      return fail("Subscription ownership mismatch.", 403);
+    if (
+      subscription.metadata.firebaseUid !== uid
+    ) {
+      return fail(
+        "Subscription ownership mismatch.",
+        403
+      );
     }
 
     if (
       subscription.status !== "active" ||
       record.status !== "active"
     ) {
-      return fail("Subscription must be active.", 409);
+      return fail(
+        "Subscription must be active.",
+        409
+      );
     }
 
+    // Prevent overlapping changes or cancellation.
     if (
       subscription.cancel_at_period_end ||
       subscription.schedule ||
@@ -168,10 +223,16 @@ export async function POST(request: NextRequest) {
     }
 
     const item = subscription.items.data[0];
-    const current = selectionFromPrice(item.price.id);
+
+    const current = selectionFromPrice(
+      item.price.id
+    );
 
     if (!current) {
-      return fail("Unknown subscription price.", 409);
+      return fail(
+        "Unknown subscription price.",
+        409
+      );
     }
 
     if (
@@ -184,10 +245,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const targetPriceId = getStripePriceId(plan, interval);
+    const targetPriceId = getStripePriceId(
+      plan,
+      interval
+    );
 
     if (item.price.id === targetPriceId) {
-      return fail("You already have this plan.", 409);
+      return fail(
+        "You already have this plan.",
+        409
+      );
     }
 
     const downgrade =
@@ -196,6 +263,10 @@ export async function POST(request: NextRequest) {
 
     const periodEnd = item.current_period_end;
     const quantity = item.quantity ?? 1;
+
+    // =========================================
+    // PREVIEW
+    // =========================================
 
     if (action === "preview") {
       if (downgrade) {
@@ -210,19 +281,22 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      const invoice = await stripe.invoices.createPreview({
-        customer: customerId(subscription.customer),
-        subscription: subscription.id,
-        subscription_details: {
-          items: [
-            {
-              id: item.id,
-              price: targetPriceId,
-            },
-          ],
-          proration_behavior: "always_invoice",
-        },
-      });
+      const invoice =
+        await stripe.invoices.createPreview({
+          customer: customerId(
+            subscription.customer
+          ),
+          subscription: subscription.id,
+          subscription_details: {
+            items: [
+              {
+                id: item.id,
+                price: targetPriceId,
+              },
+            ],
+            proration_behavior: "always_invoice",
+          },
+        });
 
       return NextResponse.json({
         preview: true,
@@ -239,6 +313,10 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // =========================================
+    // SCHEDULE PREMIUM+ -> PREMIUM DOWNGRADE
+    // =========================================
+
     if (downgrade) {
       const schedule =
         await stripe.subscriptionSchedules.create({
@@ -254,35 +332,49 @@ export async function POST(request: NextRequest) {
           );
         }
 
-        const secondPhaseEnd = getPhaseEnd(
-          periodEnd,
-          interval
-        );
+        const secondPhaseEnd =
+          getNextBillingDate(
+            periodEnd,
+            interval
+          );
 
         await stripe.subscriptionSchedules.update(
           schedule.id,
           {
+            // At the end of the schedule, Stripe
+            // releases the subscription rather
+            // than canceling it.
             end_behavior: "release",
+
             phases: [
               {
+                // Keep Premium+ through the end
+                // of the current paid period.
                 start_date: firstPhase.start_date,
                 end_date: periodEnd,
+
                 items: [
                   {
                     price: item.price.id,
                     quantity,
                   },
                 ],
+
+                proration_behavior: "none",
               },
               {
+                // Downgrade takes effect at renewal.
                 start_date: periodEnd,
                 end_date: secondPhaseEnd,
+
                 items: [
                   {
                     price: targetPriceId,
                     quantity,
                   },
                 ],
+
+                proration_behavior: "none",
               },
             ],
           }
@@ -318,29 +410,36 @@ export async function POST(request: NextRequest) {
         changeType: "scheduled_downgrade",
         effectiveAt: periodEnd * 1000,
         message:
-          "Your downgrade is scheduled for the next renewal.",
+          "Your downgrade is scheduled for the next renewal. Your current benefits remain active until then.",
       });
     }
 
-    const updated = await stripe.subscriptions.update(
-      subscription.id,
-      {
-        items: [
-          {
-            id: item.id,
-            price: targetPriceId,
-          },
-        ],
-        payment_behavior: "pending_if_incomplete",
-        proration_behavior: "always_invoice",
-      },
-      {
-        idempotencyKey:
-          `subscription-change-${uid}-${crypto.randomUUID()}`,
-      }
-    );
+    // =========================================
+    // IMMEDIATE PLAN / BILLING CHANGE
+    // =========================================
 
-    const updatedItem = updated.items.data[0];
+    const updated =
+      await stripe.subscriptions.update(
+        subscription.id,
+        {
+          items: [
+            {
+              id: item.id,
+              price: targetPriceId,
+            },
+          ],
+          payment_behavior:
+            "pending_if_incomplete",
+          proration_behavior: "always_invoice",
+        },
+        {
+          idempotencyKey:
+            `subscription-change-${uid}-${crypto.randomUUID()}`,
+        }
+      );
+
+    const updatedItem =
+      updated.items.data[0];
 
     const applied =
       updatedItem?.price.id === targetPriceId;
@@ -372,7 +471,10 @@ export async function POST(request: NextRequest) {
         "Subscription change submitted. Access updates after payment verification.",
     });
   } catch (error) {
-    console.error("Subscription change failed:", error);
+    console.error(
+      "Subscription change failed:",
+      error
+    );
 
     return fail(
       "Unable to change subscription.",
