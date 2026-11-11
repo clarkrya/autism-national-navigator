@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { getApp, getApps } from "firebase/app";
 import {
@@ -9,11 +9,7 @@ import {
   onAuthStateChanged,
   type User,
 } from "firebase/auth";
-import {
-  doc,
-  getFirestore,
-  onSnapshot,
-} from "firebase/firestore";
+import { doc, getFirestore, onSnapshot } from "firebase/firestore";
 
 import {
   PLAN_DEFINITIONS,
@@ -41,6 +37,11 @@ type ChangePreview = {
   currency?: string;
 };
 
+type ExpectedChange = {
+  plan: PaidPlan;
+  interval: BillingInterval;
+};
+
 const planOrder: SubscriptionPlan[] = [
   "free",
   "premium",
@@ -62,36 +63,23 @@ const buttonStyle = {
 };
 
 function getFeatureLabel(feature: string): string {
-  switch (feature) {
-    case "initial_journey":
-      return "Personalized autism journey";
-    case "save_journey":
-      return "Save your journey";
-    case "next_journey":
-      return "Continue to What's Next";
-    case "journey_history":
-      return "Journey History";
-    case "community_read":
-      return "Read community posts";
-    case "community_participate":
-      return "Post in the Community";
-    case "ask_navigator":
-      return "Ask Your Autivoya Navigator";
-    case "advanced_resources":
-      return "Advanced personalized resources";
-    case "meeting_prep":
-      return "Meeting preparation tools";
-    case "document_vault":
-      return "Document organization";
-    case "ai_progress_insights":
-      return "AI progress insights";
-    case "family_organizer":
-      return "Family organizer tools";
-    case "human_navigator":
-      return "Human Navigator support";
-    default:
-      return feature;
-  }
+  const labels: Record<string, string> = {
+    initial_journey: "Personalized autism journey",
+    save_journey: "Save your journey",
+    next_journey: "Continue to What's Next",
+    journey_history: "Journey History",
+    community_read: "Read community posts",
+    community_participate: "Post in the Community",
+    ask_navigator: "Ask Your Autivoya Navigator",
+    advanced_resources: "Advanced personalized resources",
+    meeting_prep: "Meeting preparation tools",
+    document_vault: "Document organization",
+    ai_progress_insights: "AI progress insights",
+    family_organizer: "Family organizer tools",
+    human_navigator: "Human Navigator support",
+  };
+
+  return labels[feature] ?? feature;
 }
 
 function isPaidPlan(value: unknown): value is PaidPlan {
@@ -118,6 +106,15 @@ function formatDate(timestamp: number): string {
   });
 }
 
+const initialMembership: Membership = {
+  plan: "free",
+  status: "none",
+  billingInterval: null,
+  cancelAtPeriodEnd: false,
+  pendingPlan: null,
+  pendingBillingInterval: null,
+};
+
 export default function PricingPage() {
   const [interval, setInterval] =
     useState<BillingInterval>("monthly");
@@ -128,14 +125,7 @@ export default function PricingPage() {
     useState(true);
 
   const [membership, setMembership] =
-    useState<Membership>({
-      plan: "free",
-      status: "none",
-      billingInterval: null,
-      cancelAtPeriodEnd: false,
-      pendingPlan: null,
-      pendingBillingInterval: null,
-    });
+    useState<Membership>(initialMembership);
 
   const [busyPlan, setBusyPlan] =
     useState<PaidPlan | null>(null);
@@ -152,6 +142,12 @@ export default function PricingPage() {
   const [previewInterval, setPreviewInterval] =
     useState<BillingInterval>("monthly");
 
+  // A successful API response means the request was accepted.
+  // It does not necessarily mean payment was completed.
+  // Firestore confirms when the new membership is active.
+  const expectedChangeRef =
+    useRef<ExpectedChange | null>(null);
+
   useEffect(() => {
     if (!getApps().length) {
       setAuthLoading(false);
@@ -167,6 +163,7 @@ export default function PricingPage() {
     return onAuthStateChanged(
       auth,
       (currentUser) => {
+        expectedChangeRef.current = null;
         setUser(currentUser);
         setAuthLoading(false);
       },
@@ -182,14 +179,8 @@ export default function PricingPage() {
     if (authLoading) return;
 
     if (!user) {
-      setMembership({
-        plan: "free",
-        status: "none",
-        billingInterval: null,
-        cancelAtPeriodEnd: false,
-        pendingPlan: null,
-        pendingBillingInterval: null,
-      });
+      expectedChangeRef.current = null;
+      setMembership(initialMembership);
       setMembershipLoading(false);
       return;
     }
@@ -212,38 +203,63 @@ export default function PricingPage() {
         const data = snapshot.data() ?? {};
 
         const paidActive =
-          data?.status === "active" ||
-          data?.status === "trialing";
+          data.status === "active" ||
+          data.status === "trialing";
 
         const plan: SubscriptionPlan =
-          paidActive && isPaidPlan(data?.plan)
+          paidActive && isPaidPlan(data.plan)
             ? data.plan
             : "free";
 
-        setMembership({
+        const billingInterval = isBillingInterval(
+          data.billingInterval
+        )
+          ? data.billingInterval
+          : null;
+
+        const nextMembership: Membership = {
           plan,
           status:
-            typeof data?.status === "string"
+            typeof data.status === "string"
               ? data.status
               : "none",
-          billingInterval: isBillingInterval(
-            data?.billingInterval
-          )
-            ? data.billingInterval
-            : null,
+          billingInterval,
           cancelAtPeriodEnd:
-            data?.cancelAtPeriodEnd === true,
-          pendingPlan: isPaidPlan(data?.pendingPlan)
+            data.cancelAtPeriodEnd === true,
+          pendingPlan: isPaidPlan(data.pendingPlan)
             ? data.pendingPlan
             : null,
           pendingBillingInterval: isBillingInterval(
-            data?.pendingBillingInterval
+            data.pendingBillingInterval
           )
             ? data.pendingBillingInterval
             : null,
-        });
+        };
 
+        setMembership(nextMembership);
         setMembershipLoading(false);
+
+        const expected = expectedChangeRef.current;
+
+        if (
+          expected &&
+          paidActive &&
+          plan === expected.plan &&
+          billingInterval === expected.interval &&
+          nextMembership.pendingPlan === null
+        ) {
+          expectedChangeRef.current = null;
+          setError("");
+          setNotice(
+            `Membership Upgrade Successful! Your ${
+              membershipName(expected.plan)
+            } ${
+              expected.interval === "annual"
+                ? "annual"
+                : "monthly"
+            } membership is now active. Your benefits are available.`
+          );
+        }
       },
       () => {
         setMembershipLoading(false);
@@ -257,7 +273,7 @@ export default function PricingPage() {
   async function authenticatedPost(
     endpoint: string,
     payload: Record<string, unknown>
-  ) {
+  ): Promise<Record<string, unknown>> {
     if (!user) {
       throw new Error("Please sign in first.");
     }
@@ -273,17 +289,23 @@ export default function PricingPage() {
       body: JSON.stringify(payload),
     });
 
-    const data = await response.json();
+    const data: unknown = await response.json();
+
+    if (!data || typeof data !== "object") {
+      throw new Error("Invalid server response.");
+    }
+
+    const result = data as Record<string, unknown>;
 
     if (!response.ok) {
       throw new Error(
-        typeof data.error === "string"
-          ? data.error
+        typeof result.error === "string"
+          ? result.error
           : "Unable to process your request."
       );
     }
 
-    return data;
+    return result;
   }
 
   async function handlePlanClick(plan: PaidPlan) {
@@ -296,7 +318,7 @@ export default function PricingPage() {
       return;
     }
 
-    if (membershipLoading) return;
+    if (membershipLoading || busyPlan) return;
 
     setBusyPlan(plan);
 
@@ -344,31 +366,85 @@ export default function PricingPage() {
   }
 
   async function confirmChange() {
-    if (!previewPlan || !preview) return;
+    if (!previewPlan || !preview || busyPlan) return;
+
+    const requestedPlan = previewPlan;
+    const requestedInterval = previewInterval;
 
     setError("");
     setNotice("");
-    setBusyPlan(previewPlan);
+    setBusyPlan(requestedPlan);
 
     try {
       const result = await authenticatedPost(
         "/api/stripe/change-subscription",
         {
           action: "confirm",
-          plan: previewPlan,
-          interval: previewInterval,
+          plan: requestedPlan,
+          interval: requestedInterval,
         }
       );
 
       setPreview(null);
       setPreviewPlan(null);
 
-      setNotice(
-        result.changeType === "scheduled_downgrade"
-          ? "Your downgrade has been scheduled for your next renewal."
-          : "Your change was submitted. Your membership will update after payment verification."
-      );
+      if (result.changeType === "scheduled_downgrade") {
+        expectedChangeRef.current = null;
+        setNotice(
+          "Your membership change has been scheduled for your next renewal. Your current benefits remain active until then."
+        );
+      } else {
+        expectedChangeRef.current = {
+          plan: requestedPlan,
+          interval: requestedInterval,
+        };
+
+        setNotice(
+          "Your membership change was submitted. Verifying payment and updating your benefits..."
+        );
+
+        // The Firestore listener may have received the
+        // confirmed change before this API response.
+        // Refresh the document once to handle that race.
+        if (user && getApps().length) {
+          const { getDocFromServer } = await import(
+            "firebase/firestore"
+          );
+
+          const ref = doc(
+            getFirestore(getApp()),
+            "users",
+            user.uid,
+            "subscription",
+            "current"
+          );
+
+          try {
+            const snapshot = await getDocFromServer(ref);
+            const data = snapshot.data();
+
+            if (
+              data &&
+              (data.status === "active" ||
+                data.status === "trialing") &&
+              data.plan === requestedPlan &&
+              data.billingInterval === requestedInterval &&
+              !isPaidPlan(data.pendingPlan)
+            ) {
+              expectedChangeRef.current = null;
+              setNotice(
+                `Membership Upgrade Successful! Your ${
+                  membershipName(requestedPlan)
+                } membership is now active. Your benefits are available.`
+              );
+            }
+          } catch {
+            // Continue waiting for the Firestore listener.
+          }
+        }
+      }
     } catch (err) {
+      expectedChangeRef.current = null;
       setError(
         err instanceof Error
           ? err.message
@@ -420,7 +496,7 @@ export default function PricingPage() {
           }}
         >
           Start with the tools you need today and choose
-          more personalized support as your family's
+          more personalized support as your family&apos;s
           journey evolves.
         </p>
 
@@ -501,6 +577,7 @@ export default function PricingPage() {
               onClick={() => {
                 setInterval(option);
                 setPreview(null);
+                setPreviewPlan(null);
               }}
               aria-pressed={interval === option}
               style={{
@@ -579,12 +656,9 @@ export default function PricingPage() {
           const definition =
             PLAN_DEFINITIONS[planOption];
 
-          const isPremium =
-            planOption === "premium";
-
+          const isPremium = planOption === "premium";
           const isPremiumPlus =
             planOption === "premium_plus";
-
           const isFree = planOption === "free";
 
           const isCurrent =
@@ -604,9 +678,8 @@ export default function PricingPage() {
                 definition.monthlyPriceCents
               : definition.monthlyPriceCents;
 
-          const highlighted = isCurrent || (
-            !user && isPremium
-          );
+          const highlighted =
+            isCurrent || (!user && isPremium);
 
           const backgroundColor = isPremium
             ? "#2563EB"
@@ -877,7 +950,7 @@ export default function PricingPage() {
                     marginBottom: "14px",
                   }}
                 >
-                  What's included
+                  What&apos;s included
                 </div>
 
                 <div
@@ -1079,7 +1152,7 @@ export default function PricingPage() {
             fontWeight: 800,
           }}
         >
-          Your family's journey can evolve.
+          Your family&apos;s journey can evolve.
         </h2>
 
         <p
