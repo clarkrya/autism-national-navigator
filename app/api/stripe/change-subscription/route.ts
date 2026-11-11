@@ -21,6 +21,11 @@ type ChangeBody = {
   interval?: unknown;
 };
 
+type Selection = {
+  plan: PaidPlan;
+  interval: BillingInterval;
+};
+
 function validPlan(value: unknown): value is PaidPlan {
   return value === "premium" || value === "premium_plus";
 }
@@ -29,7 +34,7 @@ function validInterval(value: unknown): value is BillingInterval {
   return value === "monthly" || value === "annual";
 }
 
-function selectionFromPrice(priceId: string) {
+function selectionFromPrice(priceId: string): Selection | null {
   for (const plan of ["premium", "premium_plus"] as const) {
     for (const interval of ["monthly", "annual"] as const) {
       if (STRIPE_PRICE_IDS[plan][interval] === priceId) {
@@ -37,6 +42,7 @@ function selectionFromPrice(priceId: string) {
       }
     }
   }
+
   return null;
 }
 
@@ -48,6 +54,36 @@ function customerId(
   customer: string | Stripe.Customer | Stripe.DeletedCustomer
 ): string {
   return typeof customer === "string" ? customer : customer.id;
+}
+
+function getInvoiceId(
+  invoice: string | Stripe.Invoice | null
+): string | null {
+  if (!invoice) return null;
+
+  return typeof invoice === "string" ? invoice : invoice.id;
+}
+
+function formatAmount(amount: number, currency: string): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: currency.toUpperCase(),
+  }).format(amount / 100);
+}
+
+function getPhaseEnd(
+  start: number,
+  interval: BillingInterval
+): number {
+  const date = new Date(start * 1000);
+
+  if (interval === "annual") {
+    date.setUTCFullYear(date.getUTCFullYear() + 1);
+  } else {
+    date.setUTCMonth(date.getUTCMonth() + 1);
+  }
+
+  return Math.floor(date.getTime() / 1000);
 }
 
 export async function POST(request: NextRequest) {
@@ -79,6 +115,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const stripe = getStripe();
+
     const ref = getAdminDb()
       .collection("users")
       .doc(uid)
@@ -124,7 +161,10 @@ export async function POST(request: NextRequest) {
     }
 
     if (subscription.items.data.length !== 1) {
-      return fail("Unsupported subscription configuration.", 409);
+      return fail(
+        "Unsupported subscription configuration.",
+        409
+      );
     }
 
     const item = subscription.items.data[0];
@@ -138,7 +178,10 @@ export async function POST(request: NextRequest) {
       record.plan !== current.plan ||
       record.billingInterval !== current.interval
     ) {
-      return fail("Subscription records are not synchronized.", 409);
+      return fail(
+        "Subscription records are not synchronized.",
+        409
+      );
     }
 
     const targetPriceId = getStripePriceId(plan, interval);
@@ -151,6 +194,9 @@ export async function POST(request: NextRequest) {
       current.plan === "premium_plus" &&
       plan === "premium";
 
+    const periodEnd = item.current_period_end;
+    const quantity = item.quantity ?? 1;
+
     if (action === "preview") {
       if (downgrade) {
         return NextResponse.json({
@@ -160,25 +206,23 @@ export async function POST(request: NextRequest) {
           requestedPlan: plan,
           requestedInterval: interval,
           amountDue: 0,
-          effectiveAt: item.current_period_end * 1000,
+          effectiveAt: periodEnd * 1000,
         });
       }
 
-     
-const invoice = await stripe.invoices.createPreview({
-  customer: customerId(subscription.customer),
-  subscription: subscription.id,
-  subscription_details: {
-    items: [
-      {
-        id: item.id,
-        price: targetPriceId,
-      },
-    ],
-    proration_behavior: "always_invoice",
-  },
-});
-
+      const invoice = await stripe.invoices.createPreview({
+        customer: customerId(subscription.customer),
+        subscription: subscription.id,
+        subscription_details: {
+          items: [
+            {
+              id: item.id,
+              price: targetPriceId,
+            },
+          ],
+          proration_behavior: "always_invoice",
+        },
+      });
 
       return NextResponse.json({
         preview: true,
@@ -188,10 +232,10 @@ const invoice = await stripe.invoices.createPreview({
         requestedInterval: interval,
         currency: invoice.currency,
         amountDue: invoice.amount_due,
-        amountDueFormatted: new Intl.NumberFormat("en-US", {
-          style: "currency",
-          currency: invoice.currency.toUpperCase(),
-        }).format(invoice.amount_due / 100),
+        amountDueFormatted: formatAmount(
+          invoice.amount_due,
+          invoice.currency
+        ),
       });
     }
 
@@ -205,40 +249,56 @@ const invoice = await stripe.invoices.createPreview({
         const firstPhase = schedule.phases[0];
 
         if (!firstPhase) {
-          throw new Error("Missing subscription schedule phase.");
+          throw new Error(
+            "Missing subscription schedule phase."
+          );
         }
 
-        await stripe.subscriptionSchedules.update(schedule.id, {
-          end_behavior: "release",
-          phases: [
-            {
-              start_date: firstPhase.start_date,
-              end_date: item.current_period_end,
-              items: [
-                {
-                  price: item.price.id,
-                  quantity: item.quantity ?? 1,
-                },
-              ],
-            },
-            {
-              start_date: item.current_period_end,
-              end_date: item.current_period_end + 86400 * 30,
-                            items: [
-                {
-                  price: targetPriceId,
-                  quantity: item.quantity ?? 1,
-                },
-              ],
-            },
-          ],
-        });
+        const secondPhaseEnd = getPhaseEnd(
+          periodEnd,
+          interval
+        );
+
+        await stripe.subscriptionSchedules.update(
+          schedule.id,
+          {
+            end_behavior: "release",
+            phases: [
+              {
+                start_date: firstPhase.start_date,
+                end_date: periodEnd,
+                items: [
+                  {
+                    price: item.price.id,
+                    quantity,
+                  },
+                ],
+              },
+              {
+                start_date: periodEnd,
+                end_date: secondPhaseEnd,
+                items: [
+                  {
+                    price: targetPriceId,
+                    quantity,
+                  },
+                ],
+              },
+            ],
+          }
+        );
       } catch (error) {
         try {
-          await stripe.subscriptionSchedules.release(schedule.id);
+          await stripe.subscriptionSchedules.release(
+            schedule.id
+          );
         } catch (cleanupError) {
-          console.error("Schedule cleanup failed:", cleanupError);
+          console.error(
+            "Schedule cleanup failed:",
+            cleanupError
+          );
         }
+
         throw error;
       }
 
@@ -246,6 +306,7 @@ const invoice = await stripe.invoices.createPreview({
         {
           pendingPlan: plan,
           pendingBillingInterval: interval,
+          pendingInvoiceId: null,
           stripeScheduleId: schedule.id,
           updatedAt: Date.now(),
         },
@@ -255,12 +316,12 @@ const invoice = await stripe.invoices.createPreview({
       return NextResponse.json({
         success: true,
         changeType: "scheduled_downgrade",
-        effectiveAt: item.current_period_end * 1000,
+        effectiveAt: periodEnd * 1000,
+        message:
+          "Your downgrade is scheduled for the next renewal.",
       });
     }
 
-    // Stripe applies the new price only when payment
-    // succeeds or when no payment is required.
     const updated = await stripe.subscriptions.update(
       subscription.id,
       {
@@ -274,18 +335,19 @@ const invoice = await stripe.invoices.createPreview({
         proration_behavior: "always_invoice",
       },
       {
-        // A new key is needed for each distinct attempt.
-        idempotencyKey: `change-${uid}-${crypto.randomUUID()}`,
+        idempotencyKey:
+          `subscription-change-${uid}-${crypto.randomUUID()}`,
       }
     );
 
     const updatedItem = updated.items.data[0];
-    const applied = updatedItem?.price.id === targetPriceId;
 
-    const latestInvoiceId =
-      typeof updated.latest_invoice === "string"
-        ? updated.latest_invoice
-        : updated.latest_invoice?.id ?? null;
+    const applied =
+      updatedItem?.price.id === targetPriceId;
+
+    const latestInvoiceId = getInvoiceId(
+      updated.latest_invoice
+    );
 
     await ref.set(
       {
@@ -307,10 +369,14 @@ const invoice = await stripe.invoices.createPreview({
           : "not_applied",
       invoiceId: latestInvoiceId,
       message:
-        "Subscription change submitted. Access updates after verification.",
+        "Subscription change submitted. Access updates after payment verification.",
     });
   } catch (error) {
     console.error("Subscription change failed:", error);
-    return fail("Unable to change subscription.", 500);
+
+    return fail(
+      "Unable to change subscription.",
+      500
+    );
   }
 }
