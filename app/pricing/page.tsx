@@ -1,9 +1,19 @@
 
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import StripeCheckoutButton from "../../components/StripeCheckoutButton";
+import { getApp, getApps } from "firebase/app";
+import {
+  getAuth,
+  onAuthStateChanged,
+  type User,
+} from "firebase/auth";
+import {
+  doc,
+  getFirestore,
+  onSnapshot,
+} from "firebase/firestore";
 
 import {
   PLAN_DEFINITIONS,
@@ -12,6 +22,24 @@ import {
 } from "../../lib/subscriptionTypes";
 
 type BillingInterval = "monthly" | "annual";
+type PaidPlan = "premium" | "premium_plus";
+
+type Membership = {
+  plan: SubscriptionPlan;
+  status: string;
+  billingInterval: BillingInterval | null;
+  cancelAtPeriodEnd: boolean;
+  pendingPlan: PaidPlan | null;
+  pendingBillingInterval: BillingInterval | null;
+};
+
+type ChangePreview = {
+  changeType: string;
+  amountDue?: number;
+  amountDueFormatted?: string;
+  effectiveAt?: number;
+  currency?: string;
+};
 
 const planOrder: SubscriptionPlan[] = [
   "free",
@@ -19,7 +47,19 @@ const planOrder: SubscriptionPlan[] = [
   "premium_plus",
 ];
 
-const pricingReturnTo = "/pricing";
+const buttonStyle = {
+  display: "block",
+  width: "100%",
+  textAlign: "center" as const,
+  padding: "13px 18px",
+  borderRadius: "10px",
+  border: "none",
+  color: "#FFFFFF",
+  fontSize: "14px",
+  fontWeight: 800,
+  cursor: "pointer",
+  boxSizing: "border-box" as const,
+};
 
 function getFeatureLabel(feature: string): string {
   switch (feature) {
@@ -54,9 +94,293 @@ function getFeatureLabel(feature: string): string {
   }
 }
 
+function isPaidPlan(value: unknown): value is PaidPlan {
+  return value === "premium" || value === "premium_plus";
+}
+
+function isBillingInterval(
+  value: unknown
+): value is BillingInterval {
+  return value === "monthly" || value === "annual";
+}
+
+function membershipName(plan: SubscriptionPlan): string {
+  if (plan === "premium_plus") return "Premium+";
+  if (plan === "premium") return "Premium";
+  return "Free";
+}
+
+function formatDate(timestamp: number): string {
+  return new Date(timestamp).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
 export default function PricingPage() {
   const [interval, setInterval] =
     useState<BillingInterval>("monthly");
+
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [membershipLoading, setMembershipLoading] =
+    useState(true);
+
+  const [membership, setMembership] =
+    useState<Membership>({
+      plan: "free",
+      status: "none",
+      billingInterval: null,
+      cancelAtPeriodEnd: false,
+      pendingPlan: null,
+      pendingBillingInterval: null,
+    });
+
+  const [busyPlan, setBusyPlan] =
+    useState<PaidPlan | null>(null);
+
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  const [preview, setPreview] =
+    useState<ChangePreview | null>(null);
+
+  const [previewPlan, setPreviewPlan] =
+    useState<PaidPlan | null>(null);
+
+  const [previewInterval, setPreviewInterval] =
+    useState<BillingInterval>("monthly");
+
+  useEffect(() => {
+    if (!getApps().length) {
+      setAuthLoading(false);
+      setMembershipLoading(false);
+      setError(
+        "Firebase is not initialized. Please refresh the page."
+      );
+      return;
+    }
+
+    const auth = getAuth(getApp());
+
+    return onAuthStateChanged(
+      auth,
+      (currentUser) => {
+        setUser(currentUser);
+        setAuthLoading(false);
+      },
+      () => {
+        setAuthLoading(false);
+        setMembershipLoading(false);
+        setError("Unable to verify your account.");
+      }
+    );
+  }, []);
+
+  useEffect(() => {
+    if (authLoading) return;
+
+    if (!user) {
+      setMembership({
+        plan: "free",
+        status: "none",
+        billingInterval: null,
+        cancelAtPeriodEnd: false,
+        pendingPlan: null,
+        pendingBillingInterval: null,
+      });
+      setMembershipLoading(false);
+      return;
+    }
+
+    setMembershipLoading(true);
+
+    const db = getFirestore(getApp());
+
+    const subscriptionRef = doc(
+      db,
+      "users",
+      user.uid,
+      "subscription",
+      "current"
+    );
+
+    return onSnapshot(
+      subscriptionRef,
+      (snapshot) => {
+        const data = snapshot.data() ?? {};
+
+        const paidActive =
+          data?.status === "active" ||
+          data?.status === "trialing";
+
+        const plan: SubscriptionPlan =
+          paidActive && isPaidPlan(data?.plan)
+            ? data.plan
+            : "free";
+
+        setMembership({
+          plan,
+          status:
+            typeof data?.status === "string"
+              ? data.status
+              : "none",
+          billingInterval: isBillingInterval(
+            data?.billingInterval
+          )
+            ? data.billingInterval
+            : null,
+          cancelAtPeriodEnd:
+            data?.cancelAtPeriodEnd === true,
+          pendingPlan: isPaidPlan(data?.pendingPlan)
+            ? data.pendingPlan
+            : null,
+          pendingBillingInterval: isBillingInterval(
+            data?.pendingBillingInterval
+          )
+            ? data.pendingBillingInterval
+            : null,
+        });
+
+        setMembershipLoading(false);
+      },
+      () => {
+        setMembershipLoading(false);
+        setError(
+          "Unable to load membership. Please refresh before changing plans."
+        );
+      }
+    );
+  }, [user, authLoading]);
+
+  async function authenticatedPost(
+    endpoint: string,
+    payload: Record<string, unknown>
+  ) {
+    if (!user) {
+      throw new Error("Please sign in first.");
+    }
+
+    const token = await user.getIdToken();
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        typeof data.error === "string"
+          ? data.error
+          : "Unable to process your request."
+      );
+    }
+
+    return data;
+  }
+
+  async function handlePlanClick(plan: PaidPlan) {
+    setError("");
+    setNotice("");
+
+    if (!user) {
+      window.location.href =
+        `/login?returnTo=${encodeURIComponent("/pricing")}`;
+      return;
+    }
+
+    if (membershipLoading) return;
+
+    setBusyPlan(plan);
+
+    try {
+      if (membership.plan === "free") {
+        const result = await authenticatedPost(
+          "/api/stripe/checkout",
+          { plan, interval }
+        );
+
+        if (
+          typeof result.url === "string" &&
+          result.url.startsWith("https://")
+        ) {
+          window.location.href = result.url;
+          return;
+        }
+
+        throw new Error(
+          "Stripe Checkout did not return a valid URL."
+        );
+      }
+
+      const result = await authenticatedPost(
+        "/api/stripe/change-subscription",
+        {
+          action: "preview",
+          plan,
+          interval,
+        }
+      );
+
+      setPreview(result as ChangePreview);
+      setPreviewPlan(plan);
+      setPreviewInterval(interval);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to process your request."
+      );
+    } finally {
+      setBusyPlan(null);
+    }
+  }
+
+  async function confirmChange() {
+    if (!previewPlan || !preview) return;
+
+    setError("");
+    setNotice("");
+    setBusyPlan(previewPlan);
+
+    try {
+      const result = await authenticatedPost(
+        "/api/stripe/change-subscription",
+        {
+          action: "confirm",
+          plan: previewPlan,
+          interval: previewInterval,
+        }
+      );
+
+      setPreview(null);
+      setPreviewPlan(null);
+
+      setNotice(
+        result.changeType === "scheduled_downgrade"
+          ? "Your downgrade has been scheduled for your next renewal."
+          : "Your change was submitted. Your membership will update after payment verification."
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to change your subscription."
+      );
+    } finally {
+      setBusyPlan(null);
+    }
+  }
+
+  const currentPlan = membership.plan;
+  const loading = authLoading || membershipLoading;
 
   return (
     <main
@@ -110,9 +434,56 @@ export default function PricingPage() {
         >
           Every journey is unique. Every step matters.
         </div>
-      </section>
 
-      {/* BILLING INTERVAL SELECTOR */}
+        <div
+          style={{
+            marginTop: "26px",
+            padding: "16px 22px",
+            borderRadius: "14px",
+            background: "#EFF6FF",
+            border: "1px solid #BFDBFE",
+            color: "#173B52",
+            fontSize: "15px",
+          }}
+        >
+          {loading
+            ? "Loading your membership..."
+            : !user
+              ? "Sign in to view your current membership."
+              : (
+                <>
+                  <strong>
+                    Current Membership:{" "}
+                    {membershipName(currentPlan)}
+                  </strong>
+
+                  {currentPlan !== "free" &&
+                    membership.billingInterval && (
+                      <span>
+                        {" "}·{" "}
+                        {membership.billingInterval === "monthly"
+                          ? "Monthly"
+                          : "Annual"}{" "}
+                        billing
+                      </span>
+                    )}
+
+                  {membership.cancelAtPeriodEnd && (
+                    <div style={{ marginTop: "6px" }}>
+                      Cancellation scheduled.
+                    </div>
+                  )}
+
+                  {membership.pendingPlan && (
+                    <div style={{ marginTop: "6px" }}>
+                      Pending change:{" "}
+                      {membershipName(membership.pendingPlan)}
+                    </div>
+                  )}
+                </>
+              )}
+        </div>
+      </section>
 
       <div
         style={{
@@ -127,7 +498,10 @@ export default function PricingPage() {
             <button
               key={option}
               type="button"
-              onClick={() => setInterval(option)}
+              onClick={() => {
+                setInterval(option);
+                setPreview(null);
+              }}
               aria-pressed={interval === option}
               style={{
                 padding: "11px 22px",
@@ -156,7 +530,39 @@ export default function PricingPage() {
         )}
       </div>
 
-      {/* PRICING PLANS */}
+      {error && (
+        <div
+          role="alert"
+          style={{
+            maxWidth: "850px",
+            margin: "0 auto 24px",
+            padding: "14px 18px",
+            borderRadius: "10px",
+            background: "#FEF2F2",
+            color: "#B91C1C",
+            border: "1px solid #FECACA",
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      {notice && (
+        <div
+          role="status"
+          style={{
+            maxWidth: "850px",
+            margin: "0 auto 24px",
+            padding: "14px 18px",
+            borderRadius: "10px",
+            background: "#F0FDF4",
+            color: "#166534",
+            border: "1px solid #BBF7D0",
+          }}
+        >
+          {notice}
+        </div>
+      )}
 
       <section
         style={{
@@ -181,13 +587,67 @@ export default function PricingPage() {
 
           const isFree = planOption === "free";
 
-          const selectedPrice =
-            isFree
-              ? 0
-              : interval === "annual"
-                ? definition.annualPriceCents ??
-                  definition.monthlyPriceCents
-                : definition.monthlyPriceCents;
+          const isCurrent =
+            !!user &&
+            !loading &&
+            currentPlan === planOption;
+
+          const currentPaidSelection =
+            isCurrent &&
+            !isFree &&
+            membership.billingInterval === interval;
+
+          const selectedPrice = isFree
+            ? 0
+            : interval === "annual"
+              ? definition.annualPriceCents ??
+                definition.monthlyPriceCents
+              : definition.monthlyPriceCents;
+
+          const highlighted = isCurrent || (
+            !user && isPremium
+          );
+
+          const backgroundColor = isPremium
+            ? "#2563EB"
+            : "#0F766E";
+
+          const pending =
+            membership.pendingPlan !== null ||
+            membership.cancelAtPeriodEnd;
+
+          let buttonLabel = "";
+
+          if (!isFree) {
+            if (loading) {
+              buttonLabel = "Loading...";
+            } else if (currentPaidSelection) {
+              buttonLabel = "Current Plan";
+            } else if (
+              currentPlan === planOption &&
+              membership.billingInterval !== interval
+            ) {
+              buttonLabel = `Switch to ${
+                interval === "annual"
+                  ? "Annual"
+                  : "Monthly"
+              }`;
+            } else if (
+              currentPlan === "premium_plus" &&
+              isPremium
+            ) {
+              buttonLabel = "Switch to Premium";
+            } else if (
+              currentPlan === "premium" &&
+              isPremiumPlus
+            ) {
+              buttonLabel = "Upgrade to Premium+";
+            } else {
+              buttonLabel = `Upgrade to ${
+                isPremium ? "Premium" : "Premium+"
+              }`;
+            }
+          }
 
           return (
             <section
@@ -198,16 +658,18 @@ export default function PricingPage() {
                 flexDirection: "column",
                 padding: "30px",
                 borderRadius: "22px",
-                border: isPremium
-                  ? "2px solid #2563EB"
-                  : "1px solid #E2E8F0",
+                border: isCurrent
+                  ? "2px solid #0F766E"
+                  : highlighted
+                    ? "2px solid #2563EB"
+                    : "1px solid #E2E8F0",
                 background: "#FFFFFF",
-                boxShadow: isPremium
-                  ? "0 16px 35px rgba(37, 99, 235, 0.12)"
-                  : "0 8px 24px rgba(15, 23, 42, 0.05)",
+                boxShadow: highlighted
+                  ? "0 16px 35px rgba(37,99,235,0.12)"
+                  : "0 8px 24px rgba(15,23,42,0.05)",
               }}
             >
-              {definition.badge && (
+              {(isCurrent || definition.badge) && (
                 <div
                   style={{
                     position: "absolute",
@@ -216,7 +678,9 @@ export default function PricingPage() {
                     transform: "translateX(-50%)",
                     padding: "6px 12px",
                     borderRadius: "999px",
-                    background: "#2563EB",
+                    background: isCurrent
+                      ? "#0F766E"
+                      : "#2563EB",
                     color: "#FFFFFF",
                     fontSize: "11px",
                     fontWeight: 800,
@@ -225,7 +689,9 @@ export default function PricingPage() {
                     textTransform: "uppercase",
                   }}
                 >
-                  {definition.badge}
+                  {isCurrent
+                    ? "Your Current Membership"
+                    : definition.badge}
                 </div>
               )}
 
@@ -320,42 +786,78 @@ export default function PricingPage() {
 
               <div style={{ marginTop: "25px" }}>
                 {isFree ? (
-                  <Link
-                    href="/journey"
+                  isCurrent ? (
+                    <button
+                      type="button"
+                      disabled
+                      style={{
+                        ...buttonStyle,
+                        background: "#E2E8F0",
+                        color: "#475569",
+                        cursor: "default",
+                      }}
+                    >
+                      Current Plan
+                    </button>
+                  ) : (
+                    <Link
+                      href="/journey"
+                      style={{
+                        ...buttonStyle,
+                        background: "#FFFFFF",
+                        color: "#0F172A",
+                        border: "1px solid #CBD5E1",
+                        textDecoration: "none",
+                      }}
+                    >
+                      {currentPlan === "free"
+                        ? "Start Free"
+                        : "Continue My Journey"}
+                    </Link>
+                  )
+                ) : (
+                  <button
+                    type="button"
+                    disabled={
+                      loading ||
+                      busyPlan !== null ||
+                      currentPaidSelection ||
+                      pending
+                    }
+                    onClick={() =>
+                      handlePlanClick(
+                        planOption as PaidPlan
+                      )
+                    }
                     style={{
-                      display: "block",
-                      textAlign: "center",
-                      padding: "13px 18px",
-                      borderRadius: "10px",
-                      border: "1px solid #CBD5E1",
-                      background: "#FFFFFF",
-                      color: "#0F172A",
-                      fontSize: "14px",
-                      fontWeight: 800,
-                      textDecoration: "none",
+                      ...buttonStyle,
+                      background:
+                        currentPaidSelection ||
+                        loading ||
+                        pending
+                          ? "#CBD5E1"
+                          : backgroundColor,
+                      color:
+                        currentPaidSelection ||
+                        loading ||
+                        pending
+                          ? "#475569"
+                          : "#FFFFFF",
+                      cursor:
+                        loading ||
+                        busyPlan !== null ||
+                        currentPaidSelection ||
+                        pending
+                          ? "not-allowed"
+                          : "pointer",
                     }}
                   >
-                    Start Free
-                  </Link>
-                ) : (
-                  <StripeCheckoutButton
-                    plan={
-                      isPremium
-                        ? "premium"
-                        : "premium_plus"
-                    }
-                    interval={interval}
-                    label={
-                      isPremium
-                        ? "Upgrade to Premium"
-                        : "Upgrade to Premium+"
-                    }
-                    backgroundColor={
-                      isPremium
-                        ? "#2563EB"
-                        : "#0F766E"
-                    }
-                  />
+                    {busyPlan === planOption
+                      ? "Processing..."
+                      : pending
+                        ? "Change Pending"
+                        : buttonLabel}
+                  </button>
                 )}
               </div>
 
@@ -420,7 +922,143 @@ export default function PricingPage() {
         })}
       </section>
 
-      {/* VALUE MESSAGE */}
+      {preview && previewPlan && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Confirm subscription change"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1000,
+            background: "rgba(15,23,42,0.65)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px",
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: "480px",
+              padding: "30px",
+              borderRadius: "20px",
+              background: "#FFFFFF",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.2)",
+            }}
+          >
+            <h2
+              style={{
+                marginTop: 0,
+                color: "#173B52",
+              }}
+            >
+              Confirm Membership Change
+            </h2>
+
+            <p>
+              New plan:{" "}
+              <strong>
+                {membershipName(previewPlan)}
+              </strong>
+            </p>
+
+            <p>
+              Billing:{" "}
+              <strong>
+                {previewInterval === "monthly"
+                  ? "Monthly"
+                  : "Annual"}
+              </strong>
+            </p>
+
+            {preview.changeType ===
+            "scheduled_downgrade" ? (
+              <>
+                <p>
+                  Your current membership remains
+                  active until renewal.
+                </p>
+
+                {preview.effectiveAt && (
+                  <p>
+                    Effective date:{" "}
+                    <strong>
+                      {formatDate(preview.effectiveAt)}
+                    </strong>
+                  </p>
+                )}
+              </>
+            ) : (
+              <>
+                <p>
+                  Estimated amount due now:
+                </p>
+
+                <p
+                  style={{
+                    fontSize: "30px",
+                    fontWeight: 800,
+                    color: "#173B52",
+                  }}
+                >
+                  {preview.amountDueFormatted ??
+                    "Calculated at confirmation"}
+                </p>
+
+                <p
+                  style={{
+                    color: "#64748B",
+                    fontSize: "13px",
+                  }}
+                >
+                  Final charges are determined by Stripe.
+                  Access updates after payment verification.
+                </p>
+              </>
+            )}
+
+            <div
+              style={{
+                display: "flex",
+                gap: "12px",
+                marginTop: "25px",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setPreview(null);
+                  setPreviewPlan(null);
+                }}
+                disabled={busyPlan !== null}
+                style={{
+                  ...buttonStyle,
+                  background: "#E2E8F0",
+                  color: "#334155",
+                }}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={confirmChange}
+                disabled={busyPlan !== null}
+                style={{
+                  ...buttonStyle,
+                  background: "#0F766E",
+                }}
+              >
+                {busyPlan
+                  ? "Processing..."
+                  : "Confirm Change"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <section
         style={{
@@ -460,8 +1098,6 @@ export default function PricingPage() {
         </p>
       </section>
 
-      {/* FOOTER NAVIGATION */}
-
       <div
         style={{
           maxWidth: "900px",
@@ -484,19 +1120,19 @@ export default function PricingPage() {
           ← Back to My Journey
         </Link>
 
-        <Link
-          href={`/login?returnTo=${encodeURIComponent(
-            pricingReturnTo
-          )}`}
-          style={{
-            color: "#2563EB",
-            fontSize: "13px",
-            fontWeight: 700,
-            textDecoration: "none",
-          }}
-        >
-          Log In
-        </Link>
+        {!user && (
+          <Link
+            href="/login?returnTo=%2Fpricing"
+            style={{
+              color: "#2563EB",
+              fontSize: "13px",
+              fontWeight: 700,
+              textDecoration: "none",
+            }}
+          >
+            Log In
+          </Link>
+        )}
       </div>
     </main>
   );
