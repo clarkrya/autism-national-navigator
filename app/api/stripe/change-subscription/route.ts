@@ -60,7 +60,10 @@ function selectionFromPrice(
   return null;
 }
 
-function fail(error: string, status = 400) {
+function fail(
+  error: string,
+  status = 400
+) {
   return NextResponse.json(
     { error },
     { status }
@@ -86,6 +89,35 @@ function getInvoiceId(
   return typeof invoice === "string"
     ? invoice
     : invoice.id;
+}
+
+function getScheduleId(
+  schedule:
+    | string
+    | Stripe.SubscriptionSchedule
+    | null
+): string | null {
+  if (!schedule) return null;
+
+  return typeof schedule === "string"
+    ? schedule
+    : schedule.id;
+}
+
+function getPhasePriceId(
+  phase: Stripe.SubscriptionSchedule.Phase
+): string | null {
+  if (phase.items.length !== 1) {
+    return null;
+  }
+
+  const price = phase.items[0].price;
+
+  if (!price) return null;
+
+  return typeof price === "string"
+    ? price
+    : price.id;
 }
 
 function formatAmount(
@@ -131,83 +163,41 @@ function getNextBillingDate(
   );
 }
 
-function getScheduleId(
-  schedule:
-    | string
-    | Stripe.SubscriptionSchedule
-    | null
-): string | null {
-  if (!schedule) return null;
-
-  return typeof schedule === "string"
-    ? schedule
-    : schedule.id;
-}
-
-function getPhasePriceId(
-  phase: Stripe.SubscriptionSchedule.Phase
-): string | null {
-  if (phase.items.length !== 1) {
-    return null;
-  }
-
-  const price = phase.items[0].price;
-
-  if (!price) return null;
-
-  return typeof price === "string"
-    ? price
-    : price.id;
-}
-
-/**
- * Check whether an attached subscription
- * schedule is safe to release.
- *
- * A schedule can be released only when:
- *
- * - It is active.
- * - The current Stripe subscription has
- *   reached the scheduled phase.
- * - The active phase matches the current
- *   subscription price.
- * - No future phase changes the price.
- * - The schedule is configured to release,
- *   not cancel, the subscription.
- *
- * Stripe's subscription period is used
- * instead of the server clock so this
- * also works with Stripe test clocks.
- */
 function canReleaseSchedule(
   schedule: Stripe.SubscriptionSchedule,
   subscription: Stripe.Subscription,
   currentPriceId: string,
   currentPeriodStart: number
 ): boolean {
-  if (schedule.status !== "active") {
-    return false;
-  }
-
-  if (schedule.end_behavior !== "release") {
+  if (
+    schedule.status !== "active" ||
+    schedule.end_behavior !== "release"
+  ) {
     return false;
   }
 
   const phases = schedule.phases;
 
-  if (phases.length === 0) {
+  if (phases.length < 2) {
     return false;
   }
 
-  const activePhase = phases.find(
+  const activeIndex = phases.findIndex(
     (phase) =>
       phase.start_date <= currentPeriodStart &&
       phase.end_date > currentPeriodStart
   );
 
-  if (!activePhase) {
+  // Only release after reaching the final
+  // scheduled phase.
+  if (
+    activeIndex < 1 ||
+    activeIndex !== phases.length - 1
+  ) {
     return false;
   }
+
+  const activePhase = phases[activeIndex];
 
   if (
     getPhasePriceId(activePhase) !==
@@ -216,27 +206,178 @@ function canReleaseSchedule(
     return false;
   }
 
-  // A schedule may contain a future change
-  // even though its current phase matches.
-  // Never release that schedule automatically.
-  const futureChange = phases.some(
-    (phase) =>
-      phase.start_date > currentPeriodStart &&
-      getPhasePriceId(phase) !==
-        currentPriceId
-  );
-
-  if (futureChange) {
+  // The previous phase must have used a
+  // different price. This identifies a
+  // completed scheduled price change.
+  if (
+    getPhasePriceId(phases[activeIndex - 1]) ===
+    currentPriceId
+  ) {
     return false;
   }
 
-  // Keep automatic release limited to the
-  // subscription's own attached schedule.
-  const attachedId = getScheduleId(
-    subscription.schedule
+  return (
+    getScheduleId(subscription.schedule) ===
+    schedule.id
+  );
+}
+
+function invoiceSubscriptionId(
+  invoice: Stripe.Invoice
+): string | null {
+  const subscription =
+    invoice.parent?.subscription_details
+      ?.subscription;
+
+  if (typeof subscription === "string") {
+    return subscription;
+  }
+
+  return subscription?.id ?? null;
+}
+
+/**
+ * Independently verify payment with Stripe.
+ *
+ * This is used after writing the pending
+ * change to Firestore, so a webhook arriving
+ * before that write cannot leave the account
+ * permanently pending.
+ */
+async function verifyPaidChange(
+  stripe: Stripe,
+  subscriptionId: string,
+  invoiceId: string,
+  targetPriceId: string,
+  uid: string
+): Promise<boolean> {
+  const subscription =
+    await stripe.subscriptions.retrieve(
+      subscriptionId
+    );
+
+  if (
+    subscription.metadata.firebaseUid !== uid ||
+    subscription.status !== "active" ||
+    Boolean(subscription.pending_update) ||
+    subscription.items.data.length !== 1 ||
+    subscription.items.data[0].price.id !==
+      targetPriceId
+  ) {
+    return false;
+  }
+
+  const invoice =
+    await stripe.invoices.retrieve(invoiceId);
+
+  if (
+    invoice.status !== "paid" ||
+    invoiceSubscriptionId(invoice) !==
+      subscriptionId
+  ) {
+    return false;
+  }
+
+  const lines =
+    await stripe.invoices.listLineItems(
+      invoiceId,
+      { limit: 100 }
+    );
+
+  return lines.data.some(
+    (line) =>
+      line.pricing?.price_details?.price ===
+        targetPriceId &&
+      line.amount >= 0
+  );
+}
+
+/**
+ * Clear pending status only if Firestore
+ * still references this exact change.
+ *
+ * The transaction prevents an older request
+ * from overwriting a newer membership change.
+ */
+async function reconcilePaidChange(
+  stripe: Stripe,
+  ref: ReturnType<
+    ReturnType<
+      ReturnType<
+        ReturnType<
+          typeof getAdminDb
+        >["collection"]
+      >["doc"]
+    >["collection"]
+  >["doc"] extends (...args: never[]) => infer R
+    ? R
+    : never,
+  uid: string,
+  subscriptionId: string,
+  invoiceId: string,
+  targetPriceId: string,
+  plan: PaidPlan,
+  interval: BillingInterval
+): Promise<boolean> {
+  const verified = await verifyPaidChange(
+    stripe,
+    subscriptionId,
+    invoiceId,
+    targetPriceId,
+    uid
   );
 
-  return attachedId === schedule.id;
+  if (!verified) {
+    return false;
+  }
+
+  const db = getAdminDb();
+
+  await db.runTransaction(
+    async (transaction) => {
+      const snapshot =
+        await transaction.get(ref);
+
+      const record = snapshot.data();
+
+      if (
+        !record ||
+        record.stripeSubscriptionId !==
+          subscriptionId ||
+        record.pendingInvoiceId !==
+          invoiceId ||
+        record.pendingPlan !== plan ||
+        record.pendingBillingInterval !==
+          interval
+      ) {
+        return;
+      }
+
+      transaction.set(
+        ref,
+        {
+          plan,
+          billingInterval: interval,
+          status: "active",
+          pendingPlan: null,
+          pendingBillingInterval: null,
+          pendingInvoiceId: null,
+          updatedAt: Date.now(),
+        },
+        { merge: true }
+      );
+    }
+  );
+
+  const latest = await ref.get();
+
+  return (
+    latest.data()?.plan === plan &&
+    latest.data()?.billingInterval ===
+      interval &&
+    !latest.data()?.pendingPlan &&
+    !latest.data()?.pendingInvoiceId
+  );
 }
 
 export async function POST(
@@ -337,9 +478,8 @@ export async function POST(
 
     let item = subscription.items.data[0];
 
-    const current = selectionFromPrice(
-      item.price.id
-    );
+    const current =
+      selectionFromPrice(item.price.id);
 
     if (!current) {
       return fail(
@@ -374,10 +514,6 @@ export async function POST(
       );
     }
 
-    // ======================================
-    // CHECK EXISTING SUBSCRIPTION SCHEDULE
-    // ======================================
-
     let releasableScheduleId:
       | string
       | null = null;
@@ -393,26 +529,17 @@ export async function POST(
           attachedScheduleId
         );
 
-      const safeToRelease =
+      if (
         canReleaseSchedule(
           schedule,
           subscription,
           item.price.id,
           item.current_period_start
-        );
-
-      if (safeToRelease) {
+        )
+      ) {
         releasableScheduleId =
           schedule.id;
-
-        console.info(
-          "Previous subscription schedule is eligible for release."
-        );
       } else {
-        console.warn(
-          "Subscription change blocked: attached schedule has unresolved phases or restrictions."
-        );
-
         return fail(
           "A subscription change is still scheduled. Please wait until it takes effect.",
           409
@@ -420,29 +547,16 @@ export async function POST(
       }
     }
 
-    // ======================================
-    // CHECK OTHER PENDING CHANGES
-    // ======================================
-
     const blockers = {
       cancellationPending:
         subscription.cancel_at_period_end ===
         true,
-
       stripePendingUpdate:
-        Boolean(
-          subscription.pending_update
-        ),
-
+        Boolean(subscription.pending_update),
       firestorePendingInvoice:
-        Boolean(
-          record.pendingInvoiceId
-        ),
-
+        Boolean(record.pendingInvoiceId),
       firestorePendingPlan:
-        Boolean(
-          record.pendingPlan
-        ),
+        Boolean(record.pendingPlan),
     };
 
     if (
@@ -450,11 +564,6 @@ export async function POST(
         Boolean
       )
     ) {
-      console.warn(
-        "Subscription change blocked:",
-        blockers
-      );
-
       return fail(
         "A cancellation or subscription change is already pending.",
         409
@@ -515,10 +624,8 @@ export async function POST(
         currentPlan: current.plan,
         requestedPlan: plan,
         requestedInterval: interval,
-        currency:
-          invoice.currency,
-        amountDue:
-          invoice.amount_due,
+        currency: invoice.currency,
+        amountDue: invoice.amount_due,
         amountDueFormatted:
           formatAmount(
             invoice.amount_due,
@@ -528,13 +635,10 @@ export async function POST(
     }
 
     // ======================================
-    // CONFIRM: RELEASE OLD SCHEDULE
+    // RELEASE COMPLETED SCHEDULE
     // ======================================
 
     if (releasableScheduleId) {
-      // Recheck the Stripe state before
-      // releasing the schedule. This avoids
-      // acting on an outdated preview.
       const freshSubscription =
         await stripe.subscriptions.retrieve(
           subscription.id
@@ -565,8 +669,10 @@ export async function POST(
 
       if (
         !freshItem ||
-        freshSubscription.items.data.length !== 1 ||
-        freshSubscription.status !== "active" ||
+        freshSubscription.items.data.length !==
+          1 ||
+        freshSubscription.status !==
+          "active" ||
         freshSubscription.cancel_at_period_end ||
         freshSubscription.pending_update ||
         freshItem.price.id !==
@@ -588,10 +694,6 @@ export async function POST(
         releasableScheduleId
       );
 
-      console.info(
-        "Previous completed-change schedule released."
-      );
-
       subscription =
         await stripe.subscriptions.retrieve(
           subscription.id
@@ -599,7 +701,8 @@ export async function POST(
 
       if (
         subscription.schedule ||
-        subscription.status !== "active" ||
+        subscription.status !==
+          "active" ||
         subscription.items.data.length !== 1
       ) {
         return fail(
@@ -632,7 +735,7 @@ export async function POST(
     }
 
     // ======================================
-    // SCHEDULE PREMIUM+ TO PREMIUM
+    // SCHEDULE DOWNGRADE
     // ======================================
 
     if (downgrade) {
@@ -672,8 +775,7 @@ export async function POST(
                   {
                     price:
                       item.price.id,
-                    quantity:
-                      item.quantity ?? 1,
+                    quantity,
                   },
                 ],
                 proration_behavior:
@@ -688,8 +790,7 @@ export async function POST(
                   {
                     price:
                       targetPriceId,
-                    quantity:
-                      item.quantity ?? 1,
+                    quantity,
                   },
                 ],
                 proration_behavior:
@@ -738,7 +839,7 @@ export async function POST(
     }
 
     // ======================================
-    // IMMEDIATE PLAN / BILLING CHANGE
+    // IMMEDIATE MEMBERSHIP CHANGE
     // ======================================
 
     const updated =
@@ -774,6 +875,7 @@ export async function POST(
         updated.latest_invoice
       );
 
+    // Save pending state first.
     await ref.set(
       {
         pendingPlan: plan,
@@ -787,19 +889,51 @@ export async function POST(
       { merge: true }
     );
 
+    // ======================================
+    // AUTOMATIC PAYMENT RECONCILIATION
+    // ======================================
+
+    let paymentVerified = false;
+
+    if (latestInvoiceId) {
+      try {
+        paymentVerified =
+          await reconcilePaidChange(
+            stripe,
+            ref,
+            uid,
+            subscription.id,
+            latestInvoiceId,
+            targetPriceId,
+            plan,
+            interval
+          );
+      } catch (reconcileError) {
+        // Do not treat a reconciliation
+        // failure as a payment failure.
+        // The webhook can still complete
+        // synchronization independently.
+        console.error(
+          "Post-change payment reconciliation failed:",
+          reconcileError
+        );
+      }
+    }
+
     return NextResponse.json({
       success: true,
       changeType: "immediate",
-      paymentStatus:
-        updated.pending_update
+      paymentStatus: paymentVerified
+        ? "paid"
+        : updated.pending_update
           ? "pending"
           : applied
             ? "processing"
             : "not_applied",
-      invoiceId:
-        latestInvoiceId,
-      message:
-        "Subscription change submitted. Access updates after payment verification.",
+      invoiceId: latestInvoiceId,
+      message: paymentVerified
+        ? "Your membership has been updated successfully."
+        : "Subscription change submitted. Access updates after payment verification.",
     });
   } catch (error) {
     console.error(
