@@ -13,12 +13,15 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type PaidPlan = "premium" | "premium_plus";
+
 type Selection = {
   plan: PaidPlan;
   interval: BillingInterval;
 };
 
-function selectionFromPrice(priceId: string): Selection | null {
+function selectionFromPrice(
+  priceId: string
+): Selection | null {
   for (const plan of ["premium", "premium_plus"] as const) {
     for (const interval of ["monthly", "annual"] as const) {
       if (STRIPE_PRICE_IDS[plan][interval] === priceId) {
@@ -37,14 +40,20 @@ function isInterval(value: unknown): value is BillingInterval {
   return value === "monthly" || value === "annual";
 }
 
-function invoiceSubscriptionId(invoice: Stripe.Invoice): string | null {
+function invoiceSubscriptionId(
+  invoice: Stripe.Invoice
+): string | null {
   const subscription =
     invoice.parent?.subscription_details?.subscription;
 
-  if (typeof subscription === "string") return subscription;
+  if (typeof subscription === "string") {
+    return subscription;
+  }
+
   if (subscription && typeof subscription === "object") {
     return subscription.id;
   }
+
   return null;
 }
 
@@ -54,6 +63,7 @@ async function isPaidInvoiceForPrice(
   priceId: string
 ): Promise<boolean> {
   const stripe = getStripe();
+
   const invoice = await stripe.invoices.retrieve(invoiceId);
 
   if (
@@ -63,10 +73,10 @@ async function isPaidInvoiceForPrice(
     return false;
   }
 
-  // A paid invoice for a previous plan must not authorize a new plan.
-  const lines = await stripe.invoices.listLineItems(invoiceId, {
-    limit: 100,
-  });
+  const lines = await stripe.invoices.listLineItems(
+    invoiceId,
+    { limit: 100 }
+  );
 
   return lines.data.some(
     (line) =>
@@ -98,20 +108,29 @@ async function syncSubscription(
 ): Promise<void> {
   const stripe = getStripe();
 
-  // Always retrieve current Stripe state rather than trusting an old event.
+  // Retrieve current Stripe state, not an old event snapshot.
   const subscription = await stripe.subscriptions.retrieve(
     subscriptionId,
     { expand: ["latest_invoice"] }
   );
 
   const uid = subscription.metadata.firebaseUid;
-  if (!uid) throw new Error("Subscription missing Firebase UID.");
+
+  if (!uid) {
+    throw new Error("Subscription missing Firebase UID.");
+  }
+
+  if (subscription.items.data.length !== 1) {
+    throw new Error("Unsupported subscription configuration.");
+  }
 
   const item = subscription.items.data[0];
-  if (!item) throw new Error("Subscription has no items.");
 
   const selection = selectionFromPrice(item.price.id);
-  if (!selection) throw new Error("Unrecognized Stripe price.");
+
+  if (!selection) {
+    throw new Error("Unrecognized Stripe price.");
+  }
 
   const ref = getAdminDb()
     .collection("users")
@@ -127,7 +146,9 @@ async function syncSubscription(
     existing.stripeSubscriptionId !== subscriptionId &&
     existing.status !== "canceled"
   ) {
-    throw new Error("Another subscription is already associated with user.");
+    throw new Error(
+      "Another subscription is already associated with user."
+    );
   }
 
   const sameSubscription =
@@ -154,7 +175,8 @@ async function syncSubscription(
       : null;
 
   const pendingInvoiceId =
-    sameSubscription && typeof existing?.pendingInvoiceId === "string"
+    sameSubscription &&
+    typeof existing?.pendingInvoiceId === "string"
       ? existing.pendingInvoiceId
       : null;
 
@@ -187,17 +209,22 @@ async function syncSubscription(
         )
       : false;
 
-  let plan: PaidPlan = previousPlan ?? selection.plan;
+  let plan: PaidPlan =
+    previousPlan ?? selection.plan;
+
   let interval: BillingInterval =
     previousInterval ?? selection.interval;
 
   let effectiveStatus = status;
+
   let nextPendingPlan: PaidPlan | null = pendingPlan;
-  let nextPendingInterval: BillingInterval | null = pendingInterval;
-  let nextPendingInvoiceId: string | null = pendingInvoiceId;
+  let nextPendingInterval: BillingInterval | null =
+    pendingInterval;
+  let nextPendingInvoiceId: string | null =
+    pendingInvoiceId;
 
   if (!previousPlan) {
-    // Initial checkout: no paid entitlement until the invoice is paid.
+    // Initial checkout must be paid before access is granted.
     if (latestInvoicePaid) {
       plan = selection.plan;
       interval = selection.interval;
@@ -213,12 +240,20 @@ async function syncSubscription(
       previousInterval === selection.interval;
 
     if (sameSelection) {
-      // Current confirmed entitlement remains unchanged.
       nextPendingPlan = null;
       nextPendingInterval = null;
       nextPendingInvoiceId = null;
-    } else if (pendingInvoicePaid) {
-      // A specific paid invoice authorizes the pending change.
+    } else if (
+      pendingInvoicePaid ||
+      (
+        // Stripe may complete payment before Firestore
+        // records the invoice ID. The latest paid invoice
+        // can verify the currently selected Stripe price.
+        latestInvoicePaid &&
+        pendingPlan === selection.plan &&
+        pendingInterval === selection.interval
+      )
+    ) {
       plan = selection.plan;
       interval = selection.interval;
       nextPendingPlan = null;
@@ -230,20 +265,18 @@ async function syncSubscription(
       stripeStatus === "active" &&
       !pendingInvoiceId
     ) {
-      // Scheduled downgrade becomes effective when Stripe changes price.
+      // Scheduled downgrade has taken effect.
       plan = selection.plan;
       interval = selection.interval;
       nextPendingPlan = null;
       nextPendingInterval = null;
       nextPendingInvoiceId = null;
     } else {
-      // Never grant an unpaid upgrade or billing-interval change.
+      // Preserve existing access until payment is verified.
       plan = previousPlan;
       interval = previousInterval ?? selection.interval;
       nextPendingPlan = selection.plan;
       nextPendingInterval = selection.interval;
-
-      // Retain only an invoice explicitly associated with this change.
       nextPendingInvoiceId = pendingInvoiceId;
     }
   }
@@ -252,6 +285,11 @@ async function syncSubscription(
     typeof subscription.customer === "string"
       ? subscription.customer
       : subscription.customer.id;
+
+  const scheduleId =
+    typeof subscription.schedule === "string"
+      ? subscription.schedule
+      : subscription.schedule?.id ?? null;
 
   const now = Date.now();
 
@@ -263,6 +301,7 @@ async function syncSubscription(
       billingInterval: interval,
       stripeCustomerId: customerId,
       stripeSubscriptionId: subscriptionId,
+      stripeScheduleId: scheduleId,
       currentPeriodStart:
         typeof item.current_period_start === "number"
           ? item.current_period_start * 1000
@@ -271,7 +310,8 @@ async function syncSubscription(
         typeof item.current_period_end === "number"
           ? item.current_period_end * 1000
           : null,
-      cancelAtPeriodEnd: subscription.cancel_at_period_end,
+      cancelAtPeriodEnd:
+        subscription.cancel_at_period_end,
       pendingPlan: nextPendingPlan,
       pendingBillingInterval: nextPendingInterval,
       pendingInvoiceId: nextPendingInvoiceId,
@@ -287,13 +327,17 @@ export async function POST(request: NextRequest) {
 
   if (!secret) {
     console.error("Missing STRIPE_WEBHOOK_SECRET.");
+
     return NextResponse.json(
       { error: "Webhook configuration missing." },
       { status: 500 }
     );
   }
 
-  const signature = request.headers.get("stripe-signature");
+  const signature = request.headers.get(
+    "stripe-signature"
+  );
+
   if (!signature) {
     return NextResponse.json(
       { error: "Missing Stripe signature." },
@@ -359,7 +403,9 @@ export async function POST(request: NextRequest) {
       await syncSubscription(subscriptionId);
     }
 
-    return NextResponse.json({ received: true });
+    return NextResponse.json({
+      received: true,
+    });
   } catch (error) {
     console.error("Stripe webhook error:", error);
 
