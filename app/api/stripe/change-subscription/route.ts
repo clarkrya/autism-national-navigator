@@ -2,7 +2,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import type Stripe from "stripe";
 
-import { requireAuthenticatedUser } from "../../../../lib/serverSubscriptionAuth";
+import {
+  requireAuthenticatedUser,
+} from "../../../../lib/serverSubscriptionAuth";
 import { getAdminDb } from "../../../../lib/firebaseAdmin";
 import {
   getStripe,
@@ -27,21 +29,29 @@ type Selection = {
 };
 
 function validPlan(value: unknown): value is PaidPlan {
-  return value === "premium" || value === "premium_plus";
+  return value === "premium" ||
+    value === "premium_plus";
 }
 
 function validInterval(
   value: unknown
 ): value is BillingInterval {
-  return value === "monthly" || value === "annual";
+  return value === "monthly" ||
+    value === "annual";
 }
 
 function selectionFromPrice(
   priceId: string
 ): Selection | null {
-  for (const plan of ["premium", "premium_plus"] as const) {
-    for (const interval of ["monthly", "annual"] as const) {
-      if (STRIPE_PRICE_IDS[plan][interval] === priceId) {
+  for (
+    const plan of ["premium", "premium_plus"] as const
+  ) {
+    for (
+      const interval of ["monthly", "annual"] as const
+    ) {
+      if (
+        STRIPE_PRICE_IDS[plan][interval] === priceId
+      ) {
         return { plan, interval };
       }
     }
@@ -51,7 +61,10 @@ function selectionFromPrice(
 }
 
 function fail(error: string, status = 400) {
-  return NextResponse.json({ error }, { status });
+  return NextResponse.json(
+    { error },
+    { status }
+  );
 }
 
 function customerId(
@@ -85,13 +98,6 @@ function formatAmount(
   }).format(amount / 100);
 }
 
-/**
- * Calculate the end of one billing cycle
- * using calendar months or years.
- *
- * The schedule uses end_behavior: "release"
- * so the subscription can continue renewing.
- */
 function getNextBillingDate(
   startTimestamp: number,
   interval: BillingInterval
@@ -120,33 +126,149 @@ function getNextBillingDate(
     )
   );
 
-  return Math.floor(nextDate.getTime() / 1000);
+  return Math.floor(
+    nextDate.getTime() / 1000
+  );
 }
 
-export async function POST(request: NextRequest) {
+function getScheduleId(
+  schedule:
+    | string
+    | Stripe.SubscriptionSchedule
+    | null
+): string | null {
+  if (!schedule) return null;
+
+  return typeof schedule === "string"
+    ? schedule
+    : schedule.id;
+}
+
+function getPhasePriceId(
+  phase: Stripe.SubscriptionSchedule.Phase
+): string | null {
+  if (phase.items.length !== 1) {
+    return null;
+  }
+
+  const price = phase.items[0].price;
+
+  if (!price) return null;
+
+  return typeof price === "string"
+    ? price
+    : price.id;
+}
+
+/**
+ * Check whether an attached subscription
+ * schedule is safe to release.
+ *
+ * A schedule can be released only when:
+ *
+ * - It is active.
+ * - The current Stripe subscription has
+ *   reached the scheduled phase.
+ * - The active phase matches the current
+ *   subscription price.
+ * - No future phase changes the price.
+ * - The schedule is configured to release,
+ *   not cancel, the subscription.
+ *
+ * Stripe's subscription period is used
+ * instead of the server clock so this
+ * also works with Stripe test clocks.
+ */
+function canReleaseSchedule(
+  schedule: Stripe.SubscriptionSchedule,
+  subscription: Stripe.Subscription,
+  currentPriceId: string,
+  currentPeriodStart: number
+): boolean {
+  if (schedule.status !== "active") {
+    return false;
+  }
+
+  if (schedule.end_behavior !== "release") {
+    return false;
+  }
+
+  const phases = schedule.phases;
+
+  if (phases.length === 0) {
+    return false;
+  }
+
+  const activePhase = phases.find(
+    (phase) =>
+      phase.start_date <= currentPeriodStart &&
+      phase.end_date > currentPeriodStart
+  );
+
+  if (!activePhase) {
+    return false;
+  }
+
+  if (
+    getPhasePriceId(activePhase) !==
+    currentPriceId
+  ) {
+    return false;
+  }
+
+  // A schedule may contain a future change
+  // even though its current phase matches.
+  // Never release that schedule automatically.
+  const futureChange = phases.some(
+    (phase) =>
+      phase.start_date > currentPeriodStart &&
+      getPhasePriceId(phase) !==
+        currentPriceId
+  );
+
+  if (futureChange) {
+    return false;
+  }
+
+  // Keep automatic release limited to the
+  // subscription's own attached schedule.
+  const attachedId = getScheduleId(
+    subscription.schedule
+  );
+
+  return attachedId === schedule.id;
+}
+
+export async function POST(
+  request: NextRequest
+) {
   let uid: string;
 
-  // =========================================
-  // AUTHENTICATION
-  // =========================================
-
   try {
-    uid = (await requireAuthenticatedUser(request)).uid;
+    uid = (
+      await requireAuthenticatedUser(request)
+    ).uid;
   } catch {
-    return fail("Please sign in.", 401);
+    return fail(
+      "Please sign in.",
+      401
+    );
   }
 
   let body: ChangeBody;
 
   try {
-    body = (await request.json()) as ChangeBody;
+    body =
+      (await request.json()) as ChangeBody;
   } catch {
     return fail("Invalid JSON.");
   }
 
   if (
-    (body.action !== "preview" &&
-      body.action !== "confirm") ||
+    (
+      body.action !== "preview" &&
+      body.action !== "confirm"
+    ) ||
     !validPlan(body.plan) ||
     !validInterval(body.interval)
   ) {
@@ -171,7 +293,8 @@ export async function POST(request: NextRequest) {
 
     if (
       !record ||
-      typeof record.stripeSubscriptionId !== "string"
+      typeof record.stripeSubscriptionId !==
+        "string"
     ) {
       return fail(
         "No paid subscription found.",
@@ -179,14 +302,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const subscription =
+    let subscription =
       await stripe.subscriptions.retrieve(
         record.stripeSubscriptionId
       );
-
-    // =========================================
-    // SUBSCRIPTION VALIDATION
-    // =========================================
 
     if (
       subscription.metadata.firebaseUid !== uid
@@ -207,47 +326,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // =========================================
-    // PENDING CHANGE DIAGNOSTICS
-    // =========================================
-
-    const blockers = {
-      cancellationPending:
-        subscription.cancel_at_period_end === true,
-
-      stripeScheduleAttached:
-        Boolean(subscription.schedule),
-
-      stripePendingUpdate:
-        Boolean(subscription.pending_update),
-
-      firestorePendingInvoice:
-        Boolean(record.pendingInvoiceId),
-
-      firestorePendingPlan:
-        Boolean(record.pendingPlan),
-    };
-
-    if (Object.values(blockers).some(Boolean)) {
-      console.warn(
-        "Subscription change blocked:",
-        blockers
-      );
-
-      return fail(
-        "A cancellation or subscription change is already pending.",
-        409
-      );
-    }
-
-    if (subscription.items.data.length !== 1) {
+    if (
+      subscription.items.data.length !== 1
+    ) {
       return fail(
         "Unsupported subscription configuration.",
         409
       );
     }
 
-    const item = subscription.items.data[0];
+    let item = subscription.items.data[0];
 
     const current = selectionFromPrice(
       item.price.id
@@ -262,7 +350,8 @@ export async function POST(request: NextRequest) {
 
     if (
       record.plan !== current.plan ||
-      record.billingInterval !== current.interval
+      record.billingInterval !==
+        current.interval
     ) {
       return fail(
         "Subscription records are not synchronized.",
@@ -270,14 +359,104 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const targetPriceId = getStripePriceId(
-      plan,
-      interval
-    );
+    const targetPriceId =
+      getStripePriceId(
+        plan,
+        interval
+      );
 
-    if (item.price.id === targetPriceId) {
+    if (
+      item.price.id === targetPriceId
+    ) {
       return fail(
         "You already have this plan.",
+        409
+      );
+    }
+
+    // ======================================
+    // CHECK EXISTING SUBSCRIPTION SCHEDULE
+    // ======================================
+
+    let releasableScheduleId:
+      | string
+      | null = null;
+
+    const attachedScheduleId =
+      getScheduleId(
+        subscription.schedule
+      );
+
+    if (attachedScheduleId) {
+      const schedule =
+        await stripe.subscriptionSchedules.retrieve(
+          attachedScheduleId
+        );
+
+      const safeToRelease =
+        canReleaseSchedule(
+          schedule,
+          subscription,
+          item.price.id,
+          item.current_period_start
+        );
+
+      if (safeToRelease) {
+        releasableScheduleId =
+          schedule.id;
+
+        console.info(
+          "Previous subscription schedule is eligible for release."
+        );
+      } else {
+        console.warn(
+          "Subscription change blocked: attached schedule has unresolved phases or restrictions."
+        );
+
+        return fail(
+          "A subscription change is still scheduled. Please wait until it takes effect.",
+          409
+        );
+      }
+    }
+
+    // ======================================
+    // CHECK OTHER PENDING CHANGES
+    // ======================================
+
+    const blockers = {
+      cancellationPending:
+        subscription.cancel_at_period_end ===
+        true,
+
+      stripePendingUpdate:
+        Boolean(
+          subscription.pending_update
+        ),
+
+      firestorePendingInvoice:
+        Boolean(
+          record.pendingInvoiceId
+        ),
+
+      firestorePendingPlan:
+        Boolean(
+          record.pendingPlan
+        ),
+    };
+
+    if (
+      Object.values(blockers).some(
+        Boolean
+      )
+    ) {
+      console.warn(
+        "Subscription change blocked:",
+        blockers
+      );
+
+      return fail(
+        "A cancellation or subscription change is already pending.",
         409
       );
     }
@@ -286,23 +465,28 @@ export async function POST(request: NextRequest) {
       current.plan === "premium_plus" &&
       plan === "premium";
 
-    const periodEnd = item.current_period_end;
-    const quantity = item.quantity ?? 1;
+    const periodEnd =
+      item.current_period_end;
 
-    // =========================================
-    // PREVIEW SUBSCRIPTION CHANGE
-    // =========================================
+    const quantity =
+      item.quantity ?? 1;
+
+    // ======================================
+    // PREVIEW
+    // ======================================
 
     if (action === "preview") {
       if (downgrade) {
         return NextResponse.json({
           preview: true,
-          changeType: "scheduled_downgrade",
+          changeType:
+            "scheduled_downgrade",
           currentPlan: current.plan,
           requestedPlan: plan,
           requestedInterval: interval,
           amountDue: 0,
-          effectiveAt: periodEnd * 1000,
+          effectiveAt:
+            periodEnd * 1000,
         });
       }
 
@@ -311,7 +495,8 @@ export async function POST(request: NextRequest) {
           customer: customerId(
             subscription.customer
           ),
-          subscription: subscription.id,
+          subscription:
+            subscription.id,
           subscription_details: {
             items: [
               {
@@ -319,7 +504,8 @@ export async function POST(request: NextRequest) {
                 price: targetPriceId,
               },
             ],
-            proration_behavior: "always_invoice",
+            proration_behavior:
+              "always_invoice",
           },
         });
 
@@ -329,27 +515,136 @@ export async function POST(request: NextRequest) {
         currentPlan: current.plan,
         requestedPlan: plan,
         requestedInterval: interval,
-        currency: invoice.currency,
-        amountDue: invoice.amount_due,
-        amountDueFormatted: formatAmount(
+        currency:
+          invoice.currency,
+        amountDue:
           invoice.amount_due,
-          invoice.currency
-        ),
+        amountDueFormatted:
+          formatAmount(
+            invoice.amount_due,
+            invoice.currency
+          ),
       });
     }
 
-    // =========================================
-    // SCHEDULE PREMIUM+ TO PREMIUM DOWNGRADE
-    // =========================================
+    // ======================================
+    // CONFIRM: RELEASE OLD SCHEDULE
+    // ======================================
+
+    if (releasableScheduleId) {
+      // Recheck the Stripe state before
+      // releasing the schedule. This avoids
+      // acting on an outdated preview.
+      const freshSubscription =
+        await stripe.subscriptions.retrieve(
+          subscription.id
+        );
+
+      const freshScheduleId =
+        getScheduleId(
+          freshSubscription.schedule
+        );
+
+      if (
+        freshScheduleId !==
+        releasableScheduleId
+      ) {
+        return fail(
+          "Subscription changed. Please refresh and try again.",
+          409
+        );
+      }
+
+      const freshSchedule =
+        await stripe.subscriptionSchedules.retrieve(
+          releasableScheduleId
+        );
+
+      const freshItem =
+        freshSubscription.items.data[0];
+
+      if (
+        !freshItem ||
+        freshSubscription.items.data.length !== 1 ||
+        freshSubscription.status !== "active" ||
+        freshSubscription.cancel_at_period_end ||
+        freshSubscription.pending_update ||
+        freshItem.price.id !==
+          item.price.id ||
+        !canReleaseSchedule(
+          freshSchedule,
+          freshSubscription,
+          freshItem.price.id,
+          freshItem.current_period_start
+        )
+      ) {
+        return fail(
+          "Subscription schedule is not ready for another change.",
+          409
+        );
+      }
+
+      await stripe.subscriptionSchedules.release(
+        releasableScheduleId
+      );
+
+      console.info(
+        "Previous completed-change schedule released."
+      );
+
+      subscription =
+        await stripe.subscriptions.retrieve(
+          subscription.id
+        );
+
+      if (
+        subscription.schedule ||
+        subscription.status !== "active" ||
+        subscription.items.data.length !== 1
+      ) {
+        return fail(
+          "Subscription is still updating. Please try again.",
+          409
+        );
+      }
+
+      item = subscription.items.data[0];
+
+      if (
+        item.price.id !==
+        STRIPE_PRICE_IDS[
+          current.plan
+        ][current.interval]
+      ) {
+        return fail(
+          "Subscription changed. Please refresh and try again.",
+          409
+        );
+      }
+
+      await ref.set(
+        {
+          stripeScheduleId: null,
+          updatedAt: Date.now(),
+        },
+        { merge: true }
+      );
+    }
+
+    // ======================================
+    // SCHEDULE PREMIUM+ TO PREMIUM
+    // ======================================
 
     if (downgrade) {
       const schedule =
         await stripe.subscriptionSchedules.create({
-          from_subscription: subscription.id,
+          from_subscription:
+            subscription.id,
         });
 
       try {
-        const firstPhase = schedule.phases[0];
+        const firstPhase =
+          schedule.phases[0];
 
         if (!firstPhase) {
           throw new Error(
@@ -359,7 +654,7 @@ export async function POST(request: NextRequest) {
 
         const secondPhaseEnd =
           getNextBillingDate(
-            periodEnd,
+            item.current_period_end,
             interval
           );
 
@@ -367,33 +662,38 @@ export async function POST(request: NextRequest) {
           schedule.id,
           {
             end_behavior: "release",
-
             phases: [
               {
-                start_date: firstPhase.start_date,
-                end_date: periodEnd,
-
+                start_date:
+                  firstPhase.start_date,
+                end_date:
+                  item.current_period_end,
                 items: [
                   {
-                    price: item.price.id,
-                    quantity,
+                    price:
+                      item.price.id,
+                    quantity:
+                      item.quantity ?? 1,
                   },
                 ],
-
-                proration_behavior: "none",
+                proration_behavior:
+                  "none",
               },
               {
-                start_date: periodEnd,
-                end_date: secondPhaseEnd,
-
+                start_date:
+                  item.current_period_end,
+                end_date:
+                  secondPhaseEnd,
                 items: [
                   {
-                    price: targetPriceId,
-                    quantity,
+                    price:
+                      targetPriceId,
+                    quantity:
+                      item.quantity ?? 1,
                   },
                 ],
-
-                proration_behavior: "none",
+                proration_behavior:
+                  "none",
               },
             ],
           }
@@ -416,9 +716,11 @@ export async function POST(request: NextRequest) {
       await ref.set(
         {
           pendingPlan: plan,
-          pendingBillingInterval: interval,
+          pendingBillingInterval:
+            interval,
           pendingInvoiceId: null,
-          stripeScheduleId: schedule.id,
+          stripeScheduleId:
+            schedule.id,
           updatedAt: Date.now(),
         },
         { merge: true }
@@ -426,16 +728,18 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({
         success: true,
-        changeType: "scheduled_downgrade",
-        effectiveAt: periodEnd * 1000,
+        changeType:
+          "scheduled_downgrade",
+        effectiveAt:
+          item.current_period_end * 1000,
         message:
           "Your downgrade is scheduled for the next renewal. Your current benefits remain active until then.",
       });
     }
 
-    // =========================================
-    // IMMEDIATE MEMBERSHIP / BILLING CHANGE
-    // =========================================
+    // ======================================
+    // IMMEDIATE PLAN / BILLING CHANGE
+    // ======================================
 
     const updated =
       await stripe.subscriptions.update(
@@ -449,7 +753,8 @@ export async function POST(request: NextRequest) {
           ],
           payment_behavior:
             "pending_if_incomplete",
-          proration_behavior: "always_invoice",
+          proration_behavior:
+            "always_invoice",
         },
         {
           idempotencyKey:
@@ -461,17 +766,22 @@ export async function POST(request: NextRequest) {
       updated.items.data[0];
 
     const applied =
-      updatedItem?.price.id === targetPriceId;
+      updatedItem?.price.id ===
+      targetPriceId;
 
-    const latestInvoiceId = getInvoiceId(
-      updated.latest_invoice
-    );
+    const latestInvoiceId =
+      getInvoiceId(
+        updated.latest_invoice
+      );
 
     await ref.set(
       {
         pendingPlan: plan,
-        pendingBillingInterval: interval,
-        pendingInvoiceId: latestInvoiceId,
+        pendingBillingInterval:
+          interval,
+        pendingInvoiceId:
+          latestInvoiceId,
+        stripeScheduleId: null,
         updatedAt: Date.now(),
       },
       { merge: true }
@@ -480,12 +790,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       changeType: "immediate",
-      paymentStatus: updated.pending_update
-        ? "pending"
-        : applied
-          ? "processing"
-          : "not_applied",
-      invoiceId: latestInvoiceId,
+      paymentStatus:
+        updated.pending_update
+          ? "pending"
+          : applied
+            ? "processing"
+            : "not_applied",
+      invoiceId:
+        latestInvoiceId,
       message:
         "Subscription change submitted. Access updates after payment verification.",
     });
