@@ -86,14 +86,11 @@ function formatAmount(
 }
 
 /**
- * Calculate the end of one billing cycle using
- * calendar months or years, not fixed day counts.
+ * Calculate the end of one billing cycle
+ * using calendar months or years.
  *
- * Example:
- * December 10, 2026 + 1 month = January 10, 2027.
- *
- * The schedule releases the subscription at this
- * date, allowing Stripe to continue normal billing.
+ * The schedule uses end_behavior: "release"
+ * so the subscription can continue renewing.
  */
 function getNextBillingDate(
   startTimestamp: number,
@@ -108,7 +105,6 @@ function getNextBillingDate(
   const targetMonth =
     month + (interval === "annual" ? 12 : 1);
 
-  // Find the last valid day of the target month.
   const lastDay = new Date(
     Date.UTC(year, targetMonth + 1, 0)
   ).getUTCDate();
@@ -130,6 +126,10 @@ function getNextBillingDate(
 export async function POST(request: NextRequest) {
   let uid: string;
 
+  // =========================================
+  // AUTHENTICATION
+  // =========================================
+
   try {
     uid = (await requireAuthenticatedUser(request)).uid;
   } catch {
@@ -150,7 +150,9 @@ export async function POST(request: NextRequest) {
     !validPlan(body.plan) ||
     !validInterval(body.interval)
   ) {
-    return fail("Invalid action, plan, or interval.");
+    return fail(
+      "Invalid action, plan, or interval."
+    );
   }
 
   const { action, plan, interval } = body;
@@ -182,6 +184,10 @@ export async function POST(request: NextRequest) {
         record.stripeSubscriptionId
       );
 
+    // =========================================
+    // SUBSCRIPTION VALIDATION
+    // =========================================
+
     if (
       subscription.metadata.firebaseUid !== uid
     ) {
@@ -201,14 +207,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Prevent overlapping changes or cancellation.
-    if (
-      subscription.cancel_at_period_end ||
-      subscription.schedule ||
-      subscription.pending_update ||
-      record.pendingInvoiceId ||
-      record.pendingPlan
-    ) {
+    // =========================================
+    // PENDING CHANGE DIAGNOSTICS
+    // =========================================
+
+    const blockers = {
+      cancellationPending:
+        subscription.cancel_at_period_end === true,
+
+      stripeScheduleAttached:
+        Boolean(subscription.schedule),
+
+      stripePendingUpdate:
+        Boolean(subscription.pending_update),
+
+      firestorePendingInvoice:
+        Boolean(record.pendingInvoiceId),
+
+      firestorePendingPlan:
+        Boolean(record.pendingPlan),
+    };
+
+    if (Object.values(blockers).some(Boolean)) {
+      console.warn(
+        "Subscription change blocked:",
+        blockers
+      );
+
       return fail(
         "A cancellation or subscription change is already pending.",
         409
@@ -265,7 +290,7 @@ export async function POST(request: NextRequest) {
     const quantity = item.quantity ?? 1;
 
     // =========================================
-    // PREVIEW
+    // PREVIEW SUBSCRIPTION CHANGE
     // =========================================
 
     if (action === "preview") {
@@ -314,7 +339,7 @@ export async function POST(request: NextRequest) {
     }
 
     // =========================================
-    // SCHEDULE PREMIUM+ -> PREMIUM DOWNGRADE
+    // SCHEDULE PREMIUM+ TO PREMIUM DOWNGRADE
     // =========================================
 
     if (downgrade) {
@@ -341,15 +366,10 @@ export async function POST(request: NextRequest) {
         await stripe.subscriptionSchedules.update(
           schedule.id,
           {
-            // At the end of the schedule, Stripe
-            // releases the subscription rather
-            // than canceling it.
             end_behavior: "release",
 
             phases: [
               {
-                // Keep Premium+ through the end
-                // of the current paid period.
                 start_date: firstPhase.start_date,
                 end_date: periodEnd,
 
@@ -363,7 +383,6 @@ export async function POST(request: NextRequest) {
                 proration_behavior: "none",
               },
               {
-                // Downgrade takes effect at renewal.
                 start_date: periodEnd,
                 end_date: secondPhaseEnd,
 
@@ -415,7 +434,7 @@ export async function POST(request: NextRequest) {
     }
 
     // =========================================
-    // IMMEDIATE PLAN / BILLING CHANGE
+    // IMMEDIATE MEMBERSHIP / BILLING CHANGE
     // =========================================
 
     const updated =
