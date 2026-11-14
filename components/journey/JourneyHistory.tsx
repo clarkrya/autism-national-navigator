@@ -34,6 +34,8 @@ export default function JourneyHistory({
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [expandedStages, setExpandedStages] =
+    useState<string[]>([]);
 
   useEffect(() => {
     let active = true;
@@ -42,6 +44,7 @@ export default function JourneyHistory({
     setHistory([]);
     setError("");
     setLoading(true);
+    setExpandedStages([]);
 
     const unsubscribe = watchAuthState(async (user) => {
       if (!active) return;
@@ -123,6 +126,14 @@ export default function JourneyHistory({
     } catch {
       return "Date unavailable";
     }
+  }
+
+  function toggleStage(stageId: string) {
+    setExpandedStages((current) =>
+      current.includes(stageId)
+        ? current.filter((id) => id !== stageId)
+        : [...current, stageId]
+    );
   }
 
   if (!childId) return null;
@@ -232,12 +243,24 @@ export default function JourneyHistory({
                   b.stageNumber - a.stageNumber
               )
               .map((stage) => {
+                const completedTasks =
+                  stage.journey?.tasks?.filter(
+                    (task) =>
+                      task.completed ||
+                      stage.completedTaskIds?.includes(
+                        task.id
+                      )
+                  ) ?? [];
+
                 const completedCount =
                   stage.completedTaskIds?.length ??
                   stage.journey?.tasks?.filter(
                     (task) => task.completed
                   ).length ??
                   0;
+
+                const isExpanded =
+                  expandedStages.includes(stage.stageId);
 
                 return (
                   <div
@@ -270,7 +293,7 @@ export default function JourneyHistory({
                       ✓
                     </div>
 
-                    <div style={{ flex: 1 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
                       <div
                         style={{
                           display: "flex",
@@ -369,6 +392,97 @@ export default function JourneyHistory({
                           )}
                         </span>
                       </div>
+
+                      {completedCount > 0 && (
+                        <div style={{ marginTop: "15px" }}>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              toggleStage(stage.stageId)
+                            }
+                            aria-expanded={isExpanded}
+                            style={{
+                              padding: 0,
+                              border: "none",
+                              background: "transparent",
+                              color: "#278482",
+                              fontSize: "13px",
+                              fontWeight: 800,
+                              cursor: "pointer",
+                              textAlign: "left",
+                            }}
+                          >
+                            {isExpanded
+                              ? "▴ Hide Completed Tasks"
+                              : "▾ View Completed Tasks"}
+                          </button>
+
+                          {isExpanded && (
+                            <div
+                              style={{
+                                marginTop: "14px",
+                                padding: "16px",
+                                borderRadius: "12px",
+                                border: "1px solid #DCE7EC",
+                                background: "#F8FAFC",
+                              }}
+                            >
+                              {completedTasks.length > 0 ? (
+                                <div
+                                  style={{
+                                    display: "grid",
+                                    gap: "12px",
+                                  }}
+                                >
+                                  {completedTasks.map(
+                                    (task) => (
+                                      <div
+                                        key={task.id}
+                                        style={{
+                                          display: "flex",
+                                          alignItems:
+                                            "flex-start",
+                                          gap: "10px",
+                                          color: "#334155",
+                                          fontSize: "14px",
+                                          lineHeight: 1.5,
+                                        }}
+                                      >
+                                        <span
+                                          aria-hidden="true"
+                                          style={{
+                                            color: "#059669",
+                                            fontWeight: 800,
+                                          }}
+                                        >
+                                          ✓
+                                        </span>
+                                        <span>
+                                          {task.title}
+                                        </span>
+                                      </div>
+                                    )
+                                  )}
+                                </div>
+                              ) : (
+                                <p
+                                  style={{
+                                    margin: 0,
+                                    color: "#64748B",
+                                    fontSize: "13px",
+                                    lineHeight: 1.6,
+                                  }}
+                                >
+                                  The completion count was
+                                  saved, but individual task
+                                  details are not available
+                                  for this stage.
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 );

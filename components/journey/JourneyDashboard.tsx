@@ -2,6 +2,7 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -33,6 +34,9 @@ import {
   getCurrentStageNumber,
   saveJourneyStage,
 } from "../../lib/journeyHistory";
+
+import { useAccountEntitlements } from "../../lib/useAccountEntitlements";
+import JourneyResponseEditor from "./JourneyResponseEditor";
 
 type JourneyAccessLevel =
   | "owner"
@@ -139,6 +143,8 @@ export default function JourneyDashboard({
   accessLevel,
   journeyId,
 }: JourneyDashboardProps) {
+  const { isPremium } = useAccountEntitlements();
+
   const [personalizedJourney, setPersonalizedJourney] =
     useState<PersonalizedJourney>(initialJourney);
 
@@ -195,6 +201,34 @@ export default function JourneyDashboard({
     initialJourney.tasks || []
   );
 
+  // Track Premium Journey Response autosaves.
+  const [pendingResponseTaskIds, setPendingResponseTaskIds] =
+    useState<string[]>([]);
+
+  const pendingResponseTaskIdsRef =
+    useRef<Set<string>>(new Set());
+
+  const handleResponsePendingChange = useCallback(
+    (taskId: string, pending: boolean) => {
+      const next = new Set(
+        pendingResponseTaskIdsRef.current
+      );
+
+      if (pending) {
+        next.add(taskId);
+      } else {
+        next.delete(taskId);
+      }
+
+      pendingResponseTaskIdsRef.current = next;
+      setPendingResponseTaskIds(Array.from(next));
+    },
+    []
+  );
+
+  const hasPendingResponses =
+    pendingResponseTaskIds.length > 0;
+
   const workspaceKey = [
     ownerUserId || "",
     familyProfile.childId || "",
@@ -228,12 +262,27 @@ export default function JourneyDashboard({
   const canGenerateNextStage =
     effectiveAccessLevel === "owner";
 
+  // Document Vault is private to the owner.
+  // Premium Journey Notes follow the same restriction.
+  const canUseJourneyResponses =
+    isPremium &&
+    !isSharedJourney &&
+    Boolean(
+      signedInUserId &&
+      canonicalOwnerUserId &&
+      familyProfile.childId &&
+      journeyId
+    );
+
   useEffect(() => {
     setPersonalizedJourney(initialJourney);
     setTasks(initialJourney.tasks || []);
     tasksRef.current = initialJourney.tasks || [];
 
     taskSaveQueueRef.current = Promise.resolve();
+
+    pendingResponseTaskIdsRef.current = new Set();
+    setPendingResponseTaskIds([]);
 
     setSaveMessage("");
     setSaveError("");
@@ -409,15 +458,15 @@ export default function JourneyDashboard({
             if (!familyProfile.childId) {
               throw new Error("Child ID is missing.");
             }
-        
+
             const changedTask = nextTasks.find(
               (task) => task.id === taskId
             );
-        
+
             if (!changedTask) {
               throw new Error("Task not found.");
             }
-        
+
             await saveSharedTaskProgress(
               targetOwnerUserId,
               familyProfile.childId,
@@ -464,7 +513,13 @@ export default function JourneyDashboard({
   }
 
   async function handleSaveJourney() {
-    if (!canGenerateNextStage || savingJourney) return;
+    if (
+      !canGenerateNextStage ||
+      savingJourney ||
+      hasPendingResponses
+    ) {
+      return;
+    }
 
     setSaveMessage("");
     setSaveError("");
@@ -530,7 +585,9 @@ export default function JourneyDashboard({
     if (
       !canGenerateNextStage ||
       !allTasksCompleted ||
-      generatingNextJourney
+      generatingNextJourney ||
+      hasPendingResponses ||
+      pendingResponseTaskIdsRef.current.size > 0
     ) {
       return;
     }
@@ -557,6 +614,13 @@ export default function JourneyDashboard({
 
     try {
       await taskSaveQueueRef.current;
+
+      // Prevent advancing while Journey notes are being saved.
+      if (pendingResponseTaskIdsRef.current.size > 0) {
+        throw new Error(
+          "Please wait until your Journey notes finish saving before continuing."
+        );
+      }
 
       // Retrieve the latest saved Journey and Family Team progress.
       const latestSavedJourney = familyProfile.childId
@@ -586,7 +650,6 @@ export default function JourneyDashboard({
       const idToken =
         await currentUser.getIdToken();
 
-      
       const completedTaskIds = tasksRef.current
         .filter((task) => task.completed)
         .map((task) => task.id);
@@ -674,6 +737,13 @@ export default function JourneyDashboard({
       const nextStageNumber =
         completedStageNumber + 1;
 
+      // Recheck immediately before archiving this stage.
+      if (pendingResponseTaskIdsRef.current.size > 0) {
+        throw new Error(
+          "Your Journey notes are still saving. Please try again once they are saved."
+        );
+      }
+
       await saveJourneyStage(
         targetOwnerUserId,
         completedStageNumber,
@@ -712,6 +782,9 @@ export default function JourneyDashboard({
 
       setJourneyStageNumber(nextStageNumber);
       setTaskSaveStatus("idle");
+
+      pendingResponseTaskIdsRef.current = new Set();
+      setPendingResponseTaskIds([]);
 
       setSaveMessage(
         `Journey Stage ${nextStageNumber} has been created and saved.`
@@ -760,8 +833,7 @@ export default function JourneyDashboard({
         <div
           style={{
             display: "flex",
-            justifyContent:
-              "space-between",
+            justifyContent: "space-between",
             alignItems: "center",
             flexWrap: "wrap",
             gap: 16,
@@ -791,16 +863,14 @@ export default function JourneyDashboard({
                 fontWeight: 800,
               }}
             >
-              Journey Stage{" "}
-              {journeyStageNumber}
+              Journey Stage {journeyStageNumber}
             </span>
           )}
         </div>
 
         <h1
           style={{
-            fontSize:
-              "clamp(30px, 5vw, 46px)",
+            fontSize: "clamp(30px, 5vw, 46px)",
             lineHeight: 1.1,
             fontWeight: 800,
             color: colors.dark,
@@ -820,9 +890,8 @@ export default function JourneyDashboard({
             color: colors.muted,
           }}
         >
-          Based on what you shared, we've
-          identified where we'd recommend
-          starting.
+          Based on what you shared, we've identified
+          where we'd recommend starting.
         </p>
 
         {isSharedJourney && (
@@ -840,11 +909,8 @@ export default function JourneyDashboard({
             }}
           >
             Family Team Access:{" "}
-            {formatDisplayValue(
-              effectiveAccessLevel
-            )}
-            {effectiveAccessLevel ===
-              "viewer" &&
+            {formatDisplayValue(effectiveAccessLevel)}
+            {effectiveAccessLevel === "viewer" &&
               " — Read Only"}
           </div>
         )}
@@ -887,9 +953,7 @@ export default function JourneyDashboard({
             label="Location"
             value={
               familyProfile.state
-                ? formatDisplayValue(
-                    familyProfile.state
-                  )
+                ? formatDisplayValue(familyProfile.state)
                 : "Not provided"
             }
           />
@@ -922,8 +986,7 @@ export default function JourneyDashboard({
             style={{
               marginTop: 22,
               paddingTop: 20,
-              borderTop:
-                `1px solid ${colors.border}`,
+              borderTop: `1px solid ${colors.border}`,
             }}
           >
             <strong
@@ -951,17 +1014,13 @@ export default function JourneyDashboard({
                     style={{
                       padding: "7px 12px",
                       borderRadius: 999,
-                      border:
-                        "1px solid #CBD5E1",
-                      background:
-                        colors.white,
+                      border: "1px solid #CBD5E1",
+                      background: colors.white,
                       fontSize: 13,
                       color: colors.text,
                     }}
                   >
-                    {formatDisplayValue(
-                      support
-                    )}
+                    {formatDisplayValue(support)}
                   </span>
                 )
               )}
@@ -1003,8 +1062,7 @@ export default function JourneyDashboard({
           style={{
             padding: 32,
             borderRadius: 22,
-            border:
-              "1px solid #BFDBFE",
+            border: "1px solid #BFDBFE",
             background:
               "linear-gradient(135deg, #EFF6FF, #F0FDFA)",
           }}
@@ -1018,8 +1076,7 @@ export default function JourneyDashboard({
               marginBottom: 12,
             }}
           >
-            Journey Stage{" "}
-            {journeyStageNumber} — Current
+            Journey Stage {journeyStageNumber} — Current
             Focus
           </div>
 
@@ -1031,10 +1088,7 @@ export default function JourneyDashboard({
               color: colors.dark,
             }}
           >
-            {
-              personalizedJourney
-                .currentFocus.title
-            }
+            {personalizedJourney.currentFocus.title}
           </h2>
 
           <p
@@ -1047,8 +1101,8 @@ export default function JourneyDashboard({
             }}
           >
             {
-              personalizedJourney
-                .currentFocus.explanation
+              personalizedJourney.currentFocus
+                .explanation
             }
           </p>
 
@@ -1057,16 +1111,14 @@ export default function JourneyDashboard({
               style={{
                 marginTop: 24,
                 paddingTop: 22,
-                borderTop:
-                  "1px solid #BFDBFE",
+                borderTop: "1px solid #BFDBFE",
               }}
             >
               <strong
                 style={{
                   color: colors.navy,
                   fontSize: 12,
-                  textTransform:
-                    "uppercase",
+                  textTransform: "uppercase",
                 }}
               >
                 Your Next Best Step
@@ -1079,10 +1131,7 @@ export default function JourneyDashboard({
                   margin: "8px 0",
                 }}
               >
-                {
-                  personalizedJourney
-                    .nextStep.title
-                }
+                {personalizedJourney.nextStep.title}
               </h3>
 
               <p
@@ -1093,8 +1142,8 @@ export default function JourneyDashboard({
                 }}
               >
                 {
-                  personalizedJourney
-                    .nextStep.description
+                  personalizedJourney.nextStep
+                    .description
                 }
               </p>
             </div>
@@ -1123,12 +1172,10 @@ export default function JourneyDashboard({
                 color: colors.navy,
                 fontSize: 12,
                 fontWeight: 800,
-                textTransform:
-                  "uppercase",
+                textTransform: "uppercase",
               }}
             >
-              {primaryAction.priority}{" "}
-              Priority
+              {primaryAction.priority} Priority
             </span>
 
             <h3
@@ -1149,9 +1196,7 @@ export default function JourneyDashboard({
             >
               <GuidanceBlock
                 label="Why it matters"
-                text={
-                  primaryAction.whyItMatters
-                }
+                text={primaryAction.whyItMatters}
               />
 
               <GuidanceBlock
@@ -1167,9 +1212,7 @@ export default function JourneyDashboard({
               {primaryAction.nextStep && (
                 <GuidanceBlock
                   label="Then"
-                  text={
-                    primaryAction.nextStep
-                  }
+                  text={primaryAction.nextStep}
                 />
               )}
             </div>
@@ -1178,8 +1221,7 @@ export default function JourneyDashboard({
               style={{
                 marginTop: 20,
                 paddingTop: 16,
-                borderTop:
-                  `1px solid ${colors.border}`,
+                borderTop: `1px solid ${colors.border}`,
                 color: colors.muted,
                 fontSize: 13,
               }}
@@ -1193,8 +1235,8 @@ export default function JourneyDashboard({
 
       {/* RESOURCES */}
 
-      {(personalizedJourney.resources
-        ?.length ?? 0) > 0 && (
+      {(personalizedJourney.resources?.length ?? 0) >
+        0 && (
         <section
           style={{
             ...sectionStyle,
@@ -1228,9 +1270,9 @@ export default function JourneyDashboard({
         </section>
       )}
 
-     {/* SAVE JOURNEY */}
+      {/* SAVE JOURNEY */}
 
-{canGenerateNextStage && (
+      {canGenerateNextStage && (
         <section style={sectionStyle}>
           <div
             style={{
@@ -1252,40 +1294,40 @@ export default function JourneyDashboard({
 
             <p
               style={{
-                margin:
-                  "10px auto 18px",
+                margin: "10px auto 18px",
                 maxWidth: 620,
                 color: colors.text,
                 lineHeight: 1.6,
               }}
             >
-              Save your personalized
-              journey so you can come
-              back to it and keep
-              moving forward.
+              Save your personalized journey so you
+              can come back to it and keep moving
+              forward.
             </p>
 
             <button
               type="button"
-              onClick={
-                handleSaveJourney
-              }
+              onClick={handleSaveJourney}
               disabled={
                 savingJourney ||
-                generatingNextJourney
+                generatingNextJourney ||
+                hasPendingResponses
               }
               style={{
                 ...primaryButtonStyle,
                 opacity:
                   savingJourney ||
-                  generatingNextJourney
+                  generatingNextJourney ||
+                  hasPendingResponses
                     ? 0.6
                     : 1,
               }}
             >
               {savingJourney
                 ? "Saving..."
-                : "💾 Save My Journey"}
+                : hasPendingResponses
+                  ? "Saving Journey Notes..."
+                  : "💾 Save My Journey"}
             </button>
 
             {saveMessage && (
@@ -1330,8 +1372,7 @@ export default function JourneyDashboard({
             style={{
               ...panelStyle,
               display: "flex",
-              justifyContent:
-                "space-between",
+              justifyContent: "space-between",
               alignItems: "center",
               flexWrap: "wrap",
               gap: 20,
@@ -1343,8 +1384,7 @@ export default function JourneyDashboard({
                   color: colors.muted,
                   fontSize: 12,
                   fontWeight: 800,
-                  textTransform:
-                    "uppercase",
+                  textTransform: "uppercase",
                 }}
               >
                 Your Account
@@ -1368,10 +1408,8 @@ export default function JourneyDashboard({
               style={{
                 padding: "10px 18px",
                 borderRadius: 9,
-                border:
-                  "1px solid #CBD5E1",
-                background:
-                  colors.white,
+                border: "1px solid #CBD5E1",
+                background: colors.white,
                 color: colors.text,
                 fontWeight: 700,
                 cursor: "pointer",
@@ -1408,8 +1446,7 @@ export default function JourneyDashboard({
           <div
             style={{
               display: "flex",
-              justifyContent:
-                "space-between",
+              justifyContent: "space-between",
               alignItems: "center",
               flexWrap: "wrap",
               gap: 12,
@@ -1430,8 +1467,7 @@ export default function JourneyDashboard({
                 color: colors.text,
               }}
             >
-              {completedTasks} of{" "}
-              {totalTasks} completed
+              {completedTasks} of {totalTasks} completed
             </span>
           </div>
 
@@ -1445,19 +1481,16 @@ export default function JourneyDashboard({
           >
             <div
               style={{
-                width:
-                  `${taskPercent}%`,
+                width: `${taskPercent}%`,
                 height: "100%",
                 background:
                   "linear-gradient(90deg, #204D6A, #58AAA7)",
-                transition:
-                  "width .3s ease",
+                transition: "width .3s ease",
               }}
             />
           </div>
 
-          {taskSaveStatus ===
-            "saving" && (
+          {taskSaveStatus === "saving" && (
             <p
               role="status"
               style={{
@@ -1470,8 +1503,7 @@ export default function JourneyDashboard({
             </p>
           )}
 
-          {taskSaveStatus ===
-            "error" && (
+          {taskSaveStatus === "error" && (
             <p
               role="alert"
               style={{
@@ -1480,8 +1512,7 @@ export default function JourneyDashboard({
                 textAlign: "right",
               }}
             >
-              We couldn't save your
-              latest task change.
+              We couldn't save your latest task change.
             </p>
           )}
         </div>
@@ -1494,14 +1525,41 @@ export default function JourneyDashboard({
           }}
         >
           {tasks.map((task) => (
-            <TaskCard
-              key={task.id}
-              task={task}
-              onToggle={() =>
-                toggleTask(task.id)
-              }
-              readOnly={!canEdit}
-            />
+            <div key={task.id}>
+              <TaskCard
+                task={task}
+                onToggle={() => toggleTask(task.id)}
+                readOnly={!canEdit}
+              />
+
+              {canUseJourneyResponses &&
+                !loadingStageNumber && (
+                  <JourneyResponseEditor
+                    key={[
+                      journeyId,
+                      journeyStageNumber,
+                      task.id,
+                    ].join("__")}
+                    ownerUserId={
+                      canonicalOwnerUserId
+                    }
+                    childId={
+                      familyProfile.childId!
+                    }
+                    journeyId={journeyId!}
+                    stageNumber={
+                      journeyStageNumber
+                    }
+                    taskId={task.id}
+                    disabled={
+                      generatingNextJourney
+                    }
+                    onPendingChange={
+                      handleResponsePendingChange
+                    }
+                  />
+                )}
+            </div>
           ))}
         </div>
 
@@ -1514,8 +1572,7 @@ export default function JourneyDashboard({
               padding: 26,
               borderRadius: 18,
               background: "#ECFDF5",
-              border:
-                "1px solid #A7F3D0",
+              border: "1px solid #A7F3D0",
               textAlign: "center",
             }}
           >
@@ -1535,8 +1592,7 @@ export default function JourneyDashboard({
                 margin: 0,
               }}
             >
-              You've completed Journey
-              Stage{" "}
+              You've completed Journey Stage{" "}
               {journeyStageNumber}.
             </h3>
 
@@ -1544,15 +1600,12 @@ export default function JourneyDashboard({
               style={{
                 color: colors.green,
                 lineHeight: 1.6,
-                margin:
-                  "9px auto 18px",
+                margin: "9px auto 18px",
                 maxWidth: 650,
               }}
             >
-              Great work. We'll build
-              on what you've
-              accomplished to
-              determine what should
+              Great work. We'll build on what you've
+              accomplished to determine what should
               come next.
             </p>
 
@@ -1561,14 +1614,11 @@ export default function JourneyDashboard({
                 role="alert"
                 style={{
                   maxWidth: 650,
-                  margin:
-                    "0 auto 16px",
+                  margin: "0 auto 16px",
                   padding: 14,
                   borderRadius: 10,
-                  background:
-                    "#FEF2F2",
-                  border:
-                    "1px solid #FECACA",
+                  background: "#FEF2F2",
+                  border: "1px solid #FECACA",
                   color: colors.red,
                   textAlign: "left",
                 }}
@@ -1586,32 +1636,31 @@ export default function JourneyDashboard({
             {canGenerateNextStage ? (
               <button
                 type="button"
-                onClick={
-                  handleShowNextJourney
-                }
+                onClick={handleShowNextJourney}
                 disabled={
                   generatingNextJourney ||
                   savingJourney ||
-                  taskSaveStatus ===
-                    "saving"
+                  taskSaveStatus === "saving" ||
+                  hasPendingResponses
                 }
                 style={{
                   ...primaryButtonStyle,
-                  background:
-                    "#059669",
+                  background: "#059669",
                   minWidth: 210,
                   opacity:
                     generatingNextJourney ||
                     savingJourney ||
-                    taskSaveStatus ===
-                      "saving"
+                    taskSaveStatus === "saving" ||
+                    hasPendingResponses
                       ? 0.6
                       : 1,
                 }}
               >
                 {generatingNextJourney
                   ? "Building What's Next..."
-                  : "Show Me What's Next →"}
+                  : hasPendingResponses
+                    ? "Saving Journey Notes..."
+                    : "Show Me What's Next →"}
               </button>
             ) : (
               <p
@@ -1621,8 +1670,8 @@ export default function JourneyDashboard({
                   fontWeight: 700,
                 }}
               >
-                The Journey owner can
-                unlock the next stage.
+                The Journey owner can unlock the next
+                stage.
               </p>
             )}
           </div>
@@ -1640,10 +1689,9 @@ export default function JourneyDashboard({
           marginTop: 50,
         }}
       >
-        Your recommendations are based
-        on the information you provided
-        and are intended to help you
-        identify possible next steps.
+        Your recommendations are based on the
+        information you provided and are intended
+        to help you identify possible next steps.
       </p>
     </main>
   );
@@ -1653,477 +1701,461 @@ export default function JourneyDashboard({
    FAMILY SNAPSHOT ITEM
    ============================================================ */
 
-function SnapshotItem({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div>
-      <div
-        style={{
-          fontSize: 12,
-          fontWeight: 700,
-          color: colors.muted,
-          marginBottom: 5,
-          textTransform: "uppercase",
-          letterSpacing: "0.04em",
-        }}
-      >
-        {label}
-      </div>
-
-      <div
-        style={{
-          fontSize: 16,
-          fontWeight: 700,
-          color: colors.dark,
-        }}
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
-
-/* ============================================================
-   SECTION HEADING
-   ============================================================ */
-
-function SectionHeading({
-  eyebrow,
-  title,
-  description,
-}: {
-  eyebrow: string;
-  title: string;
-  description: string;
-}) {
-  return (
-    <div>
-      <div
-        style={{
-          color: colors.navy,
-          fontSize: 12,
-          fontWeight: 800,
-          letterSpacing: "0.08em",
-          textTransform: "uppercase",
-          marginBottom: 7,
-        }}
-      >
-        {eyebrow}
-      </div>
-
-      <h2
-        style={{
-          margin: 0,
-          color: colors.dark,
-          fontSize: 29,
-          fontWeight: 800,
-          lineHeight: 1.2,
-        }}
-      >
-        {title}
-      </h2>
-
-      <p
-        style={{
-          maxWidth: 720,
-          color: colors.muted,
-          fontSize: 15,
-          lineHeight: 1.6,
-          marginTop: 8,
-          marginBottom: 0,
-        }}
-      >
-        {description}
-      </p>
-    </div>
-  );
-}
-
-/* ============================================================
-   GUIDANCE BLOCK
-   ============================================================ */
-
-function GuidanceBlock({
-  label,
-  text,
-}: {
-  label: string;
-  text: string;
-}) {
-  return (
-    <div>
-      <div
-        style={{
-          color: "#334155",
-          fontSize: 13,
-          fontWeight: 800,
-          marginBottom: 5,
-        }}
-      >
-        {label}
-      </div>
-
-      <div
-        style={{
-          color: colors.muted,
-          fontSize: 15,
-          lineHeight: 1.6,
-        }}
-      >
-        {text}
-      </div>
-    </div>
-  );
-}
-
-/* ============================================================
-   RESOURCE CARD
-   ============================================================ */
-
-function ResourceCard({
-  resource,
-}: {
-  resource: AIResource;
-}) {
-  return (
-    <div style={panelStyle}>
-      <div
-        style={{
-          display: "inline-flex",
-          padding: "5px 9px",
-          borderRadius: 999,
-          background: colors.light,
-          color: colors.text,
-          fontSize: 10,
-          fontWeight: 800,
-          textTransform: "uppercase",
-          letterSpacing: "0.04em",
-          marginBottom: 11,
-        }}
-      >
-        {formatResourceType(
-          resource.type
-        )}
-      </div>
-
-      <h3
-        style={{
-          margin: 0,
-          color: colors.dark,
-          fontSize: 19,
-          lineHeight: 1.3,
-        }}
-      >
-        {resource.title}
-      </h3>
-
-      <p
-        style={{
-          color: colors.muted,
-          lineHeight: 1.55,
-          fontSize: 14,
-          margin: "9px 0 14px",
-        }}
-      >
-        {resource.description}
-      </p>
-
-      {resource.whyItMayHelp && (
+   function SnapshotItem({
+    label,
+    value,
+  }: {
+    label: string;
+    value: string;
+  }) {
+    return (
+      <div>
         <div
           style={{
-            marginBottom: 14,
-            padding: "12px 13px",
-            borderRadius: 11,
-            background: colors.light,
-            color: colors.text,
-            fontSize: 13,
-            lineHeight: 1.5,
-          }}
-        >
-          <strong>
-            Why it may help:
-          </strong>{" "}
-          {resource.whyItMayHelp}
-        </div>
-      )}
-
-      {resource.sourceName && (
-        <div
-          style={{
-            color: "#94A3B8",
             fontSize: 12,
-            marginBottom: 12,
+            fontWeight: 700,
+            color: colors.muted,
+            marginBottom: 5,
+            textTransform: "uppercase",
+            letterSpacing: "0.04em",
           }}
         >
-          Source:{" "}
-          {resource.sourceName}
+          {label}
         </div>
-      )}
-
-      {resource.url && (
-        <a
-          href={resource.url}
-          target="_blank"
-          rel="noopener noreferrer"
+  
+        <div
           style={{
-            display: "inline-block",
-            padding: "10px 14px",
-            borderRadius: 9,
-            background: "#EFF6FF",
+            fontSize: 16,
+            fontWeight: 700,
+            color: colors.dark,
+          }}
+        >
+          {value}
+        </div>
+      </div>
+    );
+  }
+  
+  /* ============================================================
+     SECTION HEADING
+     ============================================================ */
+  
+  function SectionHeading({
+    eyebrow,
+    title,
+    description,
+  }: {
+    eyebrow: string;
+    title: string;
+    description: string;
+  }) {
+    return (
+      <div>
+        <div
+          style={{
             color: colors.navy,
+            fontSize: 12,
+            fontWeight: 800,
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            marginBottom: 7,
+          }}
+        >
+          {eyebrow}
+        </div>
+  
+        <h2
+          style={{
+            margin: 0,
+            color: colors.dark,
+            fontSize: 29,
+            fontWeight: 800,
+            lineHeight: 1.2,
+          }}
+        >
+          {title}
+        </h2>
+  
+        <p
+          style={{
+            maxWidth: 720,
+            color: colors.muted,
+            fontSize: 15,
+            lineHeight: 1.6,
+            marginTop: 8,
+            marginBottom: 0,
+          }}
+        >
+          {description}
+        </p>
+      </div>
+    );
+  }
+  
+  /* ============================================================
+     GUIDANCE BLOCK
+     ============================================================ */
+  
+  function GuidanceBlock({
+    label,
+    text,
+  }: {
+    label: string;
+    text: string;
+  }) {
+    return (
+      <div>
+        <div
+          style={{
+            color: "#334155",
             fontSize: 13,
             fontWeight: 800,
-            textDecoration: "none",
+            marginBottom: 5,
           }}
         >
-          Open Resource →
-        </a>
-      )}
-    </div>
-  );
-}
-
-/* ============================================================
-   TASK CARD
-   ============================================================ */
-
-function TaskCard({
-  task,
-  onToggle,
-  readOnly = false,
-}: {
-  task: Task;
-  onToggle: () => void;
-  readOnly?: boolean;
-}) {
-  const priority = String(
-    task.priority ?? "Low"
-  ).toLowerCase();
-
-  const priorityBackground =
-    priority === "high"
-      ? "#FEF2F2"
-      : priority === "medium"
-        ? "#FFFBEB"
-        : colors.light;
-
-  const priorityColor =
-    priority === "high"
-      ? "#B91C1C"
-      : priority === "medium"
-        ? "#92400E"
-        : colors.text;
-
-  return (
-    <div
-      style={{
-        ...panelStyle,
-        borderColor: task.completed
-          ? "#A7F3D0"
-          : colors.border,
-        background: task.completed
-          ? "#F0FDF4"
-          : colors.white,
-        display: "flex",
-        alignItems: "flex-start",
-        gap: 16,
-      }}
-    >
-      <button
-        type="button"
-        onClick={onToggle}
-        disabled={readOnly}
-        aria-label={
-          task.completed
-            ? `Mark ${task.title} incomplete`
-            : `Mark ${task.title} complete`
-        }
-        aria-pressed={task.completed}
-        style={{
-          width: 28,
-          height: 28,
-          flexShrink: 0,
-          borderRadius: 8,
-          border: task.completed
-            ? "1px solid #059669"
-            : "2px solid #CBD5E1",
-          background: task.completed
-            ? "#059669"
-            : colors.white,
-          color: colors.white,
-          fontSize: 16,
-          fontWeight: 800,
-          cursor: readOnly
-            ? "not-allowed"
-            : "pointer",
-          opacity: readOnly
-            ? 0.7
-            : 1,
-        }}
-      >
-        {task.completed
-          ? "✓"
-          : ""}
-      </button>
-
-      <div
-        style={{
-          flex: 1,
-          minWidth: 0,
-        }}
-      >
+          {label}
+        </div>
+  
         <div
           style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            flexWrap: "wrap",
+            color: colors.muted,
+            fontSize: 15,
+            lineHeight: 1.6,
           }}
         >
-          <h3
-            style={{
-              margin: 0,
-              color: colors.dark,
-              fontSize: 17,
-              textDecoration:
-                task.completed
-                  ? "line-through"
-                  : "none",
-            }}
-          >
-            {task.title}
-          </h3>
-
-          <span
-            style={{
-              padding: "4px 8px",
-              borderRadius: 999,
-              background:
-                priorityBackground,
-              color: priorityColor,
-              fontSize: 11,
-              fontWeight: 800,
-              textTransform:
-                "uppercase",
-            }}
-          >
-            {task.priority} Priority
-          </span>
+          {text}
         </div>
-
+      </div>
+    );
+  }
+  
+  /* ============================================================
+     RESOURCE CARD
+     ============================================================ */
+  
+  function ResourceCard({
+    resource,
+  }: {
+    resource: AIResource;
+  }) {
+    return (
+      <div style={panelStyle}>
+        <div
+          style={{
+            display: "inline-flex",
+            padding: "5px 9px",
+            borderRadius: 999,
+            background: colors.light,
+            color: colors.text,
+            fontSize: 10,
+            fontWeight: 800,
+            textTransform: "uppercase",
+            letterSpacing: "0.04em",
+            marginBottom: 11,
+          }}
+        >
+          {formatResourceType(resource.type)}
+        </div>
+  
+        <h3
+          style={{
+            margin: 0,
+            color: colors.dark,
+            fontSize: 19,
+            lineHeight: 1.3,
+          }}
+        >
+          {resource.title}
+        </h3>
+  
         <p
           style={{
             color: colors.muted,
+            lineHeight: 1.55,
             fontSize: 14,
-            lineHeight: 1.6,
-            margin: "8px 0",
+            margin: "9px 0 14px",
           }}
         >
-          {task.description}
+          {resource.description}
         </p>
-
-        {task.estimatedTime && (
+  
+        {resource.whyItMayHelp && (
+          <div
+            style={{
+              marginBottom: 14,
+              padding: "12px 13px",
+              borderRadius: 11,
+              background: colors.light,
+              color: colors.text,
+              fontSize: 13,
+              lineHeight: 1.5,
+            }}
+          >
+            <strong>Why it may help:</strong>{" "}
+            {resource.whyItMayHelp}
+          </div>
+        )}
+  
+        {resource.sourceName && (
           <div
             style={{
               color: "#94A3B8",
               fontSize: 12,
-              marginTop: 8,
+              marginBottom: 12,
             }}
           >
-            Estimated time:{" "}
-            {task.estimatedTime}
+            Source: {resource.sourceName}
           </div>
         )}
-
-        {task.resourceLink && (
+  
+        {resource.url && (
           <a
-            href={task.resourceLink}
+            href={resource.url}
             target="_blank"
             rel="noopener noreferrer"
             style={{
-              display:
-                "inline-block",
-              marginTop: 10,
+              display: "inline-block",
+              padding: "10px 14px",
+              borderRadius: 9,
+              background: "#EFF6FF",
               color: colors.navy,
               fontSize: 13,
-              fontWeight: 700,
+              fontWeight: 800,
+              textDecoration: "none",
             }}
           >
-            View Related Resource →
+            Open Resource →
           </a>
         )}
       </div>
-    </div>
-  );
-}
-
-/* ============================================================
-   ACCOUNT PROMPT
-   ============================================================ */
-
-function AccountPrompt({
-  message,
-}: {
-  message: string;
-}) {
-  return (
-    <div
-      style={{
-        maxWidth: 650,
-        margin: "20px auto 0",
-        padding: 20,
-        borderRadius: 14,
-        background: colors.white,
-        border:
-          `1px solid ${colors.border}`,
-        textAlign: "center",
-      }}
-    >
-      <p
-        style={{
-          color: colors.text,
-          lineHeight: 1.6,
-          margin: "0 0 16px",
-        }}
-      >
-        {message}
-      </p>
-
+    );
+  }
+  
+  /* ============================================================
+     TASK CARD
+     ============================================================ */
+  
+  function TaskCard({
+    task,
+    onToggle,
+    readOnly = false,
+  }: {
+    task: Task;
+    onToggle: () => void;
+    readOnly?: boolean;
+  }) {
+    const priority = String(
+      task.priority ?? "Low"
+    ).toLowerCase();
+  
+    const priorityBackground =
+      priority === "high"
+        ? "#FEF2F2"
+        : priority === "medium"
+          ? "#FFFBEB"
+          : colors.light;
+  
+    const priorityColor =
+      priority === "high"
+        ? "#B91C1C"
+        : priority === "medium"
+          ? "#92400E"
+          : colors.text;
+  
+    return (
       <div
         style={{
+          ...panelStyle,
+          borderColor: task.completed
+            ? "#A7F3D0"
+            : colors.border,
+          background: task.completed
+            ? "#F0FDF4"
+            : colors.white,
           display: "flex",
-          justifyContent:
-            "center",
-          flexWrap: "wrap",
-          gap: 10,
+          alignItems: "flex-start",
+          gap: 16,
         }}
       >
-        <Link
-          href="/login"
-          style={linkButtonStyle}
-        >
-          Log In
-        </Link>
-
-        <Link
-          href="/signup"
+        <button
+          type="button"
+          onClick={onToggle}
+          disabled={readOnly}
+          aria-label={
+            task.completed
+              ? `Mark ${task.title} incomplete`
+              : `Mark ${task.title} complete`
+          }
+          aria-pressed={task.completed}
           style={{
-            ...linkButtonStyle,
-            background:
-              colors.white,
-            color: colors.navy,
-            border:
-              `1px solid ${colors.navy}`,
+            width: 28,
+            height: 28,
+            flexShrink: 0,
+            borderRadius: 8,
+            border: task.completed
+              ? "1px solid #059669"
+              : "2px solid #CBD5E1",
+            background: task.completed
+              ? "#059669"
+              : colors.white,
+            color: colors.white,
+            fontSize: 16,
+            fontWeight: 800,
+            cursor: readOnly
+              ? "not-allowed"
+              : "pointer",
+            opacity: readOnly ? 0.7 : 1,
           }}
         >
-          Create Free Account
-        </Link>
+          {task.completed ? "✓" : ""}
+        </button>
+  
+        <div
+          style={{
+            flex: 1,
+            minWidth: 0,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            <h3
+              style={{
+                margin: 0,
+                color: colors.dark,
+                fontSize: 17,
+                textDecoration: task.completed
+                  ? "line-through"
+                  : "none",
+              }}
+            >
+              {task.title}
+            </h3>
+  
+            <span
+              style={{
+                padding: "4px 8px",
+                borderRadius: 999,
+                background: priorityBackground,
+                color: priorityColor,
+                fontSize: 11,
+                fontWeight: 800,
+                textTransform: "uppercase",
+              }}
+            >
+              {task.priority} Priority
+            </span>
+          </div>
+  
+          <p
+            style={{
+              color: colors.muted,
+              fontSize: 14,
+              lineHeight: 1.6,
+              margin: "8px 0",
+            }}
+          >
+            {task.description}
+          </p>
+  
+          {task.estimatedTime && (
+            <div
+              style={{
+                color: "#94A3B8",
+                fontSize: 12,
+                marginTop: 8,
+              }}
+            >
+              Estimated time:{" "}
+              {task.estimatedTime}
+            </div>
+          )}
+  
+          {task.resourceLink && (
+            <a
+              href={task.resourceLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: "inline-block",
+                marginTop: 10,
+                color: colors.navy,
+                fontSize: 13,
+                fontWeight: 700,
+              }}
+            >
+              View Related Resource →
+            </a>
+          )}
+        </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
+  
+  /* ============================================================
+     ACCOUNT PROMPT
+     ============================================================ */
+  
+  function AccountPrompt({
+    message,
+  }: {
+    message: string;
+  }) {
+    return (
+      <div
+        style={{
+          maxWidth: 650,
+          margin: "20px auto 0",
+          padding: 20,
+          borderRadius: 14,
+          background: colors.white,
+          border: `1px solid ${colors.border}`,
+          textAlign: "center",
+        }}
+      >
+        <p
+          style={{
+            color: colors.text,
+            lineHeight: 1.6,
+            margin: "0 0 16px",
+          }}
+        >
+          {message}
+        </p>
+  
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            flexWrap: "wrap",
+            gap: 10,
+          }}
+        >
+          <Link
+            href="/login"
+            style={linkButtonStyle}
+          >
+            Log In
+          </Link>
+  
+          <Link
+            href="/signup"
+            style={{
+              ...linkButtonStyle,
+              background: colors.white,
+              color: colors.navy,
+              border: `1px solid ${colors.navy}`,
+            }}
+          >
+            Create Free Account
+          </Link>
+        </div>
+      </div>
+    );
+  }
+  
