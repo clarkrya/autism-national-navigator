@@ -9,7 +9,12 @@ import {
   onAuthStateChanged,
   type User,
 } from "firebase/auth";
-import { doc, getFirestore, onSnapshot } from "firebase/firestore";
+import {
+  doc,
+  getDocFromServer,
+  getFirestore,
+  onSnapshot,
+} from "firebase/firestore";
 
 import {
   PLAN_DEFINITIONS,
@@ -31,10 +36,8 @@ type Membership = {
 
 type ChangePreview = {
   changeType: string;
-  amountDue?: number;
   amountDueFormatted?: string;
   effectiveAt?: number;
-  currency?: string;
 };
 
 type ExpectedChange = {
@@ -47,6 +50,8 @@ const planOrder: SubscriptionPlan[] = [
   "premium",
   "premium_plus",
 ];
+
+const PREMIUM_PLUS_AVAILABLE = false;
 
 const buttonStyle = {
   display: "block",
@@ -62,25 +67,21 @@ const buttonStyle = {
   boxSizing: "border-box" as const,
 };
 
-function getFeatureLabel(feature: string): string {
-  const labels: Record<string, string> = {
-    initial_journey: "Personalized autism journey",
-    save_journey: "Save your journey",
-    next_journey: "Continue to What's Next",
-    journey_history: "Journey History",
-    community_read: "Read community posts",
-    community_participate: "Post in the Community",
-    ask_navigator: "Ask Your Autivoya Navigator",
-    advanced_resources: "Advanced personalized resources",
-    meeting_prep: "Meeting preparation tools",
-    document_vault: "Document organization",
-    ai_progress_insights: "AI progress insights",
-    family_organizer: "Family organizer tools",
-    human_navigator: "Human Navigator support",
-  };
-
-  return labels[feature] ?? feature;
-}
+const featureLabels: Record<string, string> = {
+  initial_journey: "Personalized autism journey",
+  save_journey: "Save your journey",
+  next_journey: "Continue to What's Next",
+  journey_history: "Journey History",
+  community_read: "Read community posts",
+  community_participate: "Post in the Community",
+  ask_navigator: "Ask Your Autivoya Navigator",
+  advanced_resources: "Advanced personalized resources",
+  meeting_prep: "Meeting preparation tools",
+  document_vault: "Document organization",
+  ai_progress_insights: "AI progress insights",
+  family_organizer: "Family organizer tools",
+  human_navigator: "Human Navigator support",
+};
 
 function isPaidPlan(value: unknown): value is PaidPlan {
   return value === "premium" || value === "premium_plus";
@@ -142,9 +143,6 @@ export default function PricingPage() {
   const [previewInterval, setPreviewInterval] =
     useState<BillingInterval>("monthly");
 
-  // A successful API response means the request was accepted.
-  // It does not necessarily mean payment was completed.
-  // Firestore confirms when the new membership is active.
   const expectedChangeRef =
     useRef<ExpectedChange | null>(null);
 
@@ -187,10 +185,8 @@ export default function PricingPage() {
 
     setMembershipLoading(true);
 
-    const db = getFirestore(getApp());
-
     const subscriptionRef = doc(
-      db,
+      getFirestore(getApp()),
       "users",
       user.uid,
       "subscription",
@@ -251,13 +247,13 @@ export default function PricingPage() {
           expectedChangeRef.current = null;
           setError("");
           setNotice(
-            `Membership Upgrade Successful! Your ${
+            `Membership Change Successful! Your ${
               membershipName(expected.plan)
             } ${
               expected.interval === "annual"
                 ? "annual"
                 : "monthly"
-            } membership is now active. Your benefits are available.`
+            } membership is now active.`
           );
         }
       },
@@ -309,6 +305,10 @@ export default function PricingPage() {
   }
 
   async function handlePlanClick(plan: PaidPlan) {
+    if (plan === "premium_plus" && !PREMIUM_PLUS_AVAILABLE) {
+      return;
+    }
+
     setError("");
     setNotice("");
 
@@ -368,6 +368,16 @@ export default function PricingPage() {
   async function confirmChange() {
     if (!previewPlan || !preview || busyPlan) return;
 
+    if (
+      previewPlan === "premium_plus" &&
+      !PREMIUM_PLUS_AVAILABLE
+    ) {
+      setPreview(null);
+      setPreviewPlan(null);
+      setError("Premium+ is coming in Phase 2.");
+      return;
+    }
+
     const requestedPlan = previewPlan;
     const requestedInterval = previewInterval;
 
@@ -403,14 +413,7 @@ export default function PricingPage() {
           "Your membership change was submitted. Verifying payment and updating your benefits..."
         );
 
-        // The Firestore listener may have received the
-        // confirmed change before this API response.
-        // Refresh the document once to handle that race.
         if (user && getApps().length) {
-          const { getDocFromServer } = await import(
-            "firebase/firestore"
-          );
-
           const ref = doc(
             getFirestore(getApp()),
             "users",
@@ -433,13 +436,13 @@ export default function PricingPage() {
             ) {
               expectedChangeRef.current = null;
               setNotice(
-                `Membership Upgrade Successful! Your ${
+                `Membership Change Successful! Your ${
                   membershipName(requestedPlan)
                 } membership is now active. Your benefits are available.`
               );
             }
           } catch {
-            // Continue waiting for the Firestore listener.
+            // Firestore listener will continue checking.
           }
         }
       }
@@ -599,9 +602,7 @@ export default function PricingPage() {
                 cursor: "pointer",
               }}
             >
-              {option === "monthly"
-                ? "Monthly"
-                : "Annual"}
+              {option === "monthly" ? "Monthly" : "Annual"}
             </button>
           )
         )}
@@ -653,13 +654,15 @@ export default function PricingPage() {
         }}
       >
         {planOrder.map((planOption) => {
-          const definition =
-            PLAN_DEFINITIONS[planOption];
+          const definition = PLAN_DEFINITIONS[planOption];
 
+          const isFree = planOption === "free";
           const isPremium = planOption === "premium";
           const isPremiumPlus =
             planOption === "premium_plus";
-          const isFree = planOption === "free";
+
+          const comingSoon =
+            isPremiumPlus && !PREMIUM_PLUS_AVAILABLE;
 
           const isCurrent =
             !!user &&
@@ -679,11 +682,8 @@ export default function PricingPage() {
               : definition.monthlyPriceCents;
 
           const highlighted =
-            isCurrent || (!user && isPremium);
-
-          const backgroundColor = isPremium
-            ? "#2563EB"
-            : "#0F766E";
+            !comingSoon &&
+            (isCurrent || (!user && isPremium));
 
           const pending =
             membership.pendingPlan !== null ||
@@ -691,7 +691,7 @@ export default function PricingPage() {
 
           let buttonLabel = "";
 
-          if (!isFree) {
+          if (!isFree && !comingSoon) {
             if (loading) {
               buttonLabel = "Loading...";
             } else if (currentPaidSelection) {
@@ -710,15 +710,8 @@ export default function PricingPage() {
               isPremium
             ) {
               buttonLabel = "Switch to Premium";
-            } else if (
-              currentPlan === "premium" &&
-              isPremiumPlus
-            ) {
-              buttonLabel = "Upgrade to Premium+";
             } else {
-              buttonLabel = `Upgrade to ${
-                isPremium ? "Premium" : "Premium+"
-              }`;
+              buttonLabel = "Upgrade to Premium";
             }
           }
 
@@ -736,13 +729,16 @@ export default function PricingPage() {
                   : highlighted
                     ? "2px solid #2563EB"
                     : "1px solid #E2E8F0",
-                background: "#FFFFFF",
+                background: comingSoon
+                  ? "#F8FAFC"
+                  : "#FFFFFF",
                 boxShadow: highlighted
                   ? "0 16px 35px rgba(37,99,235,0.12)"
                   : "0 8px 24px rgba(15,23,42,0.05)",
               }}
             >
-              {(isCurrent || definition.badge) && (
+              {(isCurrent || comingSoon ||
+                definition.badge) && (
                 <div
                   style={{
                     position: "absolute",
@@ -753,7 +749,9 @@ export default function PricingPage() {
                     borderRadius: "999px",
                     background: isCurrent
                       ? "#0F766E"
-                      : "#2563EB",
+                      : comingSoon
+                        ? "#475569"
+                        : "#2563EB",
                     color: "#FFFFFF",
                     fontSize: "11px",
                     fontWeight: 800,
@@ -764,13 +762,17 @@ export default function PricingPage() {
                 >
                   {isCurrent
                     ? "Your Current Membership"
-                    : definition.badge}
+                    : comingSoon
+                      ? "Coming in Phase 2"
+                      : definition.badge}
                 </div>
               )}
 
               <div
                 style={{
-                  color: "#2563EB",
+                  color: comingSoon
+                    ? "#64748B"
+                    : "#2563EB",
                   fontSize: "12px",
                   fontWeight: 800,
                   letterSpacing: "0.07em",
@@ -802,63 +804,98 @@ export default function PricingPage() {
                   lineHeight: 1.55,
                 }}
               >
-                {definition.shortDescription}
+                {comingSoon
+                  ? "We're preparing additional support tools and services for a future release."
+                  : definition.shortDescription}
               </p>
 
               <div
                 style={{
                   marginTop: "24px",
-                  display: "flex",
-                  alignItems: "baseline",
-                  gap: "6px",
+                  minHeight: "65px",
                 }}
               >
-                <span
-                  style={{
-                    color: "#0F172A",
-                    fontSize: "38px",
-                    fontWeight: 850,
-                    lineHeight: 1,
-                  }}
-                >
-                  {formatPlanPrice(selectedPrice)}
-                </span>
-
-                {!isFree && (
-                  <span
+                {comingSoon ? (
+                  <div
                     style={{
-                      color: "#94A3B8",
-                      fontSize: "13px",
+                      fontSize: "23px",
+                      fontWeight: 800,
+                      color: "#475569",
                     }}
                   >
-                    / {interval === "monthly"
-                      ? "month"
-                      : "year"}
-                  </span>
+                    Coming Soon
+                  </div>
+                ) : (
+                  <>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "baseline",
+                        gap: "6px",
+                      }}
+                    >
+                      <span
+                        style={{
+                          color: "#0F172A",
+                          fontSize: "38px",
+                          fontWeight: 850,
+                          lineHeight: 1,
+                        }}
+                      >
+                        {formatPlanPrice(selectedPrice)}
+                      </span>
+
+                      {!isFree && (
+                        <span
+                          style={{
+                            color: "#94A3B8",
+                            fontSize: "13px",
+                          }}
+                        >
+                          / {interval === "monthly"
+                            ? "month"
+                            : "year"}
+                        </span>
+                      )}
+                    </div>
+
+                    {!isFree &&
+                      definition.annualPriceCents !== null && (
+                        <div
+                          style={{
+                            marginTop: "7px",
+                            color: "#64748B",
+                            fontSize: "12px",
+                          }}
+                        >
+                          {interval === "monthly"
+                            ? `Annual plan: ${formatPlanPrice(
+                                definition.annualPriceCents
+                              )}`
+                            : `Monthly plan: ${formatPlanPrice(
+                                definition.monthlyPriceCents
+                              )}/month`}
+                        </div>
+                      )}
+                  </>
                 )}
               </div>
 
-              {!isFree &&
-                definition.annualPriceCents !== null && (
-                  <div
+              <div style={{ marginTop: "25px" }}>
+                {comingSoon ? (
+                  <button
+                    type="button"
+                    disabled
                     style={{
-                      marginTop: "7px",
+                      ...buttonStyle,
+                      background: "#E2E8F0",
                       color: "#64748B",
-                      fontSize: "12px",
+                      cursor: "not-allowed",
                     }}
                   >
-                    {interval === "monthly"
-                      ? `Annual plan: ${formatPlanPrice(
-                          definition.annualPriceCents
-                        )}`
-                      : `Monthly plan: ${formatPlanPrice(
-                          definition.monthlyPriceCents
-                        )}/month`}
-                  </div>
-                )}
-
-              <div style={{ marginTop: "25px" }}>
-                {isFree ? (
+                    Available in Phase 2
+                  </button>
+                ) : isFree ? (
                   isCurrent ? (
                     <button
                       type="button"
@@ -898,9 +935,7 @@ export default function PricingPage() {
                       pending
                     }
                     onClick={() =>
-                      handlePlanClick(
-                        planOption as PaidPlan
-                      )
+                      handlePlanClick(planOption as PaidPlan)
                     }
                     style={{
                       ...buttonStyle,
@@ -909,7 +944,7 @@ export default function PricingPage() {
                         loading ||
                         pending
                           ? "#CBD5E1"
-                          : backgroundColor,
+                          : "#2563EB",
                       color:
                         currentPaidSelection ||
                         loading ||
@@ -950,8 +985,24 @@ export default function PricingPage() {
                     marginBottom: "14px",
                   }}
                 >
-                  What&apos;s included
+                  {comingSoon
+                    ? "Planned for Phase 2"
+                    : "What's included"}
                 </div>
+
+                {comingSoon && (
+                  <p
+                    style={{
+                      color: "#64748B",
+                      fontSize: "13px",
+                      lineHeight: 1.6,
+                      margin: "0 0 16px",
+                    }}
+                  >
+                    These features are planned for a future
+                    release and are not yet available.
+                  </p>
+                )}
 
                 <div
                   style={{
@@ -966,25 +1017,27 @@ export default function PricingPage() {
                         display: "flex",
                         alignItems: "flex-start",
                         gap: "9px",
-                        color: "#475569",
+                        color: comingSoon
+                          ? "#64748B"
+                          : "#475569",
                         fontSize: "14px",
                         lineHeight: 1.45,
                       }}
                     >
                       <span
                         style={{
-                          color: isPremiumPlus
-                            ? "#0F766E"
+                          color: comingSoon
+                            ? "#94A3B8"
                             : "#059669",
                           fontWeight: 900,
                           marginTop: "1px",
                         }}
                       >
-                        ✓
+                        {comingSoon ? "○" : "✓"}
                       </span>
 
                       <span>
-                        {getFeatureLabel(feature)}
+                        {featureLabels[feature] ?? feature}
                       </span>
                     </div>
                   ))}
@@ -1065,9 +1118,7 @@ export default function PricingPage() {
               </>
             ) : (
               <>
-                <p>
-                  Estimated amount due now:
-                </p>
+                <p>Estimated amount due now:</p>
 
                 <p
                   style={{

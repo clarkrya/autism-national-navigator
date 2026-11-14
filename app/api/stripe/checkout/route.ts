@@ -12,6 +12,10 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// Phase 1 launch: Premium+ purchases are disabled.
+// Change this only when Premium+ is ready for release.
+const PREMIUM_PLUS_AVAILABLE = false;
+
 type CheckoutRequest = {
   plan?: unknown;
   interval?: unknown;
@@ -42,6 +46,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "Invalid subscription plan." },
         { status: 400 }
+      );
+    }
+
+    // Server-side protection:
+    // Prevent Premium+ purchases during Phase 1,
+    // including direct requests to this endpoint.
+    if (
+      body.plan === "premium_plus" &&
+      !PREMIUM_PLUS_AVAILABLE
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Premium+ is coming in Phase 2 and is not yet available for purchase.",
+        },
+        { status: 403 }
       );
     }
 
@@ -142,7 +162,10 @@ export async function POST(request: NextRequest) {
     console.error("Stripe Checkout creation failed:", error);
 
     return NextResponse.json(
-      { error: "Unable to start checkout. Please try again." },
+      {
+        error:
+          "Unable to start checkout. Please try again.",
+      },
       { status: 500 }
     );
   }

@@ -420,6 +420,15 @@ export async function POST(
 
   const { action, plan, interval } = body;
 
+// Phase 1: Prevent new Premium+ upgrades.
+// Existing Premium+ subscribers may still switch to Premium.
+if (plan === "premium_plus") {
+  return fail(
+    "Premium+ is coming in Phase 2 and is not yet available for purchase or upgrade.",
+    403
+  );
+}
+
   try {
     const stripe = getStripe();
 
