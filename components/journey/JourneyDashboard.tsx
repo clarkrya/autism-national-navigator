@@ -37,6 +37,7 @@ import {
 
 import { useAccountEntitlements } from "../../lib/useAccountEntitlements";
 import JourneyResponseEditor from "./JourneyResponseEditor";
+import JourneyMeetingPreparationLink from "./JourneyMeetingPreparationLink";
 
 type JourneyAccessLevel =
   | "owner"
@@ -1527,10 +1528,22 @@ export default function JourneyDashboard({
           {tasks.map((task) => (
             <div key={task.id}>
               <TaskCard
-                task={task}
-                onToggle={() => toggleTask(task.id)}
-                readOnly={!canEdit}
-              />
+  task={task}
+  onToggle={() => toggleTask(task.id)}
+  readOnly={!canEdit}
+/>
+
+{familyProfile.childId && (
+  <JourneyMeetingPreparationLink
+    childId={familyProfile.childId}
+    childName={familyProfile.childName || ""}
+    taskId={task.id}
+    journey={{
+      ...personalizedJourney,
+      tasks,
+    }}
+  />
+)}
 
               {canUseJourneyResponses &&
                 !loadingStageNumber && (

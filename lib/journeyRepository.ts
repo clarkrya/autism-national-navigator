@@ -252,6 +252,101 @@ function normalizeJourneyReason(
   return undefined;
 }
 
+/**
+ * Preserve reusable child information while ensuring
+ * existing required profile fields remain compatible.
+ */
+function normalizeFamilyProfile(
+  value: unknown,
+  childId: string
+): FamilyProfile {
+  const storedProfile =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Partial<FamilyProfile>)
+      : {};
+
+  const optionalGroup = (
+    group: unknown
+  ): Record<string, string> | undefined => {
+    if (
+      !group ||
+      typeof group !== "object" ||
+      Array.isArray(group)
+    ) {
+      return undefined;
+    }
+
+    const fields = Object.entries(group).filter(
+      ([, fieldValue]) =>
+        typeof fieldValue === "string"
+    );
+
+    return Object.fromEntries(fields);
+  };
+
+  return {
+    childId:
+      typeof storedProfile.childId === "string" &&
+      storedProfile.childId
+        ? storedProfile.childId
+        : childId,
+
+    childName:
+      typeof storedProfile.childName === "string"
+        ? storedProfile.childName
+        : "",
+
+    childAge:
+      typeof storedProfile.childAge === "string"
+        ? storedProfile.childAge
+        : "",
+
+    state:
+      typeof storedProfile.state === "string"
+        ? storedProfile.state
+        : "",
+
+    journeyStage:
+      typeof storedProfile.journeyStage === "string"
+        ? storedProfile.journeyStage
+        : "",
+
+    supports: Array.isArray(storedProfile.supports)
+      ? storedProfile.supports.filter(
+          (support): support is string =>
+            typeof support === "string"
+        )
+      : [],
+
+    priority:
+      typeof storedProfile.priority === "string"
+        ? storedProfile.priority
+        : "",
+
+    insurance:
+      typeof storedProfile.insurance === "string"
+        ? storedProfile.insurance
+        : "",
+
+    notes:
+      typeof storedProfile.notes === "string"
+        ? storedProfile.notes
+        : "",
+
+    childDetails: optionalGroup(
+      storedProfile.childDetails
+    ),
+
+    careTeam: optionalGroup(
+      storedProfile.careTeam
+    ),
+
+    education: optionalGroup(
+      storedProfile.education
+    ),
+  };
+}
+
 function normalizeSavedJourney(
   data: Record<string, any>,
   userId: string
@@ -457,55 +552,10 @@ export async function getSavedChildren(
         return null;
       }
 
-      const storedProfile =
-        data.familyProfile as Partial<FamilyProfile>;
-
-      const familyProfile: FamilyProfile = {
-        childId:
-          typeof storedProfile.childId === "string" &&
-          storedProfile.childId
-            ? storedProfile.childId
-            : childDocument.id,
-
-        childName:
-          typeof storedProfile.childName === "string"
-            ? storedProfile.childName
-            : "",
-
-        childAge:
-          typeof storedProfile.childAge === "string"
-            ? storedProfile.childAge
-            : "",
-
-        state:
-          typeof storedProfile.state === "string"
-            ? storedProfile.state
-            : "",
-
-        journeyStage:
-          typeof storedProfile.journeyStage === "string"
-            ? storedProfile.journeyStage
-            : "",
-
-        supports: Array.isArray(storedProfile.supports)
-          ? storedProfile.supports
-          : [],
-
-        priority:
-          typeof storedProfile.priority === "string"
-            ? storedProfile.priority
-            : "",
-
-        insurance:
-          typeof storedProfile.insurance === "string"
-            ? storedProfile.insurance
-            : "",
-
-        notes:
-          typeof storedProfile.notes === "string"
-            ? storedProfile.notes
-            : "",
-      };
+      const familyProfile = normalizeFamilyProfile(
+        data.familyProfile,
+        childDocument.id
+      );
 
       return {
         childId: childDocument.id,
