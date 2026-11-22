@@ -8,16 +8,13 @@ import {
   useState,
 } from "react";
 import Link from "next/link";
-import {
-  collection,
-  getDocs,
-} from "firebase/firestore";
+
 import {
   onAuthStateChanged,
   type User,
 } from "firebase/auth";
 
-import { auth, db } from "../../lib/firebase";
+import { auth } from "../../lib/firebase";
 import { useAccountEntitlements } from "../../lib/useAccountEntitlements";
 
 import {
@@ -44,6 +41,10 @@ import {
   getChildJourneyResponses,
   type JourneyResponse,
 } from "../../lib/journeyResponseRepository";
+
+import {
+  getSavedChildren,
+} from "../../lib/journeyRepository";
 
 import VaultDocumentCard from "../../components/vault/VaultDocumentCard";
 import VaultUploadModal from "../../components/vault/VaultUploadModal";
@@ -74,27 +75,37 @@ type VaultCategoryFilter =
   | "all"
   | VaultDocumentCategory;
 
-function getChildDisplayName(
-  data: Record<string, unknown>,
-  fallback: string
-): string {
-  const candidates = [
-    data.name,
-    data.childName,
-    data.firstName,
-  ];
-
-  for (const candidate of candidates) {
-    if (
-      typeof candidate === "string" &&
-      candidate.trim()
-    ) {
-      return candidate.trim();
+  function getChildDisplayName(
+    data: Record<string, unknown>,
+    fallback: string
+  ): string {
+    const profile =
+      data.familyProfile &&
+      typeof data.familyProfile === "object" &&
+      !Array.isArray(data.familyProfile)
+        ? (data.familyProfile as Record<string, unknown>)
+        : {};
+  
+    const candidates = [
+      profile.childName,
+      profile.name,
+      profile.firstName,
+      data.childName,
+      data.name,
+      data.firstName,
+    ];
+  
+    for (const candidate of candidates) {
+      if (
+        typeof candidate === "string" &&
+        candidate.trim()
+      ) {
+        return candidate.trim();
+      }
     }
+  
+    return fallback;
   }
-
-  return fallback;
-}
 
 function formatNoteDate(value: number): string {
   if (!value || !Number.isFinite(value)) {
@@ -292,33 +303,19 @@ export default function DocumentVaultPage() {
       setDocumentError("");
 
       try {
-        const snapshot = await getDocs(
-          collection(
-            db,
-            "users",
-            user.uid,
-            "children"
-          )
+        const savedChildren = await getSavedChildren(
+          user.uid
         );
 
         if (cancelled) return;
 
         const loadedChildren: SavedChild[] =
-          snapshot.docs.map((childDocument) => {
-            const data =
-              childDocument.data() as Record<
-                string,
-                unknown
-              >;
-
-            return {
-              id: childDocument.id,
-              name: getChildDisplayName(
-                data,
-                "Family member"
-              ),
-            };
-          });
+        savedChildren.map((child) => ({
+          id: child.childId,
+          name:
+            child.familyProfile.childName?.trim() ||
+            "Family member",
+        }));
 
         setChildren(loadedChildren);
 
