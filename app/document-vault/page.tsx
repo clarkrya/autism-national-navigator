@@ -7,21 +7,17 @@ import {
   useMemo,
   useState,
 } from "react";
-
 import Link from "next/link";
-
 import {
   collection,
   getDocs,
 } from "firebase/firestore";
-
 import {
   onAuthStateChanged,
   type User,
 } from "firebase/auth";
 
 import { auth, db } from "../../lib/firebase";
-
 import { useAccountEntitlements } from "../../lib/useAccountEntitlements";
 
 import {
@@ -44,22 +40,14 @@ import {
   type VaultDocumentCategory,
 } from "../../types/vault";
 
+import {
+  getChildJourneyResponses,
+  type JourneyResponse,
+} from "../../lib/journeyResponseRepository";
+
 import VaultDocumentCard from "../../components/vault/VaultDocumentCard";
 import VaultUploadModal from "../../components/vault/VaultUploadModal";
 import VaultDocumentDetailsModal from "../../components/document-vault/VaultDocumentDetailsModal";
-
-/*
- * AUTIVOYA DOCUMENT VAULT
- *
- * Branding:
- * Navy: #204D6A
- * Dark Navy: #173B52
- * Teal: #58AAA7
- * Gold: #F7AD3F
- *
- * Document functionality and Firebase
- * integration are preserved.
- */
 
 const BRAND = {
   navy: "#204D6A",
@@ -69,7 +57,6 @@ const BRAND = {
   gold: "#F7AD3F",
   background: "#F7FAFB",
   lightTeal: "#EAF6F5",
-  text: "#173B52",
   muted: "#647B8B",
   border: "#DCE7EC",
   white: "#FFFFFF",
@@ -77,7 +64,6 @@ const BRAND = {
 
 const selectedChildStorageKey =
   "myriad-document-vault-selected-child";
-// Keep the existing key so saved selections continue working.
 
 type SavedChild = {
   id: string;
@@ -108,6 +94,24 @@ function getChildDisplayName(
   }
 
   return fallback;
+}
+
+function formatNoteDate(value: number): string {
+  if (!value || !Number.isFinite(value)) {
+    return "Date unavailable";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Date unavailable";
+  }
+
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 const pageStyle: React.CSSProperties = {
@@ -158,6 +162,34 @@ const premiumBadgeStyle: React.CSSProperties = {
   letterSpacing: "0.04em",
 };
 
+function Notice({
+  children,
+  error = false,
+}: {
+  children: React.ReactNode;
+  error?: boolean;
+}) {
+  return (
+    <div
+      role={error ? "alert" : undefined}
+      style={{
+        padding: "13px 15px",
+        borderRadius: 12,
+        background: error
+          ? "#FFF2F3"
+          : BRAND.lightTeal,
+        color: error
+          ? "#913845"
+          : BRAND.darkTeal,
+        fontSize: 13,
+        lineHeight: 1.6,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
 export default function DocumentVaultPage() {
   const {
     loading: entitlementLoading,
@@ -203,9 +235,26 @@ export default function DocumentVaultPage() {
   const [categoryFilter, setCategoryFilter] =
     useState<VaultCategoryFilter>("all");
 
-  /*
-   * AUTH LISTENER
-   */
+  // Saved Journey Notes are displayed separately.
+  // They are never converted into Vault files.
+
+  const [journeyNotes, setJourneyNotes] =
+    useState<JourneyResponse[]>([]);
+
+  const [notesLoading, setNotesLoading] =
+    useState(false);
+
+  const [notesError, setNotesError] =
+    useState("");
+
+  const [notesOpen, setNotesOpen] =
+    useState(false);
+
+  const [expandedNoteId, setExpandedNoteId] =
+    useState<string | null>(null);
+
+  const [notesSearch, setNotesSearch] =
+    useState("");
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(
@@ -219,9 +268,7 @@ export default function DocumentVaultPage() {
     return unsubscribe;
   }, []);
 
-  /*
-   * LOAD FAMILY MEMBERS
-   */
+  // Load family members.
 
   useEffect(() => {
     let cancelled = false;
@@ -256,7 +303,7 @@ export default function DocumentVaultPage() {
 
         if (cancelled) return;
 
-        const loadedChildren =
+        const loadedChildren: SavedChild[] =
           snapshot.docs.map((childDocument) => {
             const data =
               childDocument.data() as Record<
@@ -337,10 +384,6 @@ export default function DocumentVaultPage() {
     isPremium,
   ]);
 
-  /*
-   * REMEMBER SELECTED FAMILY MEMBER
-   */
-
   useEffect(() => {
     if (
       !selectedChildId ||
@@ -355,9 +398,7 @@ export default function DocumentVaultPage() {
     );
   }, [selectedChildId]);
 
-  /*
-   * LOAD DOCUMENTS
-   */
+  // Load uploaded documents.
 
   const loadDocuments = useCallback(
     async (uid: string, childId: string) => {
@@ -383,7 +424,6 @@ export default function DocumentVaultPage() {
         );
 
         setDocuments([]);
-
         setDocumentError(
           "We couldn't load the documents in this Vault."
         );
@@ -415,16 +455,93 @@ export default function DocumentVaultPage() {
     loadDocuments,
   ]);
 
+  // Load Journey Notes independently.
+  // A notes read error must not hide uploaded files.
+
+  useEffect(() => {
+    let cancelled = false;
+
+    setJourneyNotes([]);
+    setNotesError("");
+    setNotesLoading(false);
+
+    if (
+      !user ||
+      !isPremium ||
+      !selectedChildId
+    ) {
+      return;
+    }
+
+    const ownerUserId = user.uid;
+    const childId = selectedChildId;
+
+    async function loadNotes() {
+      setNotesLoading(true);
+
+      try {
+        const responses =
+          await getChildJourneyResponses(
+            ownerUserId,
+            childId
+          );
+
+        if (cancelled) return;
+
+        const savedResponses = responses
+          .filter(
+            (item) =>
+              item.ownerUserId === ownerUserId &&
+              item.childId === childId &&
+              item.response.trim().length > 0
+          )
+          .sort(
+            (a, b) =>
+              b.updatedAt - a.updatedAt
+          );
+
+        setJourneyNotes(savedResponses);
+      } catch (error) {
+        console.error(
+          "Unable to load Journey Notes:",
+          error
+        );
+
+        if (!cancelled) {
+          setJourneyNotes([]);
+          setNotesError(
+            "Saved Journey Notes couldn't be loaded. Please try refreshing the page."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setNotesLoading(false);
+        }
+      }
+    }
+
+    void loadNotes();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    user,
+    isPremium,
+    selectedChildId,
+  ]);
+
+  // Reset presentation when switching children.
+
   useEffect(() => {
     setSearchTerm("");
     setCategoryFilter("all");
     setUploadOpen(false);
     setSelectedDocument(null);
+    setNotesOpen(false);
+    setExpandedNoteId(null);
+    setNotesSearch("");
   }, [selectedChildId]);
-
-  /*
-   * DERIVED DATA
-   */
 
   const selectedChild = useMemo(
     () =>
@@ -451,9 +568,24 @@ export default function DocumentVaultPage() {
     categoryFilter,
   ]);
 
-  /*
-   * DOCUMENT ACTIONS
-   */
+  const visibleNotes = useMemo(() => {
+    const term =
+      notesSearch.trim().toLowerCase();
+
+    if (!term) return journeyNotes;
+
+    return journeyNotes.filter((note) => {
+      return [
+        note.taskTitle,
+        note.response,
+        `Stage ${note.stageNumber}`,
+      ].some((value) =>
+        value.toLowerCase().includes(term)
+      );
+    });
+  }, [journeyNotes, notesSearch]);
+
+  // Existing document actions.
 
   async function handleViewDocument(
     document: VaultDocument
@@ -619,9 +751,7 @@ export default function DocumentVaultPage() {
     setCategoryFilter("all");
   }
 
-  /*
-   * INITIAL LOADING
-   */
+  // Loading view.
 
   if (authLoading || entitlementLoading) {
     return (
@@ -640,9 +770,7 @@ export default function DocumentVaultPage() {
     );
   }
 
-  /*
-   * GUEST VIEW
-   */
+  // Guest view.
 
   if (!isAuthenticated || !user) {
     return (
@@ -653,8 +781,6 @@ export default function DocumentVaultPage() {
             maxWidth: 760,
             margin: "0 auto",
             padding: 30,
-            boxShadow:
-              "0 10px 30px rgba(23,59,82,0.05)",
           }}
         >
           <div style={premiumBadgeStyle}>
@@ -663,10 +789,9 @@ export default function DocumentVaultPage() {
 
           <h1
             style={{
-              margin: "12px 0 0",
+              margin: "12px 0",
               color: BRAND.darkNavy,
               fontSize: 30,
-              lineHeight: 1.2,
             }}
           >
             Keep important documents
@@ -675,9 +800,7 @@ export default function DocumentVaultPage() {
 
           <p
             style={{
-              margin: "12px 0 0",
               color: BRAND.muted,
-              fontSize: 15,
               lineHeight: 1.6,
             }}
           >
@@ -690,7 +813,7 @@ export default function DocumentVaultPage() {
             href="/login"
             style={{
               ...primaryButtonStyle,
-              marginTop: 20,
+              marginTop: 12,
             }}
           >
             Sign In
@@ -700,9 +823,7 @@ export default function DocumentVaultPage() {
     );
   }
 
-  /*
-   * ENTITLEMENT ERROR
-   */
+  // Entitlement error.
 
   if (entitlementError) {
     return (
@@ -717,37 +838,18 @@ export default function DocumentVaultPage() {
         >
           <h1
             style={{
-              margin: 0,
               color: BRAND.darkNavy,
-              fontSize: 28,
+              marginTop: 0,
             }}
           >
             Document Vault
           </h1>
 
-          <div
-            role="alert"
-            style={{
-              marginTop: 16,
-              padding: "13px 15px",
-              borderRadius: 12,
-              background: "#FFF2F3",
-              color: "#913845",
-              fontSize: 13,
-              lineHeight: 1.55,
-            }}
-          >
+          <Notice error>
             {entitlementError}
-          </div>
+          </Notice>
 
-          <p
-            style={{
-              margin: "14px 0 0",
-              color: BRAND.muted,
-              fontSize: 14,
-              lineHeight: 1.6,
-            }}
-          >
+          <p style={{ color: BRAND.muted }}>
             Please refresh the page and try
             again before accessing your Vault.
           </p>
@@ -756,9 +858,7 @@ export default function DocumentVaultPage() {
     );
   }
 
-  /*
-   * FREE ACCOUNT
-   */
+  // Free account view.
 
   if (isFree || !isPremium) {
     return (
@@ -769,8 +869,6 @@ export default function DocumentVaultPage() {
             maxWidth: 820,
             margin: "0 auto",
             padding: 32,
-            boxShadow:
-              "0 12px 34px rgba(23,59,82,0.05)",
           }}
         >
           <div style={premiumBadgeStyle}>
@@ -779,12 +877,9 @@ export default function DocumentVaultPage() {
 
           <h1
             style={{
-              margin: "12px 0 0",
+              margin: "12px 0",
               color: BRAND.darkNavy,
-              fontSize:
-                "clamp(28px,4vw,38px)",
-              lineHeight: 1.15,
-              fontWeight: 850,
+              fontSize: 34,
             }}
           >
             Document Vault
@@ -792,53 +887,23 @@ export default function DocumentVaultPage() {
 
           <p
             style={{
-              maxWidth: 620,
-              margin: "13px 0 0",
               color: BRAND.muted,
-              fontSize: 15,
               lineHeight: 1.65,
+              maxWidth: 620,
             }}
           >
-            Keep evaluations, school
-            documents, therapy records,
-            insurance information, and
-            other important family documents
+            Keep evaluations, school documents,
+            therapy records, insurance
+            information, and saved Journey Notes
             organized in one private place.
           </p>
 
-          <div
-            style={{
-              marginTop: 22,
-              padding: 18,
-              borderRadius: 16,
-              background: BRAND.lightTeal,
-              border:
-                "1px solid #D1EAE8",
-            }}
-          >
-            <div
-              style={{
-                color: BRAND.darkNavy,
-                fontSize: 14,
-                fontWeight: 800,
-              }}
-            >
-              Included with Autivoya Premium
-            </div>
-
-            <p
-              style={{
-                margin: "7px 0 0",
-                color: BRAND.muted,
-                fontSize: 13,
-                lineHeight: 1.6,
-              }}
-            >
+          <div style={{ marginTop: 20 }}>
+            <Notice>
               Premium access is required to
               upload, view, organize, and
-              remove documents from
-              Document Vault.
-            </p>
+              manage Document Vault content.
+            </Notice>
           </div>
 
           <Link
@@ -855,9 +920,7 @@ export default function DocumentVaultPage() {
     );
   }
 
-  /*
-   * PREMIUM DOCUMENT VAULT
-   */
+  // Premium Document Vault.
 
   return (
     <main style={pageStyle}>
@@ -868,7 +931,7 @@ export default function DocumentVaultPage() {
           margin: "0 auto",
         }}
       >
-        {/* PAGE HEADER */}
+        {/* HEADER */}
 
         <section
           style={{
@@ -906,8 +969,9 @@ export default function DocumentVaultPage() {
                 lineHeight: 1.65,
               }}
             >
-              Keep important family documents
-              organized in one private place.
+              Your family's important documents
+              and Journey Notes, organized
+              in one private place.
             </p>
           </div>
 
@@ -917,14 +981,10 @@ export default function DocumentVaultPage() {
               !selectedChildId ||
               childrenLoading
             }
-            onClick={() =>
-              setUploadOpen(true)
-            }
+            onClick={() => setUploadOpen(true)}
             style={{
               ...primaryButtonStyle,
               minHeight: 46,
-              padding: "11px 18px",
-              fontSize: 14,
               background:
                 !selectedChildId ||
                 childrenLoading
@@ -935,9 +995,6 @@ export default function DocumentVaultPage() {
                 childrenLoading
                   ? "not-allowed"
                   : "pointer",
-              boxShadow: selectedChildId
-                ? "0 8px 18px rgba(49,126,123,0.18)"
-                : "none",
             }}
           >
             + Add Document
@@ -957,7 +1014,7 @@ export default function DocumentVaultPage() {
             htmlFor="vault-child"
             style={{
               display: "block",
-              marginBottom: 7,
+              marginBottom: 8,
               color: BRAND.darkNavy,
               fontSize: 13,
               fontWeight: 750,
@@ -967,14 +1024,9 @@ export default function DocumentVaultPage() {
           </label>
 
           {childrenLoading ? (
-            <div
-              style={{
-                color: BRAND.muted,
-                fontSize: 14,
-              }}
-            >
+            <p style={{ color: BRAND.muted }}>
               Loading family members...
-            </div>
+            </p>
           ) : children.length > 0 ? (
             <select
               id="vault-child"
@@ -988,7 +1040,6 @@ export default function DocumentVaultPage() {
                 width: "100%",
                 maxWidth: 420,
                 minHeight: 44,
-                boxSizing: "border-box",
                 padding: "10px 12px",
                 border:
                   `1px solid ${BRAND.border}`,
@@ -1009,27 +1060,25 @@ export default function DocumentVaultPage() {
             </select>
           ) : (
             <div>
-              <div
+              <p
                 style={{
+                  margin: 0,
                   color: BRAND.darkNavy,
-                  fontSize: 14,
                   fontWeight: 700,
                 }}
               >
                 No saved family members found.
-              </div>
+              </p>
 
               <p
                 style={{
-                  margin: "6px 0 0",
                   color: BRAND.muted,
                   fontSize: 13,
-                  lineHeight: 1.5,
                 }}
               >
                 Add a child to your family
                 profile before storing
-                documents in the Vault.
+                documents.
               </p>
             </div>
           )}
@@ -1037,16 +1086,15 @@ export default function DocumentVaultPage() {
 
         {selectedChild ? (
           <>
-            {/* VAULT SUMMARY */}
+            {/* SUMMARY */}
 
             <section
               style={{
-                marginBottom: 22,
+                marginBottom: 24,
                 padding: "18px 20px",
                 borderRadius: 18,
                 background: BRAND.lightTeal,
-                border:
-                  "1px solid #D1EAE8",
+                border: "1px solid #D1EAE8",
                 borderLeft:
                   `4px solid ${BRAND.teal}`,
               }}
@@ -1054,11 +1102,10 @@ export default function DocumentVaultPage() {
               <div
                 style={{
                   display: "flex",
-                  justifyContent:
-                    "space-between",
                   alignItems: "center",
-                  gap: 16,
+                  justifyContent: "space-between",
                   flexWrap: "wrap",
+                  gap: 16,
                 }}
               >
                 <div>
@@ -1067,8 +1114,7 @@ export default function DocumentVaultPage() {
                       color: BRAND.darkTeal,
                       fontSize: 11,
                       fontWeight: 800,
-                      textTransform:
-                        "uppercase",
+                      textTransform: "uppercase",
                       letterSpacing: "0.04em",
                     }}
                   >
@@ -1077,7 +1123,7 @@ export default function DocumentVaultPage() {
 
                   <div
                     style={{
-                      marginTop: 3,
+                      marginTop: 4,
                       color: BRAND.darkNavy,
                       fontSize: 18,
                       fontWeight: 800,
@@ -1089,26 +1135,77 @@ export default function DocumentVaultPage() {
 
                 <div
                   style={{
-                    color: BRAND.darkTeal,
-                    fontSize: 13,
-                    fontWeight: 800,
+                    display: "flex",
+                    gap: 10,
+                    flexWrap: "wrap",
                   }}
                 >
-                  {documents.length}{" "}
-                  {documents.length === 1
-                    ? "document"
-                    : "documents"}
+                  <span style={premiumBadgeStyle}>
+                    {documents.length}{" "}
+                    {documents.length === 1
+                      ? "document"
+                      : "documents"}
+                  </span>
+
+                  <span style={premiumBadgeStyle}>
+                    {journeyNotes.length}{" "}
+                    {journeyNotes.length === 1
+                      ? "Journey Note"
+                      : "Journey Notes"}
+                  </span>
                 </div>
               </div>
             </section>
 
-            {/* DOCUMENT SEARCH */}
+            {/* UPLOADED DOCUMENTS */}
 
             <section
               style={{
-                marginBottom: 18,
+                ...panelStyle,
+                padding: 22,
+                marginBottom: 20,
               }}
             >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  flexWrap: "wrap",
+                  marginBottom: 18,
+                }}
+              >
+                <div>
+                  <h2
+                    style={{
+                      margin: 0,
+                      color: BRAND.darkNavy,
+                      fontSize: 21,
+                    }}
+                  >
+                    Uploaded Documents
+                  </h2>
+
+                  <p
+                    style={{
+                      margin: "5px 0 0",
+                      color: BRAND.muted,
+                      fontSize: 13,
+                    }}
+                  >
+                    Evaluations, school records,
+                    therapy files, and more.
+                  </p>
+                </div>
+
+                <span style={premiumBadgeStyle}>
+                  {documents.length} files
+                </span>
+              </div>
+
+              {/* DOCUMENT SEARCH */}
+
               <input
                 type="search"
                 aria-label="Search documents"
@@ -1131,276 +1228,600 @@ export default function DocumentVaultPage() {
                   color: BRAND.darkNavy,
                   fontSize: 14,
                   outlineColor: BRAND.teal,
+                  marginBottom: 16,
                 }}
               />
+
+              {/* CATEGORY FILTERS */}
+
+              <div
+                aria-label="Document categories"
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  flexWrap: "wrap",
+                  marginBottom: 22,
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() =>
+                    setCategoryFilter("all")
+                  }
+                  style={{
+                    minHeight: 36,
+                    padding: "7px 12px",
+                    border:
+                      categoryFilter === "all"
+                        ? `1px solid ${BRAND.darkTeal}`
+                        : `1px solid ${BRAND.border}`,
+                    borderRadius: 999,
+                    background:
+                      categoryFilter === "all"
+                        ? BRAND.darkTeal
+                        : BRAND.white,
+                    color:
+                      categoryFilter === "all"
+                        ? BRAND.white
+                        : BRAND.navy,
+                    fontSize: 12,
+                    fontWeight: 750,
+                    cursor: "pointer",
+                  }}
+                >
+                  All ({documents.length})
+                </button>
+
+                {VAULT_DOCUMENT_CATEGORIES.map(
+                  (category) => {
+                    const count =
+                      getVaultCategoryCount(
+                        documents,
+                        category
+                      );
+
+                    const active =
+                      categoryFilter === category;
+
+                    return (
+                      <button
+                        key={category}
+                        type="button"
+                        onClick={() =>
+                          setCategoryFilter(
+                            category
+                          )
+                        }
+                        style={{
+                          minHeight: 36,
+                          padding: "7px 12px",
+                          border: active
+                            ? `1px solid ${BRAND.darkTeal}`
+                            : `1px solid ${BRAND.border}`,
+                          borderRadius: 999,
+                          background: active
+                            ? BRAND.darkTeal
+                            : BRAND.white,
+                          color: active
+                            ? BRAND.white
+                            : BRAND.navy,
+                          fontSize: 12,
+                          fontWeight: 750,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {
+                          VAULT_DOCUMENT_CATEGORY_LABELS[
+                            category
+                          ]
+                        }{" "}
+                        ({count})
+                      </button>
+                    );
+                  }
+                )}
+              </div>
+
+              {documentError ? (
+                <div style={{ marginBottom: 18 }}>
+                  <Notice error>
+                    {documentError}
+                  </Notice>
+                </div>
+              ) : null}
+
+              {/* DOCUMENT LIST */}
+
+              {documentsLoading ? (
+                <div
+                  style={{
+                    padding: "36px 12px",
+                    textAlign: "center",
+                    color: BRAND.muted,
+                    fontSize: 14,
+                  }}
+                >
+                  Loading documents...
+                </div>
+              ) : documents.length === 0 ? (
+                <div
+                  style={{
+                    padding: "36px 20px",
+                    textAlign: "center",
+                    border:
+                      `1px dashed ${BRAND.teal}`,
+                    borderRadius: 16,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 28,
+                      marginBottom: 10,
+                    }}
+                  >
+                    📄
+                  </div>
+
+                  <h3
+                    style={{
+                      margin: 0,
+                      color: BRAND.darkNavy,
+                      fontSize: 18,
+                    }}
+                  >
+                    No uploaded documents yet
+                  </h3>
+
+                  <p
+                    style={{
+                      color: BRAND.muted,
+                      fontSize: 13,
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    Keep important files for{" "}
+                    {selectedChild.name} organized
+                    here.
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setUploadOpen(true)
+                    }
+                    style={{
+                      ...primaryButtonStyle,
+                      marginTop: 8,
+                    }}
+                  >
+                    Add First Document
+                  </button>
+                </div>
+              ) : visibleDocuments.length === 0 ? (
+                <div
+                  style={{
+                    padding: 30,
+                    textAlign: "center",
+                  }}
+                >
+                  <h3
+                    style={{
+                      color: BRAND.darkNavy,
+                    }}
+                  >
+                    No matching documents
+                  </h3>
+
+                  <p
+                    style={{
+                      color: BRAND.muted,
+                      fontSize: 13,
+                    }}
+                  >
+                    Try another search or
+                    category.
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchTerm("");
+                      setCategoryFilter("all");
+                    }}
+                    style={secondaryButtonStyle}
+                  >
+                    Clear filters
+                  </button>
+                </div>
+              ) : (
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns:
+                      "repeat(auto-fit,minmax(260px,1fr))",
+                    gap: 16,
+                  }}
+                >
+                  {visibleDocuments.map(
+                    (document) => (
+                      <VaultDocumentCard
+                        key={document.id}
+                        document={document}
+                        onDetails={
+                          handleDocumentDetails
+                        }
+                        onView={
+                          handleViewDocument
+                        }
+                        onDelete={
+                          handleDeleteDocument
+                        }
+                      />
+                    )
+                  )}
+                </div>
+              )}
             </section>
 
-            {/* DOCUMENT CATEGORY FILTERS */}
+            {/* SAVED JOURNEY NOTES */}
 
             <section
-              aria-label="Document categories"
               style={{
-                display: "flex",
-                gap: 8,
-                flexWrap: "wrap",
+                ...panelStyle,
                 marginBottom: 24,
+                overflow: "hidden",
               }}
             >
               <button
                 type="button"
-                onClick={() =>
-                  setCategoryFilter("all")
-                }
+                aria-expanded={notesOpen}
+                aria-controls="vault-journey-notes"
+                onClick={() => {
+                  setNotesOpen((current) => !current);
+                  setExpandedNoteId(null);
+                }}
                 style={{
-                  minHeight: 36,
-                  padding: "7px 12px",
-                  border:
-                    categoryFilter === "all"
-                      ? `1px solid ${BRAND.darkTeal}`
-                      : `1px solid ${BRAND.border}`,
-                  borderRadius: 999,
-                  background:
-                    categoryFilter === "all"
-                      ? BRAND.darkTeal
-                      : BRAND.white,
-                  color:
-                    categoryFilter === "all"
-                      ? BRAND.white
-                      : BRAND.navy,
-                  fontSize: 12,
-                  fontWeight: 750,
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent:
+                    "space-between",
+                  gap: 14,
+                  padding: 22,
+                  background: BRAND.white,
+                  border: "none",
+                  textAlign: "left",
                   cursor: "pointer",
                 }}
               >
-                All ({documents.length})
-              </button>
+                <div>
+                  <h2
+                    style={{
+                      margin: 0,
+                      color: BRAND.darkNavy,
+                      fontSize: 21,
+                    }}
+                  >
+                    Saved Journey Notes
+                  </h2>
 
-              {VAULT_DOCUMENT_CATEGORIES.map(
-                (category) => {
-                  const count =
-                    getVaultCategoryCount(
-                      documents,
-                      category
-                    );
-
-                  const active =
-                    categoryFilter === category;
-
-                  return (
-                    <button
-                      key={category}
-                      type="button"
-                      onClick={() =>
-                        setCategoryFilter(
-                          category
-                        )
-                      }
-                      style={{
-                        minHeight: 36,
-                        padding: "7px 12px",
-                        border: active
-                          ? `1px solid ${BRAND.darkTeal}`
-                          : `1px solid ${BRAND.border}`,
-                        borderRadius: 999,
-                        background: active
-                          ? BRAND.darkTeal
-                          : BRAND.white,
-                        color: active
-                          ? BRAND.white
-                          : BRAND.navy,
-                        fontSize: 12,
-                        fontWeight: 750,
-                        cursor: "pointer",
-                      }}
-                    >
-                      {
-                        VAULT_DOCUMENT_CATEGORY_LABELS[
-                          category
-                        ]
-                      }{" "}
-                      ({count})
-                    </button>
-                  );
-                }
-              )}
-            </section>
-
-            {/* ERROR MESSAGE */}
-
-            {documentError ? (
-              <div
-                role="alert"
-                style={{
-                  marginBottom: 20,
-                  padding: "12px 14px",
-                  borderRadius: 12,
-                  background: "#FFF2F3",
-                  border:
-                    "1px solid rgba(162,63,75,0.18)",
-                  color: "#913845",
-                  fontSize: 13,
-                  lineHeight: 1.5,
-                }}
-              >
-                {documentError}
-              </div>
-            ) : null}
-
-            {/* DOCUMENT CONTENT */}
-
-            {documentsLoading ? (
-              <section
-                style={{
-                  ...panelStyle,
-                  padding: "42px 20px",
-                  textAlign: "center",
-                  color: BRAND.muted,
-                  fontSize: 14,
-                }}
-              >
-                Loading documents...
-              </section>
-            ) : documents.length === 0 ? (
-              <section
-                style={{
-                  padding: "46px 24px",
-                  textAlign: "center",
-                  border:
-                    `1px dashed ${BRAND.teal}`,
-                  borderRadius: 20,
-                  background: BRAND.white,
-                }}
-              >
-                <div
-                  aria-hidden="true"
-                  style={{
-                    width: 58,
-                    height: 58,
-                    margin: "0 auto 16px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    borderRadius: 18,
-                    background: BRAND.lightTeal,
-                    color: BRAND.darkTeal,
-                    fontSize: 25,
-                  }}
-                >
-                  📄
+                  <p
+                    style={{
+                      margin: "6px 0 0",
+                      color: BRAND.muted,
+                      fontSize: 13,
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    Written responses saved
+                    from My Journey.
+                  </p>
                 </div>
 
-                <h2
+                <div
                   style={{
-                    margin: 0,
-                    color: BRAND.darkNavy,
-                    fontSize: 19,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    flexShrink: 0,
                   }}
                 >
-                  No documents yet
-                </h2>
+                  <span style={premiumBadgeStyle}>
+                    {journeyNotes.length}
+                  </span>
 
-                <p
-                  style={{
-                    maxWidth: 460,
-                    margin: "8px auto 0",
-                    color: BRAND.muted,
-                    fontSize: 13,
-                    lineHeight: 1.55,
-                  }}
-                >
-                  Add evaluations, school
-                  documents, therapy records,
-                  insurance information, or
-                  other important documents
-                  for {selectedChild.name}.
-                </p>
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      color: BRAND.darkTeal,
+                      fontSize: 20,
+                      fontWeight: 700,
+                    }}
+                  >
+                    {notesOpen ? "−" : "+"}
+                  </span>
+                </div>
+              </button>
 
-                <button
-                  type="button"
-                  onClick={() =>
-                    setUploadOpen(true)
-                  }
+              {notesOpen ? (
+                <div
+                  id="vault-journey-notes"
                   style={{
-                    ...primaryButtonStyle,
-                    marginTop: 18,
-                    minHeight: 42,
+                    borderTop:
+                      `1px solid ${BRAND.border}`,
+                    padding: 20,
                   }}
                 >
-                  Add First Document
-                </button>
-              </section>
-            ) : visibleDocuments.length === 0 ? (
-              <section
-                style={{
-                  ...panelStyle,
-                  padding: "42px 20px",
-                  textAlign: "center",
-                }}
-              >
-                <h2
-                  style={{
-                    margin: 0,
-                    color: BRAND.darkNavy,
-                    fontSize: 18,
-                  }}
-                >
-                  No matching documents
-                </h2>
+                  {notesError ? (
+                    <div
+                      style={{
+                        marginBottom: 14,
+                      }}
+                    >
+                      <Notice error>
+                        {notesError}
+                      </Notice>
+                    </div>
+                  ) : null}
 
-                <p
-                  style={{
-                    margin: "8px 0 0",
-                    color: BRAND.muted,
-                    fontSize: 13,
-                  }}
-                >
-                  Try another search or
-                  category.
-                </p>
+                  {notesLoading ? (
+                    <p
+                      style={{
+                        color: BRAND.muted,
+                        fontSize: 13,
+                      }}
+                    >
+                      Loading saved Journey Notes...
+                    </p>
+                  ) : journeyNotes.length === 0 ? (
+                    <div
+                      style={{
+                        padding: "22px 12px",
+                        textAlign: "center",
+                      }}
+                    >
+                      <p
+                        style={{
+                          margin: 0,
+                          color: BRAND.darkNavy,
+                          fontWeight: 700,
+                          fontSize: 14,
+                        }}
+                      >
+                        No saved Journey Notes yet
+                      </p>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearchTerm("");
-                    setCategoryFilter("all");
-                  }}
-                  style={{
-                    ...secondaryButtonStyle,
-                    marginTop: 16,
-                    minHeight: 40,
-                  }}
-                >
-                  Clear filters
-                </button>
-              </section>
-            ) : (
-              <section
-                style={{
-                  display: "grid",
-                  gridTemplateColumns:
-                    "repeat(auto-fit,minmax(280px,1fr))",
-                  gap: 16,
-                }}
-              >
-                {visibleDocuments.map(
-                  (document) => (
-                    <VaultDocumentCard
-                      key={document.id}
-                      document={document}
-                      onDetails={
-                        handleDocumentDetails
-                      }
-                      onView={
-                        handleViewDocument
-                      }
-                      onDelete={
-                        handleDeleteDocument
-                      }
-                    />
-                  )
-                )}
-              </section>
-            )}
+                      <p
+                        style={{
+                          color: BRAND.muted,
+                          fontSize: 13,
+                          lineHeight: 1.6,
+                        }}
+                      >
+                        Responses you save in
+                        My Journey will appear
+                        here automatically
+                        when you open this page.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      {journeyNotes.length > 5 ? (
+                        <input
+                          type="search"
+                          aria-label="Search Journey Notes"
+                          placeholder="Search Journey Notes..."
+                          value={notesSearch}
+                          onChange={(event) =>
+                            setNotesSearch(
+                              event.target.value
+                            )
+                          }
+                          style={{
+                            width: "100%",
+                            minHeight: 42,
+                            boxSizing: "border-box",
+                            padding: "10px 13px",
+                            border:
+                              `1px solid ${BRAND.border}`,
+                            borderRadius: 11,
+                            marginBottom: 14,
+                            color: BRAND.darkNavy,
+                            fontSize: 13,
+                          }}
+                        />
+                      ) : null}
+
+                      {visibleNotes.length === 0 ? (
+                        <p
+                          style={{
+                            color: BRAND.muted,
+                            fontSize: 13,
+                          }}
+                        >
+                          No matching Journey Notes.
+                        </p>
+                      ) : (
+                        <div
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 10,
+                          }}
+                        >
+                          {visibleNotes.map((note) => {
+                            const expanded =
+                              expandedNoteId ===
+                              note.id;
+
+                            return (
+                              <div
+                                key={note.id}
+                                style={{
+                                  border:
+                                    `1px solid ${BRAND.border}`,
+                                  borderRadius: 13,
+                                  overflow: "hidden",
+                                }}
+                              >
+                                <button
+                                  type="button"
+                                  aria-expanded={
+                                    expanded
+                                  }
+                                  onClick={() =>
+                                    setExpandedNoteId(
+                                      expanded
+                                        ? null
+                                        : note.id
+                                    )
+                                  }
+                                  style={{
+                                    width: "100%",
+                                    display: "flex",
+                                    alignItems:
+                                      "center",
+                                    justifyContent:
+                                      "space-between",
+                                    gap: 14,
+                                    padding:
+                                      "15px 16px",
+                                    border: "none",
+                                    background:
+                                      expanded
+                                        ? BRAND.lightTeal
+                                        : BRAND.white,
+                                    textAlign: "left",
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      minWidth: 0,
+                                    }}
+                                  >
+                                    <div
+                                      style={{
+                                        color:
+                                          BRAND.darkNavy,
+                                        fontSize: 14,
+                                        fontWeight: 750,
+                                        lineHeight: 1.5,
+                                        overflowWrap:
+                                          "anywhere",
+                                      }}
+                                    >
+                                      {note.taskTitle ||
+                                        "Journey Note"}
+                                    </div>
+
+                                    <div
+                                      style={{
+                                        marginTop: 5,
+                                        color:
+                                          BRAND.muted,
+                                        fontSize: 12,
+                                        lineHeight: 1.5,
+                                      }}
+                                    >
+                                      Stage{" "}
+                                      {note.stageNumber}
+                                      {" · "}
+                                      Updated{" "}
+                                      {formatNoteDate(
+                                        note.updatedAt
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <span
+                                    aria-hidden="true"
+                                    style={{
+                                      flexShrink: 0,
+                                      color:
+                                        BRAND.darkTeal,
+                                      fontSize: 18,
+                                    }}
+                                  >
+                                    {expanded
+                                      ? "−"
+                                      : "+"}
+                                  </span>
+                                </button>
+
+                                {expanded ? (
+                                  <div
+                                    style={{
+                                      padding:
+                                        "16px 18px",
+                                      borderTop:
+                                        `1px solid ${BRAND.border}`,
+                                      background:
+                                        BRAND.white,
+                                    }}
+                                  >
+                                    <div
+                                      style={{
+                                        color:
+                                          BRAND.darkTeal,
+                                        fontSize: 11,
+                                        fontWeight: 800,
+                                        textTransform:
+                                          "uppercase",
+                                        letterSpacing:
+                                          "0.04em",
+                                        marginBottom: 9,
+                                      }}
+                                    >
+                                      Saved Response
+                                    </div>
+
+                                    <div
+                                      style={{
+                                        color:
+                                          BRAND.darkNavy,
+                                        fontSize: 14,
+                                        lineHeight: 1.75,
+                                        whiteSpace:
+                                          "pre-wrap",
+                                        overflowWrap:
+                                          "anywhere",
+                                      }}
+                                    >
+                                      {note.response}
+                                    </div>
+
+                                    <p
+                                      style={{
+                                        margin:
+                                          "16px 0 0",
+                                        paddingTop: 12,
+                                        borderTop:
+                                          `1px solid ${BRAND.border}`,
+                                        color:
+                                          BRAND.muted,
+                                        fontSize: 12,
+                                        lineHeight: 1.5,
+                                      }}
+                                    >
+                                      This note is linked
+                                      to its original
+                                      Journey task.
+                                      To make changes,
+                                      return to My Journey.
+                                    </p>
+                                  </div>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              ) : null}
+            </section>
           </>
         ) : null}
       </div>
@@ -1430,12 +1851,8 @@ export default function DocumentVaultPage() {
         }
         onView={handleViewDocument}
         onDownload={handleDownloadDocument}
-        onSave={
-          handleSaveDocumentDetails
-        }
-        onDelete={
-          handleDeleteDocument
-        }
+        onSave={handleSaveDocumentDetails}
+        onDelete={handleDeleteDocument}
       />
     </main>
   );
