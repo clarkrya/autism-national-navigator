@@ -584,35 +584,62 @@ export default function DocumentVaultPage() {
 
   // Existing document actions.
 
-  async function handleViewDocument(
-    document: VaultDocument
-  ) {
-    if (!isPremium) return;
+  
+async function handleViewDocument(
+  document: VaultDocument
+) {
+  if (!isPremium) return;
 
-    setDocumentError("");
+  setDocumentError("");
+
+  // Open the tab immediately from the user's tap.
+  // Mobile browsers may block tabs opened after an await.
+  const documentTab = window.open(
+    "about:blank",
+    "_blank"
+  );
+
+  if (documentTab) {
+    documentTab.opener = null;
 
     try {
-      const url =
-        await getVaultDocumentDownloadUrl(
-          document
-        );
-
-      window.open(
-        url,
-        "_blank",
-        "noopener,noreferrer"
-      );
-    } catch (error) {
-      console.error(
-        "Unable to open Vault document:",
-        error
-      );
-
-      setDocumentError(
-        "We couldn't open this document. Please try again."
-      );
+      documentTab.document.title =
+        "Opening document...";
+      documentTab.document.body.textContent =
+        "Opening your document...";
+    } catch {
+      // Some browsers restrict access to new tabs.
     }
   }
+
+  try {
+    const url =
+      await getVaultDocumentDownloadUrl(
+        document
+      );
+
+    if (documentTab && !documentTab.closed) {
+      documentTab.location.replace(url);
+    } else {
+      // Fallback if the mobile browser blocked the tab.
+      window.location.assign(url);
+    }
+  } catch (error) {
+    console.error(
+      "Unable to open Vault document:",
+      error
+    );
+
+    if (documentTab && !documentTab.closed) {
+      documentTab.close();
+    }
+
+    setDocumentError(
+      "We couldn't open this document. Please try again."
+    );
+  }
+}
+
 
   function handleDocumentDetails(
     document: VaultDocument
