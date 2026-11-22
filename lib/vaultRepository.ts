@@ -1,3 +1,4 @@
+
 import {
   collection,
   deleteDoc,
@@ -15,13 +16,10 @@ import {
   deleteObject,
   getDownloadURL,
   ref,
-  uploadBytes,
+  uploadBytesResumable,
 } from "firebase/storage";
 
-import {
-  db,
-  storage,
-} from "./firebase";
+import { db, storage } from "./firebase";
 
 import type {
   CreateVaultDocumentInput,
@@ -38,94 +36,48 @@ import {
 } from "../types/vault";
 
 /*
- * ============================================================
- * MYRIAD DOCUMENT VAULT REPOSITORY
- * ============================================================
- *
- * Responsibilities:
- *
- * - Validate files before upload
- * - Generate Vault document IDs
- * - Build controlled Firebase Storage paths
- * - Upload files to Firebase Storage
- * - Store document metadata in Firestore
- * - Retrieve document metadata
- * - Update trusted document metadata
- * - Generate download URLs when requested
- * - Delete Storage files and Firestore metadata
+ * AUTIVOYA DOCUMENT VAULT REPOSITORY
  *
  * Storage:
- *
  * vault/{userId}/{childId}/{documentId}/{fileName}
  *
  * Firestore:
- *
  * users/{userId}/children/{childId}/vaultDocuments/{documentId}
  *
- * IMPORTANT:
+ * Mobile upload improvements:
+ * - Resumable Firebase Storage uploads
+ * - Upload progress monitoring
+ * - Stalled upload detection
+ * - Overall upload timeout
+ * - Clear upload errors
  *
- * Editing document details changes Firestore metadata only.
- * It does not rename, move, replace, or re-upload the
- * underlying Firebase Storage object.
- *
- * ============================================================
+ * Existing document schema and paths are preserved.
  */
 
-/*
- * Firestore representation.
- *
- * uploadedAt uses a Firestore Timestamp while stored.
- */
 interface VaultDocumentFirestoreData {
   id: string;
-
   userId: string;
-
   childId: string;
-
   fileName: string;
-
   storagePath: string;
-
   category: VaultDocument["category"];
-
   mimeType: VaultAllowedMimeType;
-
   size: number;
-
   title?: string;
-
   notes?: string;
-
   uploadedAt: Timestamp | null;
-
   schemaVersion: 1;
 }
 
-/*
- * Input accepted when editing an existing Vault document.
- *
- * Only user-editable metadata is included here.
- *
- * File identity, Storage path, MIME type, size, ownership,
- * upload date, and schema version cannot be changed through
- * this function.
- */
 export interface UpdateVaultDocumentMetadataInput {
   title: string;
-
   category: VaultDocumentCategory;
-
   notes: string;
 }
 
-/*
- * Create a sufficiently unique client-generated ID.
- *
- * crypto.randomUUID() is supported by modern browsers.
- * The fallback keeps StackBlitz/local development usable
- * if randomUUID is unavailable.
- */
+const UPLOAD_STALL_TIMEOUT_MS = 45000;
+const UPLOAD_TOTAL_TIMEOUT_MS = 180000;
+
 function createVaultDocumentId(): string {
   if (
     typeof crypto !== "undefined" &&
@@ -140,19 +92,9 @@ function createVaultDocumentId(): string {
   ].join("-");
 }
 
-/*
- * Firebase Storage object names should not receive the
- * raw browser filename without normalization.
- *
- * We preserve the recognizable filename while removing
- * characters that could make Storage paths confusing.
- */
-function sanitizeFileName(
-  fileName: string
-): string {
-  const trimmed = fileName.trim();
-
-  const sanitized = trimmed
+function sanitizeFileName(fileName: string): string {
+  const sanitized = fileName
+    .trim()
     .replace(/[\/\\]/g, "_")
     .replace(/[\u0000-\u001F\u007F]/g, "")
     .replace(/\s+/g, " ")
@@ -161,36 +103,24 @@ function sanitizeFileName(
   return sanitized || "document";
 }
 
-/*
- * Validate a browser File before attempting an upload.
- *
- * Firebase Storage Rules remain the authoritative
- * enforcement layer. Client validation provides a better
- * user experience and prevents unnecessary upload attempts.
- */
 export function validateVaultFile(
   file: File
 ): VaultFileValidationResult {
   if (!file) {
     return {
       valid: false,
-      error:
-        "Please select a document to upload.",
+      error: "Please select a document to upload.",
     };
   }
 
   if (file.size <= 0) {
     return {
       valid: false,
-      error:
-        "The selected document is empty.",
+      error: "The selected document is empty.",
     };
   }
 
-  if (
-    file.size >
-    VAULT_MAX_FILE_SIZE_BYTES
-  ) {
+  if (file.size > VAULT_MAX_FILE_SIZE_BYTES) {
     return {
       valid: false,
       error:
@@ -198,14 +128,9 @@ export function validateVaultFile(
     };
   }
 
-  const mimeType =
-    file.type as VaultAllowedMimeType;
+  const mimeType = file.type as VaultAllowedMimeType;
 
-  if (
-    !VAULT_ALLOWED_MIME_TYPES.includes(
-      mimeType
-    )
-  ) {
+  if (!VAULT_ALLOWED_MIME_TYPES.includes(mimeType)) {
     return {
       valid: false,
       error:
@@ -219,10 +144,6 @@ export function validateVaultFile(
   };
 }
 
-/*
- * Build the exact Firebase Storage path used by the
- * Security Rules.
- */
 export function buildVaultStoragePath(
   userId: string,
   childId: string,
@@ -247,21 +168,15 @@ export function buildVaultStoragePath(
     );
   }
 
-  const safeFileName =
-    sanitizeFileName(fileName);
-
   return [
     "vault",
     userId,
     childId,
     documentId,
-    safeFileName,
+    sanitizeFileName(fileName),
   ].join("/");
 }
 
-/*
- * Firestore metadata collection for a child's Vault.
- */
 function getVaultCollectionReference(
   userId: string,
   childId: string
@@ -276,9 +191,6 @@ function getVaultCollectionReference(
   );
 }
 
-/*
- * Firestore metadata document reference.
- */
 function getVaultDocumentReference(
   userId: string,
   childId: string,
@@ -295,60 +207,184 @@ function getVaultDocumentReference(
   );
 }
 
-/*
- * Convert Firestore data into the normalized object used
- * throughout the application.
- */
 function normalizeVaultDocument(
   data: VaultDocumentFirestoreData
 ): VaultDocument {
   return {
     id: data.id,
-
     userId: data.userId,
-
     childId: data.childId,
-
     fileName: data.fileName,
-
     storagePath: data.storagePath,
-
     category: data.category,
-
     mimeType: data.mimeType,
-
     size: data.size,
-
     title: data.title,
-
     notes: data.notes,
-
     uploadedAt:
       data.uploadedAt instanceof Timestamp
         ? data.uploadedAt.toMillis()
         : 0,
-
     schemaVersion: 1,
   };
 }
 
 /*
- * ============================================================
- * UPLOAD DOCUMENT
- * ============================================================
+ * MONITORED STORAGE UPLOAD
  *
- * Sequence:
- *
- * 1. Validate the browser File.
- * 2. Generate a document ID.
- * 3. Upload the file to Firebase Storage.
- * 4. Write metadata to Firestore.
- *
- * If Firestore metadata creation fails after Storage
- * succeeds, we attempt to remove the uploaded Storage
- * object so the Vault does not intentionally leave an
- * orphaned file behind.
+ * Uses Firebase's resumable upload API.
+ * Detects an upload that stops making progress.
+ * Cancels stalled transfers and reports an error.
  */
+
+function uploadFileWithMonitoring(
+  storageReference: ReturnType<typeof ref>,
+  file: File,
+  mimeType: VaultAllowedMimeType
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const uploadTask = uploadBytesResumable(
+      storageReference,
+      file,
+      { contentType: mimeType }
+    );
+
+    let settled = false;
+    let stallTimer: ReturnType<typeof setTimeout> | null =
+      null;
+    let totalTimer: ReturnType<typeof setTimeout> | null =
+      null;
+
+    let lastTransferred = 0;
+
+    function clearTimers() {
+      if (stallTimer !== null) {
+        clearTimeout(stallTimer);
+        stallTimer = null;
+      }
+
+      if (totalTimer !== null) {
+        clearTimeout(totalTimer);
+        totalTimer = null;
+      }
+    }
+
+    function finish(error?: Error) {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      clearTimers();
+
+      if (error) {
+        uploadTask.cancel();
+        reject(error);
+      } else {
+        resolve();
+      }
+    }
+
+    function resetStallTimer() {
+      if (stallTimer !== null) {
+        clearTimeout(stallTimer);
+      }
+
+      stallTimer = setTimeout(() => {
+        finish(
+          new Error(
+            "The document upload stopped responding. Please check your internet connection and try again."
+          )
+        );
+      }, UPLOAD_STALL_TIMEOUT_MS);
+    }
+
+    totalTimer = setTimeout(() => {
+      finish(
+        new Error(
+          "The document upload took too long. Please try again using a stable internet connection."
+        )
+      );
+    }, UPLOAD_TOTAL_TIMEOUT_MS);
+
+    resetStallTimer();
+
+    uploadTask.on(
+      "state_changed",
+      (snapshot) => {
+        if (settled) {
+          return;
+        }
+
+        if (
+          snapshot.bytesTransferred >
+          lastTransferred
+        ) {
+          lastTransferred = snapshot.bytesTransferred;
+          resetStallTimer();
+        }
+      },
+      (error) => {
+        if (settled) {
+          return;
+        }
+
+        const firebaseCode =
+          (error as { code?: string }).code || "";
+
+        if (firebaseCode === "storage/unauthorized") {
+          finish(
+            new Error(
+              "You do not have permission to upload this document. Please sign in again and retry."
+            )
+          );
+          return;
+        }
+
+        if (firebaseCode === "storage/quota-exceeded") {
+          finish(
+            new Error(
+              "Document storage is temporarily unavailable because the storage limit has been reached."
+            )
+          );
+          return;
+        }
+
+        if (
+          firebaseCode === "storage/retry-limit-exceeded"
+        ) {
+          finish(
+            new Error(
+              "The upload could not complete because of a network issue. Please try again."
+            )
+          );
+          return;
+        }
+
+        finish(
+          error instanceof Error
+            ? error
+            : new Error(
+                "The document could not be uploaded. Please try again."
+              )
+        );
+      },
+      () => {
+        finish();
+      }
+    );
+  });
+}
+
+/*
+ * UPLOAD DOCUMENT
+ *
+ * 1. Validate file.
+ * 2. Upload to Firebase Storage.
+ * 3. Save metadata to Firestore.
+ * 4. Return the saved document.
+ */
+
 export async function uploadVaultDocument(
   input: CreateVaultDocumentInput
 ): Promise<VaultUploadResult> {
@@ -371,109 +407,59 @@ export async function uploadVaultDocument(
     );
   }
 
-  const validation =
-    validateVaultFile(file);
+  const validation = validateVaultFile(file);
 
   if (!validation.valid) {
-    throw new Error(
-      validation.error
-    );
+    throw new Error(validation.error);
   }
 
-  const documentId =
-    createVaultDocumentId();
+  const documentId = createVaultDocumentId();
+  const safeFileName = sanitizeFileName(file.name);
 
-  const safeFileName =
-    sanitizeFileName(file.name);
-
-  const storagePath =
-    buildVaultStoragePath(
-      userId,
-      childId,
-      documentId,
-      safeFileName
-    );
-
-  const storageReference = ref(
-    storage,
-    storagePath
+  const storagePath = buildVaultStoragePath(
+    userId,
+    childId,
+    documentId,
+    safeFileName
   );
 
-  /*
-   * Explicitly set contentType rather than relying only
-   * on filename extension.
-   */
-  await uploadBytes(
+  const storageReference = ref(storage, storagePath);
+
+  await uploadFileWithMonitoring(
     storageReference,
     file,
-    {
-      contentType:
-        validation.mimeType,
-    }
+    validation.mimeType
   );
 
-  const metadataReference =
-    getVaultDocumentReference(
-      userId,
-      childId,
-      documentId
-    );
+  const metadataReference = getVaultDocumentReference(
+    userId,
+    childId,
+    documentId
+  );
 
-  const title =
-    input.title?.trim();
-
-  const notes =
-    input.notes?.trim();
+  const title = input.title?.trim();
+  const notes = input.notes?.trim();
 
   const metadata = {
     id: documentId,
-
     userId,
-
     childId,
-
     fileName: safeFileName,
-
     storagePath,
-
     category,
-
-    mimeType:
-      validation.mimeType,
-
+    mimeType: validation.mimeType,
     size: file.size,
-
-    ...(title
-      ? { title }
-      : {}),
-
-    ...(notes
-      ? { notes }
-      : {}),
-
-    uploadedAt:
-      serverTimestamp(),
-
-    schemaVersion:
-      1 as const,
+    ...(title ? { title } : {}),
+    ...(notes ? { notes } : {}),
+    uploadedAt: serverTimestamp(),
+    schemaVersion: 1 as const,
   };
 
   try {
-    await setDoc(
-      metadataReference,
-      metadata
-    );
+    await setDoc(metadataReference, metadata);
   } catch (error) {
-    /*
-     * Best-effort cleanup.
-     *
-     * Preserve the original Firestore error even if
-     * Storage cleanup also fails.
-     */
     try {
-      await deleteObject(
-        storageReference
-      );
+      await deleteObject(storageReference);
     } catch (cleanupError) {
       console.error(
         "Vault upload cleanup failed:",
@@ -484,159 +470,84 @@ export async function uploadVaultDocument(
     throw error;
   }
 
-  /*
-   * serverTimestamp() is resolved by Firestore after
-   * the write. Date.now() gives the UI an immediate
-   * normalized timestamp without requiring another read.
-   */
   const document: VaultDocument = {
     id: documentId,
-
     userId,
-
     childId,
-
-    fileName:
-      safeFileName,
-
+    fileName: safeFileName,
     storagePath,
-
     category,
-
-    mimeType:
-      validation.mimeType,
-
+    mimeType: validation.mimeType,
     size: file.size,
-
-    ...(title
-      ? { title }
-      : {}),
-
-    ...(notes
-      ? { notes }
-      : {}),
-
-    uploadedAt:
-      Date.now(),
-
+    ...(title ? { title } : {}),
+    ...(notes ? { notes } : {}),
+    uploadedAt: Date.now(),
     schemaVersion: 1,
   };
 
-  return {
-    document,
-  };
+  return { document };
 }
 
 /*
- * ============================================================
  * GET DOCUMENTS
- * ============================================================
- *
- * Retrieve all Vault metadata for one child.
- *
- * Files themselves are not downloaded.
  */
+
 export async function getVaultDocuments(
   userId: string,
   childId: string
 ): Promise<VaultDocument[]> {
-  if (
-    !userId.trim() ||
-    !childId.trim()
-  ) {
+  if (!userId.trim() || !childId.trim()) {
     return [];
   }
 
   const vaultQuery = query(
-    getVaultCollectionReference(
-      userId,
-      childId
-    ),
-    orderBy(
-      "uploadedAt",
-      "desc"
-    )
+    getVaultCollectionReference(userId, childId),
+    orderBy("uploadedAt", "desc")
   );
 
-  const snapshot =
-    await getDocs(
-      vaultQuery
-    );
+  const snapshot = await getDocs(vaultQuery);
 
-  return snapshot.docs.map(
-    (snapshotDocument) => {
-      const data =
-        snapshotDocument.data() as VaultDocumentFirestoreData;
+  return snapshot.docs.map((snapshotDocument) => {
+    const data =
+      snapshotDocument.data() as VaultDocumentFirestoreData;
 
-      return normalizeVaultDocument({
-        ...data,
-        id: snapshotDocument.id,
-      });
-    }
-  );
+    return normalizeVaultDocument({
+      ...data,
+      id: snapshotDocument.id,
+    });
+  });
 }
 
 /*
- * ============================================================
  * UPDATE DOCUMENT METADATA
- * ============================================================
  *
- * Update user-editable information for an existing Vault
- * document.
- *
- * This operation intentionally changes Firestore metadata
- * only.
- *
- * It does NOT:
- *
- * - Replace the uploaded file
- * - Rename the Storage object
- * - Move the Storage object
- * - Change ownership
- * - Change the MIME type
- * - Change the file size
- * - Change uploadedAt
- * - Change schemaVersion
- *
- * The returned VaultDocument allows the UI to update
- * immediately without another Firestore read.
+ * Does not modify the underlying Storage file.
  */
+
 export async function updateVaultDocumentMetadata(
   document: VaultDocument,
   updates: UpdateVaultDocumentMetadataInput
 ): Promise<VaultDocument> {
-  if (
-    !document.userId ||
-    !document.userId.trim()
-  ) {
+  if (!document.userId?.trim()) {
     throw new Error(
       "This document does not contain a valid user ID."
     );
   }
 
-  if (
-    !document.childId ||
-    !document.childId.trim()
-  ) {
+  if (!document.childId?.trim()) {
     throw new Error(
       "This document does not contain a valid family member ID."
     );
   }
 
-  if (
-    !document.id ||
-    !document.id.trim()
-  ) {
+  if (!document.id?.trim()) {
     throw new Error(
       "This document does not contain a valid document ID."
     );
   }
 
-  const title =
-    updates.title.trim();
-
-  const notes =
-    updates.notes.trim();
+  const title = updates.title.trim();
+  const notes = updates.notes.trim();
 
   if (!title) {
     throw new Error(
@@ -656,12 +567,6 @@ export async function updateVaultDocumentMetadata(
     );
   }
 
-  /*
-   * The category is typed by VaultDocumentCategory, but we
-   * still perform a runtime check because browser/client
-   * values should never be trusted solely because TypeScript
-   * compiled them.
-   */
   const validCategories: VaultDocumentCategory[] = [
     "medical_evaluations",
     "school_iep",
@@ -670,95 +575,57 @@ export async function updateVaultDocumentMetadata(
     "other",
   ];
 
-  if (
-    !validCategories.includes(
-      updates.category
-    )
-  ) {
+  if (!validCategories.includes(updates.category)) {
     throw new Error(
       "Please select a valid document category."
     );
   }
 
-  const documentReference =
+  await updateDoc(
     getVaultDocumentReference(
       document.userId,
       document.childId,
       document.id
-    );
-
-  /*
-   * We intentionally keep title and notes as strings.
-   *
-   * An empty notes string means the family removed the
-   * previous note. This is preferable to leaving stale
-   * notes in Firestore.
-   */
-  await updateDoc(
-    documentReference,
+    ),
     {
       title,
-      category:
-        updates.category,
+      category: updates.category,
       notes,
     }
   );
 
-  /*
-   * Return a normalized updated object so the page can
-   * immediately replace the existing document in local
-   * state without re-fetching the entire Vault.
-   */
   return {
     ...document,
     title,
-    category:
-      updates.category,
+    category: updates.category,
     notes,
   };
 }
 
 /*
- * ============================================================
  * GET DOWNLOAD URL
- * ============================================================
- *
- * Generate a Firebase download URL only when the family
- * actually requests access to the document.
- *
- * We intentionally do not store download URLs in
- * Firestore metadata.
  */
+
 export async function getVaultDocumentDownloadUrl(
   document: VaultDocument
 ): Promise<string> {
-  if (
-    !document.storagePath
-  ) {
+  if (!document.storagePath) {
     throw new Error(
       "This document does not have a valid storage location."
     );
   }
 
   return getDownloadURL(
-    ref(
-      storage,
-      document.storagePath
-    )
+    ref(storage, document.storagePath)
   );
 }
 
 /*
- * ============================================================
  * DELETE DOCUMENT
- * ============================================================
  *
- * Storage is deleted first. Metadata is removed only
- * after Storage deletion succeeds.
- *
- * This prevents the normal successful path from leaving
- * an inaccessible Storage object with no metadata.
+ * Delete Storage first, then Firestore metadata.
  */
+
 export async function deleteVaultDocument(
   document: VaultDocument
 ): Promise<void> {
@@ -773,15 +640,12 @@ export async function deleteVaultDocument(
     );
   }
 
-  const storageReference =
-    ref(
-      storage,
-      document.storagePath
-    );
-
-  await deleteObject(
-    storageReference
+  const storageReference = ref(
+    storage,
+    document.storagePath
   );
+
+  await deleteObject(storageReference);
 
   await deleteDoc(
     getVaultDocumentReference(
