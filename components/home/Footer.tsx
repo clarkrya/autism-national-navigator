@@ -151,6 +151,17 @@ export default function Footer() {
             >
               Log In
             </Link>
+
+            <Link
+              href="/contact"
+              style={{
+                color: "#E2E8F0",
+                textDecoration: "none",
+                fontWeight: 600,
+              }}
+            >
+              Contact
+            </Link>
           </nav>
 
           {/* COPYRIGHT */}
