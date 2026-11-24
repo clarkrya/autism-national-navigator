@@ -8,6 +8,7 @@ import {
 } from "firebase/auth";
 
 import { auth } from "../../lib/firebase";
+import MeetingPreparationAccessGate from "../../components/meeting-preparation/MeetingPreparationAccessGate";
 
 import {
   getCurrentJourney,
@@ -326,8 +327,8 @@ function getRelevantNotes(
     .sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
-export default function MeetingPreparationPage() {
-  const [user, setUser] =
+function MeetingPreparationContent() {
+    const [user, setUser] =
     useState<User | null>(null);
 
   const [authChecked, setAuthChecked] =
@@ -1239,5 +1240,12 @@ export default function MeetingPreparationPage() {
         </section>
       )}
     </main>
+  );
+}
+export default function MeetingPreparationPage() {
+  return (
+    <MeetingPreparationAccessGate>
+      <MeetingPreparationContent />
+    </MeetingPreparationAccessGate>
   );
 }

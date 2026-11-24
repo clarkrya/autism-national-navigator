@@ -16,7 +16,7 @@ export default function Footer() {
       <Container>
         <div style={{ textAlign: "center" }}>
 
-          {/* AUTIVOYA LOGO — HEADER STYLE */}
+          {/* AUTIVOYA LOGO */}
 
           <div
             style={{
@@ -95,7 +95,7 @@ export default function Footer() {
             navigating the autism journey.
           </p>
 
-          {/* FOOTER NAVIGATION */}
+          {/* MAIN FOOTER NAVIGATION */}
 
           <nav
             aria-label="Footer navigation"
@@ -151,20 +151,9 @@ export default function Footer() {
             >
               Log In
             </Link>
-
-            <Link
-              href="/contact"
-              style={{
-                color: "#E2E8F0",
-                textDecoration: "none",
-                fontWeight: 600,
-              }}
-            >
-              Contact
-            </Link>
           </nav>
 
-          {/* COPYRIGHT */}
+          {/* LEGAL AND SUPPORT NAVIGATION */}
 
           <div
             style={{
@@ -173,9 +162,59 @@ export default function Footer() {
               paddingTop: "24px",
             }}
           >
+            <nav
+              aria-label="Legal and support navigation"
+              style={{
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "20px",
+                marginBottom: "18px",
+              }}
+            >
+              <Link
+                href="/privacy"
+                style={{
+                  color: "#C6D8DF",
+                  textDecoration: "none",
+                  fontSize: "13px",
+                  fontWeight: 500,
+                }}
+              >
+                Privacy Policy
+              </Link>
+
+              <Link
+                href="/terms"
+                style={{
+                  color: "#C6D8DF",
+                  textDecoration: "none",
+                  fontSize: "13px",
+                  fontWeight: 500,
+                }}
+              >
+                Terms of Service
+              </Link>
+
+              <Link
+                href="/contact"
+                style={{
+                  color: "#C6D8DF",
+                  textDecoration: "none",
+                  fontSize: "13px",
+                  fontWeight: 500,
+                }}
+              >
+                Contact
+              </Link>
+            </nav>
+
+            {/* COPYRIGHT */}
+
             <p
               style={{
-                fontSize: "13px",
+                fontSize: "12px",
                 color: "#C6D8DF",
                 margin: 0,
               }}

@@ -37,6 +37,7 @@ import {
 
 import { useAccountEntitlements } from "../../lib/useAccountEntitlements";
 import JourneyResponseEditor from "./JourneyResponseEditor";
+import LockedJourneyResponseEditor from "./LockedJourneyResponseEditor";
 import JourneyMeetingPreparationLink from "./JourneyMeetingPreparationLink";
 
 type JourneyAccessLevel =
@@ -1545,33 +1546,28 @@ export default function JourneyDashboard({
   />
 )}
 
-              {canUseJourneyResponses &&
-                !loadingStageNumber && (
-                  <JourneyResponseEditor
-                    key={[
-                      journeyId,
-                      journeyStageNumber,
-                      task.id,
-                    ].join("__")}
-                    ownerUserId={
-                      canonicalOwnerUserId
-                    }
-                    childId={
-                      familyProfile.childId!
-                    }
-                    journeyId={journeyId!}
-                    stageNumber={
-                      journeyStageNumber
-                    }
-                    taskId={task.id}
-                    disabled={
-                      generatingNextJourney
-                    }
-                    onPendingChange={
-                      handleResponsePendingChange
-                    }
-                  />
-                )}
+{!isSharedJourney && (
+  canUseJourneyResponses ? (
+    !loadingStageNumber && (
+      <JourneyResponseEditor
+        key={[
+          journeyId,
+          journeyStageNumber,
+          task.id,
+        ].join("__")}
+        ownerUserId={canonicalOwnerUserId}
+        childId={familyProfile.childId!}
+        journeyId={journeyId!}
+        stageNumber={journeyStageNumber}
+        taskId={task.id}
+        disabled={generatingNextJourney}
+        onPendingChange={handleResponsePendingChange}
+      />
+    )
+  ) : (
+    <LockedJourneyResponseEditor />
+  )
+)}
             </div>
           ))}
         </div>

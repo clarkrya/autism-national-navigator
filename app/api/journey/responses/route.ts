@@ -1,4 +1,3 @@
-
 import { NextRequest, NextResponse } from "next/server";
 
 import { getAdminDb } from "../../../../lib/firebaseAdmin";
@@ -22,8 +21,10 @@ type ResponseInput = {
 function validId(value: unknown): value is string {
   return (
     typeof value === "string" &&
-    value.length > 0 &&
+    value.trim().length > 0 &&
     value.length <= 200 &&
+    value !== "." &&
+    value !== ".." &&
     !value.includes("/")
   );
 }
@@ -34,7 +35,12 @@ function errorResponse(
 ) {
   return NextResponse.json(
     { error: message },
-    { status }
+    {
+      status,
+      headers: {
+        "Cache-Control": "no-store",
+      },
+    }
   );
 }
 
@@ -43,12 +49,12 @@ export async function POST(request: NextRequest) {
     const account = await verifyFirebaseRequest(request);
     const db = getAdminDb();
 
-    // Use the same Premium entitlement logic as Firestore,
-    // including temporary Premium tester access.
+    // Verify Premium subscription access.
     let hasPremium =
       account.plan === "premium" ||
       account.plan === "premium_plus";
 
+    // Preserve temporary Premium tester access.
     if (!hasPremium) {
       const testerSnapshot = await db
         .collection("users")
@@ -63,17 +69,40 @@ export async function POST(request: NextRequest) {
         tester?.active === true &&
         tester?.plan === "premium" &&
         typeof tester?.expiresAt === "number" &&
+        Number.isFinite(tester.expiresAt) &&
         tester.expiresAt > Date.now();
     }
 
     if (!hasPremium) {
       return errorResponse(
-        "Premium is required to save Journey Responses.",
+        "Premium is required to save Journey Notes.",
         403
       );
     }
 
-    const body = (await request.json()) as ResponseInput;
+    let body: ResponseInput;
+
+    try {
+      const parsed = await request.json();
+
+      if (
+        !parsed ||
+        typeof parsed !== "object" ||
+        Array.isArray(parsed)
+      ) {
+        return errorResponse(
+          "Invalid Journey Response data.",
+          400
+        );
+      }
+
+      body = parsed as ResponseInput;
+    } catch {
+      return errorResponse(
+        "Invalid Journey Response data.",
+        400
+      );
+    }
 
     const {
       ownerUserId,
@@ -89,8 +118,9 @@ export async function POST(request: NextRequest) {
       !validId(childId) ||
       !validId(journeyId) ||
       !validId(taskId) ||
-      !Number.isInteger(stageNumber) ||
-      (stageNumber as number) < 1 ||
+      typeof stageNumber !== "number" ||
+      !Number.isSafeInteger(stageNumber) ||
+      stageNumber < 1 ||
       typeof response !== "string" ||
       response.length > MAX_RESPONSE_LENGTH
     ) {
@@ -100,40 +130,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const ownerId = ownerUserId as string;
-    const validChildId = childId as string;
-    const validJourneyId = journeyId as string;
-    const validTaskId = taskId as string;
-    const validStage = stageNumber as number;
+    const ownerId = ownerUserId;
+    const validChildId = childId;
+    const validJourneyId = journeyId;
+    const validTaskId = taskId;
+    const validStage = stageNumber;
 
-    // Owner or active Family Team contributor/administrator.
+    // Journey Notes are private to the account owner.
+    // Family Organizer membership does not grant access
+    // to another user's private Journey Notes.
     if (account.uid !== ownerId) {
-      const membershipId =
-        `${ownerId}__${validChildId}__${account.uid}`;
-
-      const membershipSnapshot = await db
-        .collection("familyOrganizerMemberships")
-        .doc(membershipId)
-        .get();
-
-      const membership = membershipSnapshot.data();
-
-      if (
-        !membershipSnapshot.exists ||
-        membership?.ownerUserId !== ownerId ||
-        membership?.childId !== validChildId ||
-        membership?.memberUserId !== account.uid ||
-        membership?.role !== "family_member" ||
-        membership?.status !== "active" ||
-        !["contributor", "administrator"].includes(
-          membership?.accessLevel
-        )
-      ) {
-        return errorResponse(
-          "You do not have permission to edit this Journey.",
-          403
-        );
-      }
+      return errorResponse(
+        "Only the account owner can save or edit private Journey Notes.",
+        403
+      );
     }
 
     const childRef = db
@@ -157,12 +167,15 @@ export async function POST(request: NextRequest) {
       .doc(responseId);
 
     await db.runTransaction(async (transaction) => {
-      const [childSnapshot, journeySnapshot, responseSnapshot] =
-        await Promise.all([
-          transaction.get(childRef),
-          transaction.get(currentJourneyRef),
-          transaction.get(responseRef),
-        ]);
+      const [
+        childSnapshot,
+        journeySnapshot,
+        responseSnapshot,
+      ] = await Promise.all([
+        transaction.get(childRef),
+        transaction.get(currentJourneyRef),
+        transaction.get(responseRef),
+      ]);
 
       if (!childSnapshot.exists) {
         throw new Error("CHILD_NOT_FOUND");
@@ -189,7 +202,7 @@ export async function POST(request: NextRequest) {
 
       const task = tasks.find(
         (item: { id?: string }) =>
-          item.id === validTaskId
+          item?.id === validTaskId
       );
 
       if (!task) {
@@ -206,27 +219,41 @@ export async function POST(request: NextRequest) {
         journeyId: validJourneyId,
         stageNumber: validStage,
         taskId: validTaskId,
+
         taskTitle:
           typeof task.title === "string"
             ? task.title
             : "Journey Task",
+
         response,
+
         createdByUserId:
           previous?.createdByUserId ?? account.uid,
+
         updatedByUserId: account.uid,
+
         createdAt:
           typeof previous?.createdAt === "number"
             ? previous.createdAt
             : now,
+
         updatedAt: now,
+
         schemaVersion: 1,
       });
     });
 
-    return NextResponse.json({
-      success: true,
-      responseId,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        responseId,
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      }
+    );
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "";

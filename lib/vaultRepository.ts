@@ -14,12 +14,12 @@ import {
 
 import {
   deleteObject,
-  getDownloadURL,
+  getBlob,
   ref,
   uploadBytesResumable,
 } from "firebase/storage";
 
-import { db, storage } from "./firebase";
+import { auth, db, storage } from "./firebase";
 
 import type {
   CreateVaultDocumentInput,
@@ -43,6 +43,12 @@ import {
  *
  * Firestore:
  * users/{userId}/children/{childId}/vaultDocuments/{documentId}
+ *
+ * Security:
+ * - Authenticated document retrieval
+ * - Account ownership validation
+ * - Premium access enforced through Firebase rules
+ * - Temporary browser-generated document URLs
  *
  * Mobile upload improvements:
  * - Resumable Firebase Storage uploads
@@ -101,6 +107,22 @@ function sanitizeFileName(fileName: string): string {
     .slice(0, 180);
 
   return sanitized || "document";
+}
+
+function requireVaultOwner(userId: string): void {
+  const currentUser = auth.currentUser;
+
+  if (!currentUser) {
+    throw new Error(
+      "You must be signed in to access the Document Vault."
+    );
+  }
+
+  if (currentUser.uid !== userId) {
+    throw new Error(
+      "You do not have permission to access this Document Vault."
+    );
+  }
 }
 
 export function validateVaultFile(
@@ -177,6 +199,38 @@ export function buildVaultStoragePath(
   ].join("/");
 }
 
+function validateDocumentStoragePath(
+  document: VaultDocument
+): void {
+  if (
+    !document.userId ||
+    !document.childId ||
+    !document.id ||
+    !document.storagePath
+  ) {
+    throw new Error(
+      "This document does not have a valid storage location."
+    );
+  }
+
+  const pathParts = document.storagePath.split("/");
+
+  if (
+    pathParts.length !== 5 ||
+    pathParts[0] !== "vault" ||
+    pathParts[1] !== document.userId ||
+    pathParts[2] !== document.childId ||
+    pathParts[3] !== document.id ||
+    !pathParts[4] ||
+    pathParts[4] === "." ||
+    pathParts[4] === ".."
+  ) {
+    throw new Error(
+      "This document has an invalid Vault storage path."
+    );
+  }
+}
+
 function getVaultCollectionReference(
   userId: string,
   childId: string
@@ -250,8 +304,10 @@ function uploadFileWithMonitoring(
     );
 
     let settled = false;
+
     let stallTimer: ReturnType<typeof setTimeout> | null =
       null;
+
     let totalTimer: ReturnType<typeof setTimeout> | null =
       null;
 
@@ -335,7 +391,7 @@ function uploadFileWithMonitoring(
         if (firebaseCode === "storage/unauthorized") {
           finish(
             new Error(
-              "You do not have permission to upload this document. Please sign in again and retry."
+              "You do not have permission to upload this document. Please verify your Premium access and try again."
             )
           );
           return;
@@ -379,10 +435,11 @@ function uploadFileWithMonitoring(
 /*
  * UPLOAD DOCUMENT
  *
- * 1. Validate file.
- * 2. Upload to Firebase Storage.
- * 3. Save metadata to Firestore.
- * 4. Return the saved document.
+ * 1. Validate account ownership.
+ * 2. Validate file.
+ * 3. Upload to Firebase Storage.
+ * 4. Save metadata to Firestore.
+ * 5. Return the saved document.
  */
 
 export async function uploadVaultDocument(
@@ -400,6 +457,8 @@ export async function uploadVaultDocument(
       "You must be signed in to upload a document."
     );
   }
+
+  requireVaultOwner(userId);
 
   if (!childId.trim()) {
     throw new Error(
@@ -423,7 +482,10 @@ export async function uploadVaultDocument(
     safeFileName
   );
 
-  const storageReference = ref(storage, storagePath);
+  const storageReference = ref(
+    storage,
+    storagePath
+  );
 
   await uploadFileWithMonitoring(
     storageReference,
@@ -456,7 +518,12 @@ export async function uploadVaultDocument(
   };
 
   try {
-    await setDoc(metadataReference, metadata);
+    requireVaultOwner(userId);
+
+    await setDoc(
+      metadataReference,
+      metadata
+    );
   } catch (error) {
     try {
       await deleteObject(storageReference);
@@ -490,6 +557,8 @@ export async function uploadVaultDocument(
 
 /*
  * GET DOCUMENTS
+ *
+ * Firestore security rules enforce Premium access.
  */
 
 export async function getVaultDocuments(
@@ -500,12 +569,19 @@ export async function getVaultDocuments(
     return [];
   }
 
+  requireVaultOwner(userId);
+
   const vaultQuery = query(
-    getVaultCollectionReference(userId, childId),
+    getVaultCollectionReference(
+      userId,
+      childId
+    ),
     orderBy("uploadedAt", "desc")
   );
 
   const snapshot = await getDocs(vaultQuery);
+
+  requireVaultOwner(userId);
 
   return snapshot.docs.map((snapshotDocument) => {
     const data =
@@ -533,6 +609,8 @@ export async function updateVaultDocumentMetadata(
       "This document does not contain a valid user ID."
     );
   }
+
+  requireVaultOwner(document.userId);
 
   if (!document.childId?.trim()) {
     throw new Error(
@@ -603,21 +681,108 @@ export async function updateVaultDocumentMetadata(
 }
 
 /*
- * GET DOWNLOAD URL
+ * AUTHENTICATED DOCUMENT RETRIEVAL
+ *
+ * Retrieves file content through Firebase Storage.
+ *
+ * Firebase Storage rules enforce:
+ * - Authentication
+ * - Account ownership
+ * - Premium or eligible tester access
+ * - Child ownership
+ *
+ * No persistent Firebase download URL is requested.
+ */
+
+export async function getVaultDocumentBlob(
+  document: VaultDocument
+): Promise<Blob> {
+  requireVaultOwner(document.userId);
+
+  validateDocumentStoragePath(document);
+
+  const storageReference = ref(
+    storage,
+    document.storagePath
+  );
+
+  const fileBlob = await getBlob(
+    storageReference,
+    VAULT_MAX_FILE_SIZE_BYTES
+  );
+
+  /*
+   * Recheck account ownership after retrieval
+   * in case the authenticated account changed
+   * while the request was in progress.
+   */
+
+  requireVaultOwner(document.userId);
+
+  if (fileBlob.size <= 0) {
+    throw new Error(
+      "The requested document is empty."
+    );
+  }
+
+  if (
+    fileBlob.size > VAULT_MAX_FILE_SIZE_BYTES
+  ) {
+    throw new Error(
+      "The requested document exceeds the permitted file size."
+    );
+  }
+
+  if (
+    !VAULT_ALLOWED_MIME_TYPES.includes(
+      fileBlob.type as VaultAllowedMimeType
+    )
+  ) {
+    throw new Error(
+      "The requested document has an unsupported file type."
+    );
+  }
+
+  return fileBlob;
+}
+
+/*
+ * GET TEMPORARY DOCUMENT URL
+ *
+ * Preserves the existing Document Vault page interface.
+ *
+ * The returned URL is a browser-local object URL,
+ * not a persistent Firebase download URL.
+ *
+ * The calling component is responsible for releasing
+ * the object URL when it is no longer needed.
  */
 
 export async function getVaultDocumentDownloadUrl(
   document: VaultDocument
 ): Promise<string> {
-  if (!document.storagePath) {
-    throw new Error(
-      "This document does not have a valid storage location."
-    );
-  }
+  const fileBlob =
+    await getVaultDocumentBlob(document);
 
-  return getDownloadURL(
-    ref(storage, document.storagePath)
-  );
+  return URL.createObjectURL(fileBlob);
+}
+
+/*
+ * RELEASE TEMPORARY DOCUMENT URL
+ *
+ * Used by the Document Vault page to release
+ * browser memory after viewing or downloading.
+ */
+
+export function revokeVaultDocumentDownloadUrl(
+  url: string
+): void {
+  if (
+    typeof url === "string" &&
+    url.startsWith("blob:")
+  ) {
+    URL.revokeObjectURL(url);
+  }
 }
 
 /*
@@ -640,12 +805,32 @@ export async function deleteVaultDocument(
     );
   }
 
+  requireVaultOwner(document.userId);
+
+  validateDocumentStoragePath(document);
+
   const storageReference = ref(
     storage,
     document.storagePath
   );
 
-  await deleteObject(storageReference);
+  try {
+    await deleteObject(storageReference);
+  } catch (error) {
+    const firebaseCode =
+      (error as { code?: string }).code || "";
+
+    /*
+     * If the file has already been removed,
+     * continue with metadata cleanup.
+     */
+
+    if (firebaseCode !== "storage/object-not-found") {
+      throw error;
+    }
+  }
+
+  requireVaultOwner(document.userId);
 
   await deleteDoc(
     getVaultDocumentReference(

@@ -2,7 +2,6 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-
 import Link from "next/link";
 
 import {
@@ -12,11 +11,14 @@ import {
 
 import {
   createUserWithEmailAndPassword,
+  deleteUser,
+  signOut,
 } from "firebase/auth";
 
 import {
   doc,
   setDoc,
+  serverTimestamp,
 } from "firebase/firestore";
 
 import {
@@ -32,25 +34,6 @@ import {
 /*
  * ============================================================
  * AUTIVOYA — SIGNUP PAGE
- * ============================================================
- *
- * Creates a free Autivoya account.
- *
- * Preserves:
- * - Firebase email/password authentication
- * - Password confirmation and validation
- * - Pending Journey persistence
- * - Existing Firestore document structure
- * - Existing Firebase error handling
- * - Autivoya branding and layout
- * - Return navigation
- *
- * Improvements:
- * - Stronger internal redirect validation
- * - Family Team invitation return navigation
- * - Prevents unrelated Journey creation during
- *   Family Team invitation registration
- *
  * ============================================================
  */
 
@@ -69,25 +52,23 @@ const BRAND = {
 
 /*
  * ============================================================
- * SAFE RETURN DESTINATION
+ * LEGAL DOCUMENT VERSIONS
  * ============================================================
  *
- * Only internal application paths are accepted.
+ * Update these versions when the legal documents
+ * are materially revised.
  *
- * Examples:
- * /journey
- * /community
- * /pricing
- * /family-organizer/invitations
- *
- * Reject:
- * - External URLs
- * - Protocol-relative URLs
- * - Backslashes
- * - Control characters
- *
- * Default: /journey
- *
+ * Initial pre-launch versions.
+ */
+
+const LEGAL_VERSIONS = {
+  termsOfService: "1.0",
+  privacyPolicy: "1.0",
+};
+
+/*
+ * ============================================================
+ * SAFE RETURN DESTINATION
  * ============================================================
  */
 
@@ -135,9 +116,16 @@ const inputStyle: React.CSSProperties = {
   outlineColor: BRAND.teal,
 };
 
+const legalLinkStyle: React.CSSProperties = {
+  color: BRAND.darkTeal,
+  fontWeight: 700,
+  textDecoration: "underline",
+  textUnderlineOffset: 2,
+};
+
 /*
  * ============================================================
- * PAGE
+ * SIGNUP PAGE
  * ============================================================
  */
 
@@ -145,28 +133,12 @@ export default function SignupPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  /*
-   * ============================================================
-   * RETURN DESTINATION
-   * ============================================================
-   */
-
   const returnTo = getSafeReturnTo(
     searchParams.get("returnTo")
   );
 
   /*
-   * ============================================================
    * FAMILY TEAM INVITATION DETECTION
-   * ============================================================
-   *
-   * Invitation-based registration should not create
-   * a separate Journey from locally stored data.
-   *
-   * The invited member must eventually access the
-   * original owner's canonical child workspace.
-   *
-   * ============================================================
    */
 
   const isFamilyInvitation =
@@ -179,9 +151,7 @@ export default function SignupPage() {
     );
 
   /*
-   * ============================================================
    * FORM STATE
-   * ============================================================
    */
 
   const [email, setEmail] = useState("");
@@ -189,14 +159,14 @@ export default function SignupPage() {
   const [confirmPassword, setConfirmPassword] =
     useState("");
 
+  const [legalAccepted, setLegalAccepted] =
+    useState(false);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
 
   /*
-   * ============================================================
-   * NAVIGATION LABEL
-   * ============================================================
+   * NAVIGATION
    */
 
   const backLabel =
@@ -208,23 +178,8 @@ export default function SignupPage() {
           ? "← Back to Invitations"
           : "← Back";
 
-  /*
-   * ============================================================
-   * LOGIN URL
-   * ============================================================
-   *
-   * Preserve the original return destination when
-   * switching from signup to login.
-   */
-
   const loginUrl =
     `/login?returnTo=${encodeURIComponent(returnTo)}`;
-
-  /*
-   * ============================================================
-   * BACK NAVIGATION
-   * ============================================================
-   */
 
   function handleBack() {
     router.replace(returnTo);
@@ -241,35 +196,42 @@ export default function SignupPage() {
   ) {
     event.preventDefault();
 
+    if (loading) return;
+
     setError("");
-    setMessage("");
-    setLoading(true);
 
     /*
-     * ==========================================================
+     * LEGAL ACCEPTANCE VALIDATION
+     */
+
+    if (!legalAccepted) {
+      setError(
+        "Please confirm that you are at least 18 years old, agree to the Terms of Service, and acknowledge the Privacy Policy."
+      );
+      return;
+    }
+
+    /*
      * PASSWORD VALIDATION
-     * ==========================================================
      */
 
     if (password.length < 6) {
       setError(
         "Your password must be at least 6 characters."
       );
-      setLoading(false);
       return;
     }
 
     if (password !== confirmPassword) {
       setError("The passwords do not match.");
-      setLoading(false);
       return;
     }
 
+    setLoading(true);
+
     try {
       /*
-       * ========================================================
        * CREATE FIREBASE ACCOUNT
-       * ========================================================
        */
 
       const credential =
@@ -283,19 +245,82 @@ export default function SignupPage() {
 
       /*
        * ========================================================
+       * RECORD LEGAL ACCEPTANCE
+       * ========================================================
+       *
+       * Stored under:
+       * users/{userId}
+       *
+       * Merge preserves existing account information.
+       * Firebase server timestamp records acceptance.
+       */
+
+      try {
+        await setDoc(
+          doc(db, "users", user.uid),
+          {
+            legalAcceptance: {
+              ageRequirementConfirmed: true,
+              termsAccepted: true,
+              privacyAcknowledged: true,
+              termsVersion:
+                LEGAL_VERSIONS.termsOfService,
+              privacyVersion:
+                LEGAL_VERSIONS.privacyPolicy,
+              acceptedAt: serverTimestamp(),
+              acceptanceMethod: "signup",
+            },
+          },
+          {
+            merge: true,
+          }
+        );
+      } catch (legalError) {
+        console.error(
+          "Unable to record legal acceptance:",
+          legalError
+        );
+
+        /*
+         * Attempt to remove the newly created
+         * authentication account if legal
+         * acceptance could not be recorded.
+         */
+
+        try {
+          await deleteUser(user);
+
+          setError(
+            "We couldn't complete your registration. Please try again."
+          );
+        } catch (rollbackError) {
+          console.error(
+            "Unable to roll back account creation:",
+            rollbackError
+          );
+
+          try {
+            await signOut(auth);
+          } catch (signOutError) {
+            console.error(
+              "Unable to sign out:",
+              signOutError
+            );
+          }
+
+          setError(
+            "Your account could not be fully registered. Please contact Autivoya support before continuing."
+          );
+        }
+
+        return;
+      }
+
+      /*
        * CHECK FOR PENDING JOURNEY
-       * ========================================================
        *
-       * Normal signup:
-       * Restore the user's locally stored Journey.
-       *
-       * Family Team invitation signup:
-       * Do not create a separate Journey.
-       *
-       * Existing pending Journey data is not deleted
-       * when signing up through an invitation.
-       *
-       * ========================================================
+       * Invitation-based registration must not
+       * create a separate Journey.
        */
 
       const pendingJourney = isFamilyInvitation
@@ -303,16 +328,7 @@ export default function SignupPage() {
         : getPendingJourney();
 
       /*
-       * ========================================================
        * SAVE PENDING JOURNEY
-       * ========================================================
-       *
-       * Preserve the existing Firestore structure.
-       *
-       * This is only performed for normal registration
-       * when a pending Journey exists.
-       *
-       * ========================================================
        */
 
       if (pendingJourney) {
@@ -351,37 +367,18 @@ export default function SignupPage() {
             "Your account was created, but we couldn't save your journey yet. Your journey is still being kept temporarily. Please try again."
           );
 
-          setLoading(false);
           return;
         }
       }
 
       /*
-       * ========================================================
        * RETURN TO ORIGINAL PAGE
-       * ========================================================
-       *
-       * Family Team registration:
-       * /family-organizer/invitations
-       *
-       * Normal registration:
-       * Return to the original requested page.
-       *
-       * Default:
-       * /journey
-       *
-       * ========================================================
        */
 
       router.replace(returnTo);
+
     } catch (error: unknown) {
       console.error("Signup error:", error);
-
-      /*
-       * ========================================================
-       * FIREBASE ERROR HANDLING
-       * ========================================================
-       */
 
       if (
         error &&
@@ -458,14 +455,12 @@ export default function SignupPage() {
           background: BRAND.white,
           border: `1px solid ${BRAND.border}`,
           borderRadius: 22,
-          padding: 40,
+          padding: "36px 28px",
           boxShadow:
             "0 12px 35px rgba(23, 59, 82, 0.07)",
         }}
       >
-        {/* ==================================================
-            HEADER
-        ================================================== */}
+        {/* HEADER */}
 
         <div
           style={{
@@ -473,8 +468,6 @@ export default function SignupPage() {
             marginBottom: 30,
           }}
         >
-          {/* AUTIVOYA LOGO MARK */}
-
           <div
             style={{
               width: 60,
@@ -525,9 +518,7 @@ export default function SignupPage() {
           </p>
         </div>
 
-        {/* ==================================================
-            ERROR
-        ================================================== */}
+        {/* ERROR */}
 
         {error && (
           <div
@@ -547,33 +538,10 @@ export default function SignupPage() {
           </div>
         )}
 
-        {/* ==================================================
-            MESSAGE
-        ================================================== */}
-
-        {message && (
-          <div
-            role="status"
-            style={{
-              marginBottom: 20,
-              padding: "13px 15px",
-              borderRadius: 10,
-              background: BRAND.lightTeal,
-              border: "1px solid #C9E7E4",
-              color: BRAND.darkTeal,
-              fontSize: 14,
-              lineHeight: 1.5,
-            }}
-          >
-            {message}
-          </div>
-        )}
-
-        {/* ==================================================
-            FORM
-        ================================================== */}
+        {/* FORM */}
 
         <form onSubmit={handleSignup}>
+
           {/* EMAIL */}
 
           <div style={{ marginBottom: 18 }}>
@@ -593,6 +561,7 @@ export default function SignupPage() {
                 setEmail(event.target.value)
               }
               required
+              disabled={loading}
               placeholder="you@example.com"
               style={inputStyle}
             />
@@ -617,6 +586,7 @@ export default function SignupPage() {
                 setPassword(event.target.value)
               }
               required
+              disabled={loading}
               placeholder="At least 6 characters"
               style={inputStyle}
             />
@@ -641,33 +611,104 @@ export default function SignupPage() {
                 setConfirmPassword(event.target.value)
               }
               required
+              disabled={loading}
               placeholder="Re-enter your password"
               style={inputStyle}
             />
           </div>
 
-          {/* ==================================================
-              CREATE ACCOUNT
-          ================================================== */}
+          {/* LEGAL ACCEPTANCE */}
+
+          <div
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 11,
+              padding: 15,
+              marginBottom: 22,
+              borderRadius: 10,
+              border: `1px solid ${BRAND.border}`,
+              background: BRAND.background,
+            }}
+          >
+            <input
+              id="legalAcceptance"
+              type="checkbox"
+              checked={legalAccepted}
+              onChange={(event) =>
+                setLegalAccepted(
+                  event.target.checked
+                )
+              }
+              required
+              disabled={loading}
+              style={{
+                width: 18,
+                height: 18,
+                flexShrink: 0,
+                marginTop: 3,
+                accentColor: BRAND.darkTeal,
+                cursor: "pointer",
+              }}
+            />
+
+            <label
+              htmlFor="legalAcceptance"
+              style={{
+                color: BRAND.darkNavy,
+                fontSize: 13,
+                lineHeight: 1.7,
+                cursor: "pointer",
+              }}
+            >
+              I confirm that I am at least 18 years
+              old, agree to the{" "}
+              <Link
+                href="/terms"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={legalLinkStyle}
+              >
+                Terms of Service
+              </Link>
+              , and acknowledge the{" "}
+              <Link
+                href="/privacy"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={legalLinkStyle}
+              >
+                Privacy Policy
+              </Link>
+              .
+            </label>
+          </div>
+
+          {/* CREATE ACCOUNT */}
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !legalAccepted}
             style={{
               width: "100%",
               padding: "14px 18px",
               borderRadius: 10,
               border: "none",
-              background: loading
-                ? BRAND.teal
-                : BRAND.darkTeal,
+              background:
+                loading || !legalAccepted
+                  ? BRAND.teal
+                  : BRAND.darkTeal,
               color: BRAND.white,
               fontSize: 16,
               fontWeight: 800,
-              cursor: loading
-                ? "default"
-                : "pointer",
-              opacity: loading ? 0.75 : 1,
+              cursor:
+                loading || !legalAccepted
+                  ? "not-allowed"
+                  : "pointer",
+              opacity:
+                loading || !legalAccepted
+                  ? 0.65
+                  : 1,
               boxShadow:
                 "0 5px 14px rgba(39, 132, 130, 0.15)",
             }}
@@ -678,9 +719,7 @@ export default function SignupPage() {
           </button>
         </form>
 
-        {/* ==================================================
-            LOGIN
-        ================================================== */}
+        {/* LOGIN */}
 
         <div
           style={{
@@ -715,9 +754,7 @@ export default function SignupPage() {
           </Link>
         </div>
 
-        {/* ==================================================
-            BACK
-        ================================================== */}
+        {/* BACK */}
 
         <div
           style={{
@@ -728,6 +765,7 @@ export default function SignupPage() {
           <button
             type="button"
             onClick={handleBack}
+            disabled={loading}
             style={{
               border: "none",
               background: "transparent",
