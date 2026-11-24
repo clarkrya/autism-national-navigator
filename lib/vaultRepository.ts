@@ -733,17 +733,51 @@ export async function getVaultDocumentBlob(
     );
   }
 
-  if (
-    !VAULT_ALLOWED_MIME_TYPES.includes(
-      fileBlob.type as VaultAllowedMimeType
-    )
-  ) {
-    throw new Error(
-      "The requested document has an unsupported file type."
-    );
-  }
+  const storedMimeType = document.mimeType;
 
-  return fileBlob;
+if (!VAULT_ALLOWED_MIME_TYPES.includes(storedMimeType)) {
+  throw new Error(
+    "The requested document has an unsupported file type."
+  );
+}
+
+const header = new Uint8Array(
+  await fileBlob.slice(0, 8).arrayBuffer()
+);
+
+const isPdf =
+  header[0] === 0x25 &&
+  header[1] === 0x50 &&
+  header[2] === 0x44 &&
+  header[3] === 0x46 &&
+  header[4] === 0x2d;
+
+const isJpeg =
+  header[0] === 0xff &&
+  header[1] === 0xd8 &&
+  header[2] === 0xff;
+
+const isPng = [
+  0x89, 0x50, 0x4e, 0x47,
+  0x0d, 0x0a, 0x1a, 0x0a,
+].every((byte, index) => header[index] === byte);
+
+const matchesFileType =
+  (storedMimeType === "application/pdf" && isPdf) ||
+  (storedMimeType === "image/jpeg" && isJpeg) ||
+  (storedMimeType === "image/png" && isPng);
+
+if (!matchesFileType) {
+  throw new Error(
+    "The document content does not match its registered file type."
+  );
+}
+
+requireVaultOwner(document.userId);
+
+return new Blob([fileBlob], {
+  type: storedMimeType,
+});
 }
 
 /*
