@@ -1,3 +1,4 @@
+
 import "server-only";
 
 import {
@@ -19,6 +20,11 @@ import {
 } from "firebase-admin/firestore";
 
 import {
+  getStorage,
+  type Storage,
+} from "firebase-admin/storage";
+
+import {
   createPrivateKey,
 } from "crypto";
 
@@ -29,16 +35,10 @@ import {
  *
  * Server-only Firebase Admin initialization.
  *
- * IMPORTANT:
- *
  * Firebase Admin initialization is LAZY.
- *
- * Merely importing this module does not require Admin
- * credentials to be available or valid.
  *
  * Credentials are validated only when a server operation
  * actually requests Firebase Admin.
- * ============================================================
  */
 
 /*
@@ -50,118 +50,59 @@ import {
 function normalizePrivateKey(
   value: string
 ): string {
-  let key =
-    value.trim();
-
-  /*
-   * Handle JSON-quoted values.
-   */
+  let key = value.trim();
 
   if (
     key.startsWith("\"") &&
     key.endsWith("\"")
   ) {
     try {
-      const parsed =
-        JSON.parse(key);
+      const parsed = JSON.parse(key);
 
-      if (
-        typeof parsed ===
-        "string"
-      ) {
-        key =
-          parsed;
+      if (typeof parsed === "string") {
+        key = parsed;
       }
     } catch {
-      key =
-        key.slice(
-          1,
-          -1
-        );
+      key = key.slice(1, -1);
     }
   } else if (
     key.startsWith("'") &&
     key.endsWith("'")
   ) {
-    key =
-      key.slice(
-        1,
-        -1
-      );
+    key = key.slice(1, -1);
   }
 
-  /*
-   * Normalize escaped and real line endings.
-   */
-
-  key =
-    key
-      .replace(
-        /\\r\\n/g,
-        "\n"
-      )
-      .replace(
-        /\\n/g,
-        "\n"
-      )
-      .replace(
-        /\\r/g,
-        ""
-      )
-      .replace(
-        /\r\n/g,
-        "\n"
-      )
-      .replace(
-        /\r/g,
-        "\n"
-      )
-      .trim();
+  key = key
+    .replace(/\\r\\n/g, "\n")
+    .replace(/\\n/g, "\n")
+    .replace(/\\r/g, "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .trim();
 
   /*
    * Support a base64-encoded PEM.
    */
 
-  if (
-    !key.includes(
-      "-----BEGIN"
-    )
-  ) {
+  if (!key.includes("-----BEGIN")) {
     try {
-      const decoded =
-        Buffer
-          .from(
-            key,
-            "base64"
-          )
-          .toString(
-            "utf8"
-          )
-          .trim();
+      const decoded = Buffer
+        .from(key, "base64")
+        .toString("utf8")
+        .trim();
 
       if (
-        decoded.includes(
-          "-----BEGIN"
-        ) &&
-        decoded.includes(
-          "PRIVATE KEY-----"
-        )
+        decoded.includes("-----BEGIN") &&
+        decoded.includes("PRIVATE KEY-----")
       ) {
-        key =
-          decoded
-            .replace(
-              /\r\n/g,
-              "\n"
-            )
-            .replace(
-              /\r/g,
-              "\n"
-            )
-            .trim();
+        key = decoded
+          .replace(/\r\n/g, "\n")
+          .replace(/\r/g, "\n")
+          .trim();
       }
     } catch {
       /*
-       * Validation below will handle an invalid value.
+       * Validation below handles invalid values.
        */
     }
   }
@@ -175,28 +116,21 @@ function normalizePrivateKey(
  * ============================================================
  */
 
-let cachedAdminApp:
-  App | null = null;
+let cachedAdminApp: App | null = null;
 
-function getFirebaseAdminApp():
-  App {
+function getFirebaseAdminApp(): App {
   if (cachedAdminApp) {
     return cachedAdminApp;
   }
 
-  if (
-    getApps().length >
-    0
-  ) {
-    cachedAdminApp =
-      getApp();
+  if (getApps().length > 0) {
+    cachedAdminApp = getApp();
 
     return cachedAdminApp;
   }
 
   /*
-   * Read environment variables only when Admin is actually
-   * needed.
+   * Read environment variables only when Admin is needed.
    */
 
   const projectId =
@@ -224,9 +158,7 @@ function getFirebaseAdminApp():
   }
 
   const privateKey =
-    normalizePrivateKey(
-      rawPrivateKey
-    );
+    normalizePrivateKey(rawPrivateKey);
 
   /*
    * Validate PEM structure.
@@ -258,66 +190,106 @@ function getFirebaseAdminApp():
   }
 
   /*
-   * Cryptographically validate the key without logging it.
+   * Cryptographically validate the key.
+   * Never log private key contents.
    */
 
   try {
     createPrivateKey({
-      key:
-        privateKey,
-
-      format:
-        "pem",
+      key: privateKey,
+      format: "pem",
     });
-  } catch (error) {
+  } catch {
     console.error(
       "Firebase Admin private key failed cryptographic validation."
     );
-
-    if (
-      error instanceof Error
-    ) {
-      console.error(
-        "Private key parser:",
-        error.message
-      );
-    }
 
     throw new Error(
       "FIREBASE_ADMIN_PRIVATE_KEY is present but cannot be parsed as a valid private key. Check the environment variable formatting."
     );
   }
 
-  cachedAdminApp =
-    initializeApp({
-      credential:
-        cert({
-          projectId,
-          clientEmail,
-          privateKey,
-        }),
-    });
+  cachedAdminApp = initializeApp({
+    credential: cert({
+      projectId,
+      clientEmail,
+      privateKey,
+    }),
+  });
 
   return cachedAdminApp;
 }
 
 /*
  * ============================================================
- * LAZY ADMIN SERVICES
+ * LAZY ADMIN AUTHENTICATION
  * ============================================================
  */
 
-export function getAdminAuth():
-  Auth {
+export function getAdminAuth(): Auth {
   return getAuth(
     getFirebaseAdminApp()
   );
 }
 
-export function getAdminDb():
-  Firestore {
+/*
+ * ============================================================
+ * LAZY ADMIN FIRESTORE
+ * ============================================================
+ */
+
+export function getAdminDb(): Firestore {
   return getFirestore(
     getFirebaseAdminApp()
+  );
+}
+
+/*
+ * ============================================================
+ * LAZY ADMIN STORAGE
+ * ============================================================
+ */
+
+export function getAdminStorage(): Storage {
+  return getStorage(
+    getFirebaseAdminApp()
+  );
+}
+
+/*
+ * ============================================================
+ * PRIVATE DOCUMENT VAULT STORAGE BUCKET
+ * ============================================================
+ */
+
+export function getAdminStorageBucket() {
+  const bucketName =
+    process.env
+      .FIREBASE_ADMIN_STORAGE_BUCKET
+      ?.trim() ||
+    process.env
+      .NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+      ?.trim();
+
+  if (!bucketName) {
+    throw new Error(
+      "Firebase Storage bucket is not configured."
+    );
+  }
+
+  if (
+    bucketName.includes("/") ||
+    bucketName.includes("\\") ||
+    bucketName.includes(":") ||
+    /\s/.test(bucketName)
+  ) {
+    throw new Error(
+      "Firebase Storage bucket configuration is invalid."
+    );
+  }
+
+  return getAdminStorage().bucket(
+    bucketName
   );
 }
 

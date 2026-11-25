@@ -494,69 +494,39 @@ export async function saveSubscription(
 export async function getEffectiveSubscriptionPlan(
   userId: string
 ): Promise<SubscriptionPlan> {
-
-  /*
-   * ----------------------------------------------------------
-   * CHECK PAID SUBSCRIPTION
-   * ----------------------------------------------------------
-   */
-
   const subscription =
-    await getSubscription(
-      userId
-    );
-
+    await getSubscription(userId);
 
   if (
     subscription &&
+    subscription.userId === userId &&
     (
-      subscription.status ===
-        "active" ||
-      subscription.status ===
-        "trialing"
+      subscription.status === "active" ||
+      subscription.status === "trialing"
     ) &&
     (
-      subscription.plan ===
-        "premium" ||
-      subscription.plan ===
-        "premium_plus"
-    )
+      subscription.plan === "premium" ||
+      subscription.plan === "premium_plus"
+    ) &&
+    typeof subscription.currentPeriodEnd === "number" &&
+    Number.isSafeInteger(subscription.currentPeriodEnd) &&
+    subscription.currentPeriodEnd > Date.now()
   ) {
-
     return subscription.plan;
-
   }
-
-
-  /*
-   * ----------------------------------------------------------
-   * CHECK TESTER ACCESS
-   * ----------------------------------------------------------
-   */
 
   const testerAccess =
-    await getTesterAccess(
-      userId
-    );
-
+    await getTesterAccess(userId);
 
   if (
-    testerAccess
+    testerAccess &&
+    Number.isSafeInteger(testerAccess.expiresAt) &&
+    testerAccess.expiresAt > Date.now()
   ) {
-
     return "premium";
-
   }
 
-
-  /*
-   * ----------------------------------------------------------
-   * DEFAULT TO FREE
-   * ----------------------------------------------------------
-   */
-
   return "free";
-
 }
 
 

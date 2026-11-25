@@ -1,3 +1,6 @@
+
+import "server-only";
+
 import {
   getAdminAuth,
   getAdminDb,
@@ -14,262 +17,161 @@ import type {
  * SERVER SUBSCRIPTION AUTHORIZATION
  * ============================================================
  *
- * SERVER-ONLY MODULE.
+ * Trusted server-side authorization for Autivoya.
  *
- * This file is responsible for determining whether an
- * authenticated Firebase user has a verified Premium or
- * Premium+ subscription.
+ * Premium access may be granted through:
  *
- * It is intended for:
+ * 1. A valid, unexpired paid subscription.
+ * 2. A valid, unexpired Premium tester entitlement.
  *
- * - Next.js API routes
- * - Server-side operations
- * - Community write authorization
- * - Future Stripe webhook integration
+ * Tester access never grants Premium+.
  *
- * DO NOT import this file into:
- *
- * - React client components
- * - "use client" files
- * - Browser-side utilities
- *
- * Firebase Admin services are initialized lazily through
- * getAdminAuth() and getAdminDb().
- * ============================================================
+ * Firebase Admin services are initialized lazily.
  */
 
 /*
- * ============================================================
  * TYPES
- * ============================================================
  */
 
 export type VerifiedSubscription = {
   uid: string;
-
   plan: SubscriptionPlan;
-
   status: SubscriptionStatus;
-
-  subscription:
-    | SubscriptionRecord
-    | null;
+  subscription: SubscriptionRecord | null;
 };
 
 export type ServerAuthorizationResult = {
   authorized: boolean;
-
   uid: string;
-
   plan: SubscriptionPlan;
-
   status: SubscriptionStatus;
+  subscription: SubscriptionRecord | null;
+};
 
-  subscription:
-    | SubscriptionRecord
-    | null;
+export type ServerTesterAccess = {
+  active: true;
+  plan: "premium";
+  expiresAt: number;
 };
 
 /*
  * ============================================================
- * VERIFY FIREBASE ID TOKEN
- * ============================================================
- *
- * Takes the Authorization header from an API request:
- *
- * Authorization: Bearer <Firebase ID Token>
- *
- * and verifies it through Firebase Admin.
- *
- * Admin verification is trusted server-side verification.
+ * REQUIRE AUTHENTICATED USER
  * ============================================================
  */
 
-export async function verifyFirebaseRequest(
+export async function requireAuthenticatedUser(
   request: Request
-): Promise<VerifiedSubscription> {
+): Promise<{
+  uid: string;
+  email?: string;
+}> {
   const authorization =
-    request.headers.get(
-      "authorization"
-    );
+    request.headers.get("authorization");
 
   if (
     !authorization ||
     !authorization
       .toLowerCase()
-      .startsWith(
-        "bearer "
-      )
+      .startsWith("bearer ")
   ) {
-    throw new Error(
-      "AUTH_REQUIRED"
-    );
+    throw new Error("AUTH_REQUIRED");
   }
 
   const idToken =
-    authorization
-      .slice(7)
-      .trim();
+    authorization.slice(7).trim();
 
   if (!idToken) {
-    throw new Error(
-      "AUTH_REQUIRED"
-    );
+    throw new Error("AUTH_REQUIRED");
   }
 
-  let decodedToken;
+  const adminAuth = getAdminAuth();
 
   try {
     /*
-     * Firebase Admin is initialized only when authentication
-     * is actually required at runtime.
+     * The second argument enables revoked-token
+     * and disabled-account verification.
      */
 
-    const adminAuth =
-      getAdminAuth();
+    const decodedToken =
+      await adminAuth.verifyIdToken(
+        idToken,
+        true
+      );
 
-    decodedToken =
-      await adminAuth
-        .verifyIdToken(
-          idToken
-        );
-  } catch (error) {
+    return {
+      uid: decodedToken.uid,
+      email: decodedToken.email,
+    };
+  } catch {
     console.error(
-      "Firebase ID token verification failed:",
-      error
+      "Firebase authentication verification failed."
     );
 
-    throw new Error(
-      "AUTH_INVALID"
-    );
+    throw new Error("AUTH_INVALID");
   }
-
-  const uid =
-    decodedToken.uid;
-
-  /*
-   * ----------------------------------------------------------
-   * LOAD VERIFIED SUBSCRIPTION
-   * ----------------------------------------------------------
-   */
-
-  const subscription =
-    await getServerSubscription(
-      uid
-    );
-
-  /*
-   * ----------------------------------------------------------
-   * DETERMINE EFFECTIVE PLAN
-   * ----------------------------------------------------------
-   */
-
-  const plan =
-    getEffectiveServerPlan(
-      subscription
-    );
-
-  return {
-    uid,
-
-    plan,
-
-    status:
-      subscription?.status ??
-      "none",
-
-    subscription,
-  };
 }
 
 /*
  * ============================================================
  * GET SERVER SUBSCRIPTION
  * ============================================================
- *
- * Reads directly through Firebase Admin.
- *
- * This bypasses client Firestore rules because this is trusted
- * server-side code.
- *
- * Path:
- *
- * users/{uid}/subscription/current
- * ============================================================
  */
 
 export async function getServerSubscription(
   uid: string
-): Promise<
-  SubscriptionRecord | null
-> {
+): Promise<SubscriptionRecord | null> {
   if (!uid) {
     throw new Error(
       "A Firebase UID is required."
     );
   }
 
-  /*
-   * Firebase Admin Firestore is initialized only when this
-   * server operation actually runs.
-   */
+  const adminDb = getAdminDb();
 
-  const adminDb =
-    getAdminDb();
-
-  const subscriptionRef =
-    adminDb
-      .collection(
-        "users"
-      )
-      .doc(
-        uid
-      )
-      .collection(
-        "subscription"
-      )
-      .doc(
-        "current"
-      );
+  const subscriptionRef = adminDb
+    .collection("users")
+    .doc(uid)
+    .collection("subscription")
+    .doc("current");
 
   const snapshot =
     await subscriptionRef.get();
 
-  if (
-    !snapshot.exists
-  ) {
+  if (!snapshot.exists) {
     return null;
   }
 
-  const data =
-    snapshot.data();
+  const data = snapshot.data();
+
+  if (!data) {
+    return null;
+  }
+
+  /*
+   * Reject subscription records explicitly associated
+   * with a different account.
+   */
 
   if (
-    !data
+    data.userId !== undefined &&
+    data.userId !== uid
   ) {
     return null;
   }
 
   return {
-    userId:
-      typeof data.userId ===
-      "string"
-        ? data.userId
-        : uid,
+    userId: uid,
 
-    plan:
-      isValidPlan(
-        data.plan
-      )
-        ? data.plan
-        : "free",
+    plan: isValidPlan(data.plan)
+      ? data.plan
+      : "free",
 
-    status:
-      isValidSubscriptionStatus(
-        data.status
-      )
-        ? data.status
-        : "none",
+    status: isValidSubscriptionStatus(
+      data.status
+    )
+      ? data.status
+      : "none",
 
     stripeCustomerId:
       typeof data.stripeCustomerId ===
@@ -285,13 +187,15 @@ export async function getServerSubscription(
 
     currentPeriodStart:
       typeof data.currentPeriodStart ===
-      "number"
+        "number" &&
+      Number.isFinite(data.currentPeriodStart)
         ? data.currentPeriodStart
         : undefined,
 
     currentPeriodEnd:
       typeof data.currentPeriodEnd ===
-      "number"
+        "number" &&
+      Number.isFinite(data.currentPeriodEnd)
         ? data.currentPeriodEnd
         : undefined,
 
@@ -302,14 +206,12 @@ export async function getServerSubscription(
         : undefined,
 
     createdAt:
-      typeof data.createdAt ===
-      "number"
+      typeof data.createdAt === "number"
         ? data.createdAt
         : 0,
 
     updatedAt:
-      typeof data.updatedAt ===
-      "number"
+      typeof data.updatedAt === "number"
         ? data.updatedAt
         : 0,
   };
@@ -317,55 +219,156 @@ export async function getServerSubscription(
 
 /*
  * ============================================================
- * EFFECTIVE SERVER PLAN
+ * GET EFFECTIVE PAID SUBSCRIPTION PLAN
  * ============================================================
  *
- * SECURITY PRINCIPLE:
+ * Stripe subscription timestamps are stored in milliseconds.
  *
- * Anything other than an active/trialing verified subscription
- * falls back to Free.
- *
- * This means:
- *
- * missing subscription -> Free
- * canceled             -> Free
- * past_due             -> Free
- * incomplete           -> Free
- * invalid plan         -> Free
- *
- * Premium and Premium+ are granted only when the stored
- * subscription record explicitly identifies the plan and has
- * an active/trialing status.
- * ============================================================
+ * Missing, invalid, or expired billing periods fail closed.
  */
 
 export function getEffectiveServerPlan(
-  subscription:
-    | SubscriptionRecord
-    | null
+  subscription: SubscriptionRecord | null
 ): SubscriptionPlan {
+  if (!subscription) {
+    return "free";
+  }
+
   if (
-    !subscription
+    subscription.status !== "active" &&
+    subscription.status !== "trialing"
   ) {
     return "free";
   }
 
   if (
-    subscription.status !==
-      "active" &&
-    subscription.status !==
-      "trialing"
+    subscription.plan !== "premium" &&
+    subscription.plan !== "premium_plus"
   ) {
     return "free";
   }
 
+  const expiresAt =
+    subscription.currentPeriodEnd;
+
   if (
-    subscription.plan ===
-      "premium" ||
-    subscription.plan ===
-      "premium_plus"
+    typeof expiresAt !== "number" ||
+    !Number.isSafeInteger(expiresAt) ||
+    expiresAt <= Date.now()
   ) {
-    return subscription.plan;
+    return "free";
+  }
+
+  return subscription.plan;
+}
+
+/*
+ * ============================================================
+ * GET SERVER TESTER ACCESS
+ * ============================================================
+ *
+ * Tester access is read directly through Firebase Admin.
+ *
+ * Tester access grants Premium only.
+ */
+
+export async function getServerTesterAccess(
+  uid: string
+): Promise<ServerTesterAccess | null> {
+  if (!uid) {
+    throw new Error(
+      "A Firebase UID is required."
+    );
+  }
+
+  const adminDb = getAdminDb();
+
+  const testerAccessRef = adminDb
+    .collection("users")
+    .doc(uid)
+    .collection("testerAccess")
+    .doc("current");
+
+  const snapshot =
+    await testerAccessRef.get();
+
+  if (!snapshot.exists) {
+    return null;
+  }
+
+  const data = snapshot.data();
+
+  if (!data) {
+    return null;
+  }
+
+  if (
+    data.active !== true ||
+    data.plan !== "premium"
+  ) {
+    return null;
+  }
+
+  if (
+    typeof data.expiresAt !== "number" ||
+    !Number.isSafeInteger(data.expiresAt) ||
+    data.expiresAt <= Date.now()
+  ) {
+    return null;
+  }
+
+  return {
+    active: true,
+    plan: "premium",
+    expiresAt: data.expiresAt,
+  };
+}
+
+/*
+ * ============================================================
+ * GET EFFECTIVE SERVER ACCOUNT PLAN
+ * ============================================================
+ *
+ * Paid subscriptions take precedence over tester access.
+ */
+
+export async function getEffectiveServerAccountPlan(
+  uid: string,
+  subscription: SubscriptionRecord | null
+): Promise<SubscriptionPlan> {
+  if (!uid) {
+    throw new Error(
+      "A Firebase UID is required."
+    );
+  }
+
+  if (
+    subscription &&
+    subscription.userId !== uid
+  ) {
+    throw new Error(
+      "SUBSCRIPTION_OWNER_MISMATCH"
+    );
+  }
+
+  const paidPlan =
+    getEffectiveServerPlan(subscription);
+
+  if (
+    paidPlan === "premium" ||
+    paidPlan === "premium_plus"
+  ) {
+    return paidPlan;
+  }
+
+  const testerAccess =
+    await getServerTesterAccess(uid);
+
+  if (
+    testerAccess &&
+    testerAccess.expiresAt > Date.now()
+  ) {
+    return "premium";
   }
 
   return "free";
@@ -373,81 +376,45 @@ export function getEffectiveServerPlan(
 
 /*
  * ============================================================
- * REQUIRE AUTHENTICATED USER
+ * VERIFY FIREBASE REQUEST
  * ============================================================
  *
- * Useful for API routes that only require a login, regardless
- * of subscription level.
- * ============================================================
+ * Authenticates the request and determines the user's
+ * effective server-side entitlement.
  */
 
-export async function requireAuthenticatedUser(
+export async function verifyFirebaseRequest(
   request: Request
-): Promise<{
-  uid: string;
-  email?: string;
-}> {
-  const authorization =
-    request.headers.get(
-      "authorization"
+): Promise<VerifiedSubscription> {
+  const account =
+    await requireAuthenticatedUser(request);
+
+  const uid = account.uid;
+
+  const subscription =
+    await getServerSubscription(uid);
+
+  const plan =
+    await getEffectiveServerAccountPlan(
+      uid,
+      subscription
     );
 
-  if (
-    !authorization ||
-    !authorization
-      .toLowerCase()
-      .startsWith(
-        "bearer "
-      )
-  ) {
-    throw new Error(
-      "AUTH_REQUIRED"
-    );
-  }
+  return {
+    uid,
 
-  const idToken =
-    authorization
-      .slice(7)
-      .trim();
+    plan,
 
-  if (!idToken) {
-    throw new Error(
-      "AUTH_REQUIRED"
-    );
-  }
-
-  try {
     /*
-     * Firebase Admin Auth is initialized only when this
-     * authenticated server request actually runs.
+     * Status reflects the stored paid subscription.
+     * Effective access is determined by plan.
      */
 
-    const adminAuth =
-      getAdminAuth();
+    status:
+      subscription?.status ?? "none",
 
-    const decodedToken =
-      await adminAuth
-        .verifyIdToken(
-          idToken
-        );
-
-    return {
-      uid:
-        decodedToken.uid,
-
-      email:
-        decodedToken.email,
-    };
-  } catch (error) {
-    console.error(
-      "Firebase authentication failed:",
-      error
-    );
-
-    throw new Error(
-      "AUTH_INVALID"
-    );
-  }
+    subscription,
+  };
 }
 
 /*
@@ -455,37 +422,24 @@ export async function requireAuthenticatedUser(
  * REQUIRE PREMIUM
  * ============================================================
  *
- * Use this inside a server API route when the endpoint should
- * only be accessible to Premium or Premium+ users.
+ * Allows:
  *
- * Example:
- *
- * const account =
- *   await requirePremium(request);
- *
- * account.plan
- * ============================================================
+ * - Valid paid Premium
+ * - Valid paid Premium+
+ * - Valid Premium tester access
  */
 
 export async function requirePremium(
   request: Request
-): Promise<
-  VerifiedSubscription
-> {
+): Promise<VerifiedSubscription> {
   const account =
-    await verifyFirebaseRequest(
-      request
-    );
+    await verifyFirebaseRequest(request);
 
   if (
-    account.plan !==
-      "premium" &&
-    account.plan !==
-      "premium_plus"
+    account.plan !== "premium" &&
+    account.plan !== "premium_plus"
   ) {
-    throw new Error(
-      "PREMIUM_REQUIRED"
-    );
+    throw new Error("PREMIUM_REQUIRED");
   }
 
   return account;
@@ -496,24 +450,16 @@ export async function requirePremium(
  * REQUIRE PREMIUM+
  * ============================================================
  *
- * Used for features reserved specifically for Premium+.
- * ============================================================
+ * Only a valid paid Premium+ subscription qualifies.
  */
 
 export async function requirePremiumPlus(
   request: Request
-): Promise<
-  VerifiedSubscription
-> {
+): Promise<VerifiedSubscription> {
   const account =
-    await verifyFirebaseRequest(
-      request
-    );
+    await verifyFirebaseRequest(request);
 
-  if (
-    account.plan !==
-    "premium_plus"
-  ) {
+  if (account.plan !== "premium_plus") {
     throw new Error(
       "PREMIUM_PLUS_REQUIRED"
     );
@@ -532,14 +478,10 @@ function isValidPlan(
   value: unknown
 ): value is SubscriptionPlan {
   return (
-    value ===
-      "guest" ||
-    value ===
-      "free" ||
-    value ===
-      "premium" ||
-    value ===
-      "premium_plus"
+    value === "guest" ||
+    value === "free" ||
+    value === "premium" ||
+    value === "premium_plus"
   );
 }
 
@@ -553,17 +495,11 @@ function isValidSubscriptionStatus(
   value: unknown
 ): value is SubscriptionStatus {
   return (
-    value ===
-      "none" ||
-    value ===
-      "active" ||
-    value ===
-      "trialing" ||
-    value ===
-      "past_due" ||
-    value ===
-      "canceled" ||
-    value ===
-      "incomplete"
+    value === "none" ||
+    value === "active" ||
+    value === "trialing" ||
+    value === "past_due" ||
+    value === "canceled" ||
+    value === "incomplete"
   );
 }

@@ -1,9 +1,10 @@
+
 "use client";
 
 import {
   useCallback,
   useEffect,
-  useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -27,76 +28,37 @@ import {
   planIncludesFeature,
 } from "./subscriptionTypes";
 
-
 /*
  * ============================================================
  * ACCOUNT ENTITLEMENTS HOOK
  * ============================================================
  *
- * Provides the CURRENT user's subscription and feature access
- * to client components.
+ * Provides client-side subscription and feature access.
  *
- * IMPORTANT:
+ * Security protections:
  *
- * This hook is for UI/product behavior.
+ * - Account-specific entitlement state.
+ * - Immediate clearing of previous permissions.
+ * - Stale asynchronous request protection.
+ * - Fail-closed Premium authorization.
+ * - Component unmount protection.
  *
- * It is NOT the final security boundary for Premium data or
- * Premium APIs.
- *
- * Server-side authorization will still be required before
- * launch for protected Premium functionality.
- * ============================================================
+ * Server authorization and Firebase Security Rules remain
+ * the final security boundaries.
  */
 
-
 export type AccountEntitlements = {
-
-  /*
-   * Current subscription plan.
-   *
-   * Guest when no user is authenticated.
-   * Free when an authenticated user has no active paid plan.
-   */
-
   plan: SubscriptionPlan;
 
-
-  /*
-   * Stored subscription record, when one exists.
-   */
-
-  subscription:
-    | SubscriptionRecord
-    | null;
-
-
-  /*
-   * Loading state while Firebase/auth/subscription data
-   * is being resolved.
-   */
+  subscription: SubscriptionRecord | null;
 
   loading: boolean;
 
-
-  /*
-   * Any subscription loading error.
-   */
-
   error: string;
-
-
-  /*
-   * Check whether the current user can use a feature.
-   */
 
   canUse: (
     feature: SubscriptionFeature
   ) => boolean;
-
-
-  /*
-   * Convenience checks.
-   */
 
   isAuthenticated: boolean;
 
@@ -106,65 +68,119 @@ export type AccountEntitlements = {
 
   isPremiumPlus: boolean;
 
-
-  /*
-   * Refresh subscription information manually.
-   *
-   * Useful after a future checkout flow returns from Stripe.
-   */
-
   refresh: () => Promise<void>;
 };
 
+/*
+ * ============================================================
+ * INTERNAL STATE
+ * ============================================================
+ */
+
+type EntitlementState = {
+  uid: string | null;
+
+  plan: SubscriptionPlan;
+
+  subscription: SubscriptionRecord | null;
+
+  loading: boolean;
+
+  error: string;
+};
+
+function createGuestState(
+  loading = false
+): EntitlementState {
+  return {
+    uid: null,
+    plan: "guest",
+    subscription: null,
+    loading,
+    error: "",
+  };
+}
+
+function createAuthenticatedLoadingState(
+  uid: string
+): EntitlementState {
+  return {
+    uid,
+    plan: "free",
+    subscription: null,
+    loading: true,
+    error: "",
+  };
+}
+
+/*
+ * ============================================================
+ * ACCOUNT ENTITLEMENTS
+ * ============================================================
+ */
 
 export function useAccountEntitlements():
   AccountEntitlements {
 
+  const [state, setState] =
+    useState<EntitlementState>(
+      () => createGuestState(true)
+    );
+
+  /*
+   * Each new request invalidates previous requests.
+   */
+
+  const requestVersionRef =
+    useRef(0);
+
+  const mountedRef =
+    useRef(false);
+
   /*
    * ==========================================================
-   * STATE
+   * VERIFY REQUEST OWNERSHIP
    * ==========================================================
    */
 
-  const [
-    plan,
-    setPlan,
-  ] = useState<SubscriptionPlan>(
-    "guest"
-  );
-
-
-  const [
-    subscription,
-    setSubscription,
-  ] = useState<
-    SubscriptionRecord | null
-  >(
-    null
-  );
-
-
-  const [
-    loading,
-    setLoading,
-  ] = useState(true);
-
-
-  const [
-    error,
-    setError,
-  ] = useState("");
-
-
-  const [
-    isAuthenticated,
-    setIsAuthenticated,
-  ] = useState(false);
-
+  const isCurrentRequest =
+    useCallback(
+      (
+        requestVersion: number,
+        uid: string
+      ): boolean => {
+        return (
+          mountedRef.current &&
+          requestVersionRef.current ===
+            requestVersion &&
+          getCurrentUser()?.uid === uid
+        );
+      },
+      []
+    );
 
   /*
    * ==========================================================
-   * LOAD SUBSCRIPTION
+   * CLEAR ENTITLEMENTS
+   * ==========================================================
+   */
+
+  const clearEntitlements =
+    useCallback(() => {
+      requestVersionRef.current += 1;
+
+      if (!mountedRef.current) {
+        return;
+      }
+
+      setState(
+        createGuestState()
+      );
+    }, []);
+
+  /*
+   * ==========================================================
+   * LOAD ACCOUNT SUBSCRIPTION
    * ==========================================================
    */
 
@@ -172,175 +188,169 @@ export function useAccountEntitlements():
     useCallback(
       async (
         uid: string
-      ) => {
+      ): Promise<void> => {
+        if (
+          !mountedRef.current ||
+          getCurrentUser()?.uid !== uid
+        ) {
+          return;
+        }
 
-        setLoading(
-          true
+        const requestVersion =
+          ++requestVersionRef.current;
+
+        /*
+         * Immediately remove previously loaded permissions.
+         */
+
+        setState(
+          createAuthenticatedLoadingState(uid)
         );
 
-        setError("");
-
-
         try {
-
-          /*
-           * --------------------------------------------------
-           * LOAD STORED SUBSCRIPTION
-           * --------------------------------------------------
-           */
-
           const storedSubscription =
-            await getSubscription(
+            await getSubscription(uid);
+
+          if (
+            !isCurrentRequest(
+              requestVersion,
               uid
-            );
-
-
-          setSubscription(
-            storedSubscription
-          );
-
-
-          /*
-           * --------------------------------------------------
-           * DETERMINE EFFECTIVE PLAN
-           * --------------------------------------------------
-           *
-           * If there is no valid active/trialing Premium
-           * subscription, the repository returns "free".
-           */
+            )
+          ) {
+            return;
+          }
 
           const effectivePlan =
             await getEffectiveSubscriptionPlan(
               uid
             );
 
+          /*
+           * Never apply permissions from an outdated
+           * request or a different account.
+           */
 
-          setPlan(
-            effectivePlan
-          );
+          if (
+            !isCurrentRequest(
+              requestVersion,
+              uid
+            )
+          ) {
+            return;
+          }
 
-        } catch (subscriptionError) {
+          setState({
+            uid,
+
+            plan: effectivePlan,
+
+            subscription:
+              storedSubscription?.userId === uid
+                ? storedSubscription
+                : null,
+
+            loading: false,
+
+            error: "",
+          });
+
+        } catch {
+          if (
+            !isCurrentRequest(
+              requestVersion,
+              uid
+            )
+          ) {
+            return;
+          }
 
           console.error(
-            "Unable to load account subscription:",
-            subscriptionError
+            "Unable to verify account entitlements."
           );
-
 
           /*
            * Fail closed.
-           *
-           * If subscription state cannot be verified, do not
-           * grant Premium access.
            */
 
-          setPlan(
-            "free"
-          );
-
-          setSubscription(
-            null
-          );
-
-
-          setError(
-            "We couldn't load your subscription information right now."
-          );
-
-        } finally {
-
-          setLoading(
-            false
-          );
-
+          setState({
+            uid,
+            plan: "free",
+            subscription: null,
+            loading: false,
+            error:
+              "We couldn't load your subscription information right now.",
+          });
         }
-
       },
-      []
+      [isCurrentRequest]
     );
-
 
   /*
    * ==========================================================
-   * AUTH STATE
+   * AUTHENTICATION STATE
    * ==========================================================
    */
 
   useEffect(() => {
+    mountedRef.current = true;
 
     let active = true;
-
 
     const unsubscribe =
       watchAuthState(
         async (user) => {
-
-          if (!active) {
+          if (
+            !active ||
+            !mountedRef.current
+          ) {
             return;
           }
 
+          const currentUid =
+            getCurrentUser()?.uid ?? null;
+
+          const reportedUid =
+            user?.uid ?? null;
 
           /*
-           * ------------------------------------------------
-           * GUEST
-           * ------------------------------------------------
+           * Ignore outdated authentication callbacks.
            */
+
+          if (
+            currentUid !== reportedUid
+          ) {
+            return;
+          }
 
           if (!user) {
-
-            setIsAuthenticated(
-              false
-            );
-
-            setPlan(
-              "guest"
-            );
-
-            setSubscription(
-              null
-            );
-
-            setError("");
-
-            setLoading(
-              false
-            );
+            clearEntitlements();
 
             return;
           }
-
-
-          /*
-           * ------------------------------------------------
-           * AUTHENTICATED
-           * ------------------------------------------------
-           */
-
-          setIsAuthenticated(
-            true
-          );
-
 
           await loadSubscription(
             user.uid
           );
-
         }
       );
 
-
     return () => {
-
       active = false;
 
+      mountedRef.current = false;
+
+      /*
+       * Invalidate all outstanding requests.
+       */
+
+      requestVersionRef.current += 1;
+
       unsubscribe();
-
     };
-
   }, [
+    clearEntitlements,
     loadSubscription,
   ]);
-
 
   /*
    * ==========================================================
@@ -350,103 +360,114 @@ export function useAccountEntitlements():
 
   const refresh =
     useCallback(
-      async () => {
+      async (): Promise<void> => {
+        if (!mountedRef.current) {
+          return;
+        }
 
         const user =
           getCurrentUser();
 
-
-        /*
-         * Guest has no subscription record.
-         */
-
         if (!user) {
-
-          setIsAuthenticated(
-            false
-          );
-
-          setPlan(
-            "guest"
-          );
-
-          setSubscription(
-            null
-          );
-
-          setError("");
-
-          setLoading(
-            false
-          );
+          clearEntitlements();
 
           return;
         }
 
-
-        setIsAuthenticated(
-          true
-        );
-
-
         await loadSubscription(
           user.uid
         );
-
       },
       [
+        clearEntitlements,
         loadSubscription,
       ]
     );
 
+  /*
+   * ==========================================================
+   * EFFECTIVE ACCOUNT STATE
+   * ==========================================================
+   *
+   * Stored permissions must belong to the currently
+   * authenticated account.
+   */
+
+  const currentUid =
+    getCurrentUser()?.uid ?? null;
+
+  const accountMatches =
+    state.uid === currentUid;
+
+  const isAuthenticated =
+    currentUid !== null;
+
+  const loading =
+    state.loading ||
+    !accountMatches;
+
+  const error =
+    accountMatches
+      ? state.error
+      : "";
+
+  const plan: SubscriptionPlan =
+    !isAuthenticated
+      ? "guest"
+      : loading || error
+        ? "free"
+        : state.plan;
+
+  const subscription =
+    accountMatches &&
+    !loading &&
+    !error &&
+    isAuthenticated
+      ? state.subscription
+      : null;
 
   /*
    * ==========================================================
    * FEATURE ACCESS
    * ==========================================================
-   *
-   * Guests are handled through the same subscription plan
-   * definitions.
-   *
-   * Free/Premium/Premium+ feature definitions live in:
-   *
-   * subscriptionTypes.ts
    */
 
   const canUse =
     useCallback(
       (
         feature: SubscriptionFeature
-      ) => {
+      ): boolean => {
+        const latestUid =
+          getCurrentUser()?.uid ?? null;
+
+        /*
+         * Prevent stale callbacks from granting access
+         * after an account switch.
+         */
 
         if (
-          plan === "guest"
+          latestUid !== currentUid ||
+          loading ||
+          Boolean(error)
         ) {
-
-          /*
-           * Guests only receive the features explicitly
-           * defined for the guest plan.
-           */
-
           return planIncludesFeature(
-            "guest",
+            latestUid ? "free" : "guest",
             feature
           );
-
         }
-
 
         return planIncludesFeature(
           plan,
           feature
         );
-
       },
       [
+        currentUid,
+        loading,
+        error,
         plan,
       ]
     );
-
 
   /*
    * ==========================================================
@@ -455,35 +476,26 @@ export function useAccountEntitlements():
    */
 
   const isFree =
-    useMemo(
-      () =>
-        plan === "free",
-      [
-        plan,
-      ]
-    );
-
+    isAuthenticated &&
+    !loading &&
+    plan === "free";
 
   const isPremium =
-    useMemo(
-      () =>
-        plan === "premium" ||
-        plan === "premium_plus",
-      [
-        plan,
-      ]
+    isAuthenticated &&
+    accountMatches &&
+    !loading &&
+    !error &&
+    (
+      plan === "premium" ||
+      plan === "premium_plus"
     );
-
 
   const isPremiumPlus =
-    useMemo(
-      () =>
-        plan === "premium_plus",
-      [
-        plan,
-      ]
-    );
-
+    isAuthenticated &&
+    accountMatches &&
+    !loading &&
+    !error &&
+    plan === "premium_plus";
 
   /*
    * ==========================================================
@@ -512,5 +524,4 @@ export function useAccountEntitlements():
 
     refresh,
   };
-
 }

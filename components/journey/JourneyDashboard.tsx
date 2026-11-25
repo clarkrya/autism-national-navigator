@@ -107,11 +107,38 @@ const linkButtonStyle: React.CSSProperties = {
 function formatDisplayValue(value: string): string {
   if (!value) return "";
 
+  const acronyms = new Set([
+    "ABA",
+    "OT",
+    "PT",
+    "SLP",
+    "ST",
+    "IEP",
+    "IFSP",
+    "AAC",
+    "ASD",
+    "ADHD",
+    "BCBA",
+    "RBT",
+    "ESY",
+    "SSI",
+    "SSDI",
+    "CHIP",
+    "ESE",
+    "504",
+  ]);
+
   return value
     .replace(/[-_]/g, " ")
-    .replace(/\b\w/g, (letter) =>
-      letter.toUpperCase()
-    );
+    .replace(/\b[a-zA-Z0-9]+\b/g, (word) => {
+      const uppercase = word.toUpperCase();
+
+      if (acronyms.has(uppercase)) {
+        return uppercase;
+      }
+
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    });
 }
 
 function formatResourceType(
