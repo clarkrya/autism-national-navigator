@@ -328,25 +328,25 @@ export default function DocumentVaultPage() {
   const releaseAllTemporaryUrls = useCallback(
     () => {
       documentSessionRef.current += 1;
-
-      for (
-        const url of temporaryUrlsRef.current.keys()
-      ) {
+  
+      Array.from(
+        temporaryUrlsRef.current.keys()
+      ).forEach((url) => {
         releaseTemporaryUrl(url, true);
-      }
-
-      for (
-        const tab of pendingDocumentTabsRef.current
-      ) {
-        try {
-          if (!tab.closed) {
-            tab.close();
+      });
+  
+      pendingDocumentTabsRef.current.forEach(
+        (tab) => {
+          try {
+            if (!tab.closed) {
+              tab.close();
+            }
+          } catch {
+            // Browser restrictions may apply.
           }
-        } catch {
-          // Browser restrictions may apply.
         }
-      }
-
+      );
+  
       pendingDocumentTabsRef.current.clear();
     },
     [releaseTemporaryUrl]

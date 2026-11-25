@@ -30,6 +30,19 @@ const VERSION_ID =
   `terms-${LEGAL_VERSIONS.termsOfService}` +
   `__privacy-${LEGAL_VERSIONS.privacyPolicy}`;
 
+type LegalAcceptanceMethod =
+  | "signup"
+  | "account_update";
+
+type LegalAcceptanceBody = {
+  ageRequirementConfirmed?: unknown;
+  termsAccepted?: unknown;
+  privacyAcknowledged?: unknown;
+  termsVersion?: unknown;
+  privacyVersion?: unknown;
+  acceptanceMethod?: unknown;
+};
+
 /*
  * ============================================================
  * POST — RECORD LEGAL ACCEPTANCE
@@ -100,10 +113,10 @@ export async function POST(request: NextRequest) {
      * VALIDATE REQUEST BODY
      */
 
-    let body;
+    let rawBody: unknown;
 
     try {
-      body = await request.json();
+      rawBody = await request.json();
     } catch {
       return NextResponse.json(
         {
@@ -116,9 +129,9 @@ export async function POST(request: NextRequest) {
     }
 
     if (
-      !body ||
-      typeof body !== "object" ||
-      Array.isArray(body)
+      !rawBody ||
+      typeof rawBody !== "object" ||
+      Array.isArray(rawBody)
     ) {
       return NextResponse.json(
         {
@@ -129,6 +142,9 @@ export async function POST(request: NextRequest) {
         }
       );
     }
+
+    const body =
+      rawBody as LegalAcceptanceBody;
 
     /*
      * VALIDATE LEGAL ACCEPTANCE
@@ -189,6 +205,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const acceptanceMethod: LegalAcceptanceMethod =
+      body.acceptanceMethod;
+
     /*
      * FIRESTORE REFERENCES
      */
@@ -242,8 +261,7 @@ export async function POST(request: NextRequest) {
               acceptedAt:
                 FieldValue.serverTimestamp(),
 
-              acceptanceMethod:
-                body.acceptanceMethod,
+              acceptanceMethod,
 
               schemaVersion: 1,
             }
@@ -278,7 +296,6 @@ export async function POST(request: NextRequest) {
         },
       }
     );
-
   } catch (error) {
     console.error(
       "Legal acceptance API error:",
