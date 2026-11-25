@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import Link from "next/link";
@@ -22,6 +23,7 @@ import {
   getVaultDocumentDownloadUrl,
   getVaultDocuments,
   updateVaultDocumentMetadata,
+  revokeVaultDocumentDownloadUrl,
 } from "../../lib/vaultRepository";
 
 import {
@@ -66,6 +68,9 @@ const BRAND = {
 const selectedChildStorageKey =
   "myriad-document-vault-selected-child";
 
+const VIEW_URL_LIFETIME_MS = 10 * 60 * 1000;
+const DOWNLOAD_URL_LIFETIME_MS = 60 * 1000;
+
 type SavedChild = {
   id: string;
   name: string;
@@ -75,37 +80,42 @@ type VaultCategoryFilter =
   | "all"
   | VaultDocumentCategory;
 
-  function getChildDisplayName(
-    data: Record<string, unknown>,
-    fallback: string
-  ): string {
-    const profile =
-      data.familyProfile &&
-      typeof data.familyProfile === "object" &&
-      !Array.isArray(data.familyProfile)
-        ? (data.familyProfile as Record<string, unknown>)
-        : {};
-  
-    const candidates = [
-      profile.childName,
-      profile.name,
-      profile.firstName,
-      data.childName,
-      data.name,
-      data.firstName,
-    ];
-  
-    for (const candidate of candidates) {
-      if (
-        typeof candidate === "string" &&
-        candidate.trim()
-      ) {
-        return candidate.trim();
-      }
+type TemporaryDocumentUrl = {
+  timer: number;
+  documentTab: Window | null;
+};
+
+function getChildDisplayName(
+  data: Record<string, unknown>,
+  fallback: string
+): string {
+  const profile =
+    data.familyProfile &&
+    typeof data.familyProfile === "object" &&
+    !Array.isArray(data.familyProfile)
+      ? (data.familyProfile as Record<string, unknown>)
+      : {};
+
+  const candidates = [
+    profile.childName,
+    profile.name,
+    profile.firstName,
+    data.childName,
+    data.name,
+    data.firstName,
+  ];
+
+  for (const candidate of candidates) {
+    if (
+      typeof candidate === "string" &&
+      candidate.trim()
+    ) {
+      return candidate.trim();
     }
-  
-    return fallback;
   }
+
+  return fallback;
+}
 
 function formatNoteDate(value: number): string {
   if (!value || !Number.isFinite(value)) {
@@ -267,55 +277,246 @@ export default function DocumentVaultPage() {
   const [notesSearch, setNotesSearch] =
     useState("");
 
+  /*
+   * TEMPORARY DOCUMENT URL MANAGEMENT
+   */
+
+  const temporaryUrlsRef = useRef<
+    Map<string, TemporaryDocumentUrl>
+  >(new Map());
+
+  const pendingDocumentTabsRef = useRef<
+    Set<Window>
+  >(new Set());
+
+  const documentSessionRef = useRef(0);
+
+  const currentOwnerRef = useRef<string | null>(
+    null
+  );
+
+  const documentRequestRef = useRef(0);
+
+  const releaseTemporaryUrl = useCallback(
+    (url: string, closeTab = false) => {
+      const entry =
+        temporaryUrlsRef.current.get(url);
+
+      if (entry) {
+        window.clearTimeout(entry.timer);
+
+        if (
+          closeTab &&
+          entry.documentTab &&
+          !entry.documentTab.closed
+        ) {
+          try {
+            entry.documentTab.close();
+          } catch {
+            // Browser restrictions may apply.
+          }
+        }
+      }
+
+      revokeVaultDocumentDownloadUrl(url);
+
+      temporaryUrlsRef.current.delete(url);
+    },
+    []
+  );
+
+  const releaseAllTemporaryUrls = useCallback(
+    () => {
+      documentSessionRef.current += 1;
+
+      for (
+        const url of temporaryUrlsRef.current.keys()
+      ) {
+        releaseTemporaryUrl(url, true);
+      }
+
+      for (
+        const tab of pendingDocumentTabsRef.current
+      ) {
+        try {
+          if (!tab.closed) {
+            tab.close();
+          }
+        } catch {
+          // Browser restrictions may apply.
+        }
+      }
+
+      pendingDocumentTabsRef.current.clear();
+    },
+    [releaseTemporaryUrl]
+  );
+
+  const trackTemporaryUrl = useCallback(
+    (
+      url: string,
+      lifetime: number,
+      documentTab: Window | null = null
+    ) => {
+      if (!url.startsWith("blob:")) {
+        throw new Error(
+          "An invalid temporary document URL was returned."
+        );
+      }
+
+      const timer = window.setTimeout(() => {
+        releaseTemporaryUrl(url);
+      }, lifetime);
+
+      temporaryUrlsRef.current.set(url, {
+        timer,
+        documentTab,
+      });
+    },
+    [releaseTemporaryUrl]
+  );
+
+  /*
+   * AUTHENTICATION AND ACCOUNT CLEANUP
+   */
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(
       auth,
       (currentUser) => {
+        const nextOwner =
+          currentUser?.uid ?? null;
+
+        if (
+          currentOwnerRef.current !== nextOwner
+        ) {
+          releaseAllTemporaryUrls();
+
+          documentRequestRef.current += 1;
+
+          setChildren([]);
+          setSelectedChildId("");
+          setDocuments([]);
+          setJourneyNotes([]);
+
+          setChildrenLoading(false);
+          setDocumentsLoading(false);
+          setNotesLoading(false);
+
+          setDocumentError("");
+          setNotesError("");
+
+          setSelectedDocument(null);
+          setUploadOpen(false);
+
+          setNotesOpen(false);
+          setExpandedNoteId(null);
+
+          setSearchTerm("");
+          setNotesSearch("");
+          setCategoryFilter("all");
+
+          currentOwnerRef.current = nextOwner;
+        }
+
         setUser(currentUser);
         setAuthLoading(false);
       }
     );
 
-    return unsubscribe;
-  }, []);
+    return () => {
+      unsubscribe();
 
-  // Load family members.
+      documentRequestRef.current += 1;
+
+      releaseAllTemporaryUrls();
+    };
+  }, [releaseAllTemporaryUrls]);
+
+  useEffect(() => {
+    if (
+      !isAuthenticated ||
+      !isPremium ||
+      entitlementLoading ||
+      entitlementError
+    ) {
+      releaseAllTemporaryUrls();
+
+      documentRequestRef.current += 1;
+
+      setDocuments([]);
+      setJourneyNotes([]);
+      setSelectedDocument(null);
+      setUploadOpen(false);
+      setNotesOpen(false);
+      setExpandedNoteId(null);
+    }
+  }, [
+    isAuthenticated,
+    isPremium,
+    entitlementLoading,
+    entitlementError,
+    releaseAllTemporaryUrls,
+  ]);
+
+  const canAccessVault = Boolean(
+    user &&
+    isAuthenticated &&
+    isPremium &&
+    !authLoading &&
+    !entitlementLoading &&
+    !entitlementError &&
+    auth.currentUser?.uid === user.uid
+  );
+
+  /*
+   * LOAD FAMILY MEMBERS
+   */
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadChildren() {
-      if (authLoading || entitlementLoading) {
+      if (
+        authLoading ||
+        entitlementLoading
+      ) {
         return;
       }
 
       if (
         !user ||
-        !isAuthenticated ||
-        !isPremium
+        !canAccessVault
       ) {
         setChildren([]);
         setSelectedChildId("");
+        setChildrenLoading(false);
         return;
       }
+
+      const ownerUid = user.uid;
 
       setChildrenLoading(true);
       setDocumentError("");
 
       try {
-        const savedChildren = await getSavedChildren(
-          user.uid
-        );
+        const savedChildren =
+          await getSavedChildren(ownerUid);
 
-        if (cancelled) return;
+        if (
+          cancelled ||
+          auth.currentUser?.uid !== ownerUid
+        ) {
+          return;
+        }
 
         const loadedChildren: SavedChild[] =
-        savedChildren.map((child) => ({
-          id: child.childId,
-          name:
-            child.familyProfile.childName?.trim() ||
-            "Family member",
-        }));
+          savedChildren.map((child) => ({
+            id: child.childId,
+            name:
+              child.familyProfile.childName?.trim() ||
+              "Family member",
+          }));
 
         setChildren(loadedChildren);
 
@@ -332,7 +533,7 @@ export default function DocumentVaultPage() {
           if (typeof window !== "undefined") {
             const savedChildId =
               window.localStorage.getItem(
-                selectedChildStorageKey
+                `${selectedChildStorageKey}:${ownerUid}`
               );
 
             if (
@@ -354,9 +555,13 @@ export default function DocumentVaultPage() {
           error
         );
 
-        if (!cancelled) {
+        if (
+          !cancelled &&
+          auth.currentUser?.uid === ownerUid
+        ) {
           setChildren([]);
           setSelectedChildId("");
+
           setDocumentError(
             "We couldn't load your saved family members."
           );
@@ -377,12 +582,13 @@ export default function DocumentVaultPage() {
     user,
     authLoading,
     entitlementLoading,
-    isAuthenticated,
-    isPremium,
+    canAccessVault,
   ]);
 
   useEffect(() => {
     if (
+      !user ||
+      !canAccessVault ||
       !selectedChildId ||
       typeof window === "undefined"
     ) {
@@ -390,17 +596,30 @@ export default function DocumentVaultPage() {
     }
 
     window.localStorage.setItem(
-      selectedChildStorageKey,
+      `${selectedChildStorageKey}:${user.uid}`,
       selectedChildId
     );
-  }, [selectedChildId]);
+  }, [
+    user,
+    selectedChildId,
+    canAccessVault,
+  ]);
 
-  // Load uploaded documents.
+  /*
+   * LOAD UPLOADED DOCUMENTS
+   */
 
   const loadDocuments = useCallback(
-    async (uid: string, childId: string) => {
+    async (
+      uid: string,
+      childId: string
+    ) => {
+      const requestId =
+        ++documentRequestRef.current;
+
       setDocumentsLoading(true);
       setDocumentError("");
+      setDocuments([]);
 
       try {
         const loadedDocuments =
@@ -409,9 +628,21 @@ export default function DocumentVaultPage() {
             childId
           );
 
+        if (
+          documentRequestRef.current !==
+            requestId ||
+          auth.currentUser?.uid !== uid
+        ) {
+          return;
+        }
+
         setDocuments(
           sortVaultDocumentsNewestFirst(
-            loadedDocuments
+            loadedDocuments.filter(
+              (document) =>
+                document.userId === uid &&
+                document.childId === childId
+            )
           )
         );
       } catch (error) {
@@ -420,12 +651,24 @@ export default function DocumentVaultPage() {
           error
         );
 
-        setDocuments([]);
-        setDocumentError(
-          "We couldn't load the documents in this Vault."
-        );
+        if (
+          documentRequestRef.current ===
+            requestId &&
+          auth.currentUser?.uid === uid
+        ) {
+          setDocuments([]);
+
+          setDocumentError(
+            "We couldn't load the documents in this Vault."
+          );
+        }
       } finally {
-        setDocumentsLoading(false);
+        if (
+          documentRequestRef.current ===
+          requestId
+        ) {
+          setDocumentsLoading(false);
+        }
       }
     },
     []
@@ -434,10 +677,14 @@ export default function DocumentVaultPage() {
   useEffect(() => {
     if (
       !user ||
-      !isPremium ||
+      !canAccessVault ||
       !selectedChildId
     ) {
+      documentRequestRef.current += 1;
+
       setDocuments([]);
+      setDocumentsLoading(false);
+
       return;
     }
 
@@ -445,15 +692,20 @@ export default function DocumentVaultPage() {
       user.uid,
       selectedChildId
     );
+
+    return () => {
+      documentRequestRef.current += 1;
+    };
   }, [
     user,
-    isPremium,
+    canAccessVault,
     selectedChildId,
     loadDocuments,
   ]);
 
-  // Load Journey Notes independently.
-  // A notes read error must not hide uploaded files.
+  /*
+   * LOAD JOURNEY NOTES INDEPENDENTLY
+   */
 
   useEffect(() => {
     let cancelled = false;
@@ -464,7 +716,7 @@ export default function DocumentVaultPage() {
 
     if (
       !user ||
-      !isPremium ||
+      !canAccessVault ||
       !selectedChildId
     ) {
       return;
@@ -483,7 +735,12 @@ export default function DocumentVaultPage() {
             childId
           );
 
-        if (cancelled) return;
+        if (
+          cancelled ||
+          auth.currentUser?.uid !== ownerUserId
+        ) {
+          return;
+        }
 
         const savedResponses = responses
           .filter(
@@ -504,8 +761,12 @@ export default function DocumentVaultPage() {
           error
         );
 
-        if (!cancelled) {
+        if (
+          !cancelled &&
+          auth.currentUser?.uid === ownerUserId
+        ) {
           setJourneyNotes([]);
+
           setNotesError(
             "Saved Journey Notes couldn't be loaded. Please try refreshing the page."
           );
@@ -524,11 +785,13 @@ export default function DocumentVaultPage() {
     };
   }, [
     user,
-    isPremium,
+    canAccessVault,
     selectedChildId,
   ]);
 
-  // Reset presentation when switching children.
+  /*
+   * RESET PRESENTATION WHEN SWITCHING CHILDREN
+   */
 
   useEffect(() => {
     setSearchTerm("");
@@ -550,8 +813,15 @@ export default function DocumentVaultPage() {
   );
 
   const visibleDocuments = useMemo(() => {
+    const ownedDocuments =
+      documents.filter(
+        (document) =>
+          document.userId === user?.uid &&
+          document.childId === selectedChildId
+      );
+
     const filtered = filterVaultDocuments(
-      documents,
+      ownedDocuments,
       searchTerm,
       categoryFilter
     );
@@ -563,15 +833,26 @@ export default function DocumentVaultPage() {
     documents,
     searchTerm,
     categoryFilter,
+    user?.uid,
+    selectedChildId,
   ]);
 
   const visibleNotes = useMemo(() => {
+    const ownedNotes =
+      journeyNotes.filter(
+        (note) =>
+          note.ownerUserId === user?.uid &&
+          note.childId === selectedChildId
+      );
+
     const term =
       notesSearch.trim().toLowerCase();
 
-    if (!term) return journeyNotes;
+    if (!term) {
+      return ownedNotes;
+    }
 
-    return journeyNotes.filter((note) => {
+    return ownedNotes.filter((note) => {
       return [
         note.taskTitle,
         note.response,
@@ -580,93 +861,251 @@ export default function DocumentVaultPage() {
         value.toLowerCase().includes(term)
       );
     });
-  }, [journeyNotes, notesSearch]);
+  }, [
+    journeyNotes,
+    notesSearch,
+    user?.uid,
+    selectedChildId,
+  ]);
 
-  // Existing document actions.
+  /*
+   * DOCUMENT ACTION AUTHORIZATION
+   */
 
-  
-async function handleViewDocument(
-  document: VaultDocument
-) {
-  if (!isPremium) return;
-
-  setDocumentError("");
-
-  // Open the tab immediately from the user's tap.
-  // Mobile browsers may block tabs opened after an await.
-  const documentTab = window.open(
-    "about:blank",
-    "_blank"
-  );
-
-  if (documentTab) {
-    documentTab.opener = null;
-
-    try {
-      documentTab.document.title =
-        "Opening document...";
-      documentTab.document.body.textContent =
-        "Opening your document...";
-    } catch {
-      // Some browsers restrict access to new tabs.
-    }
+  function canAccessDocument(
+    document: VaultDocument
+  ): boolean {
+    return Boolean(
+      canAccessVault &&
+      user &&
+      auth.currentUser?.uid === user.uid &&
+      document.userId === user.uid &&
+      document.childId === selectedChildId
+    );
   }
 
-  try {
-    const url =
-      await getVaultDocumentDownloadUrl(
-        document
+  function isCurrentDocumentSession(
+    ownerUid: string,
+    session: number
+  ): boolean {
+    return (
+      auth.currentUser?.uid === ownerUid &&
+      documentSessionRef.current === session
+    );
+  }
+
+  /*
+   * VIEW DOCUMENT
+   *
+   * Open the tab immediately from the user's tap
+   * to preserve mobile browser compatibility.
+   */
+
+  async function handleViewDocument(
+    document: VaultDocument
+  ) {
+    if (
+      !user ||
+      !canAccessDocument(document)
+    ) {
+      return;
+    }
+
+    const ownerUid = user.uid;
+    const session =
+      documentSessionRef.current;
+
+    setDocumentError("");
+
+    const documentTab = window.open(
+      "about:blank",
+      "_blank"
+    );
+
+    if (documentTab) {
+      pendingDocumentTabsRef.current.add(
+        documentTab
       );
 
-    if (documentTab && !documentTab.closed) {
-      documentTab.location.replace(url);
-    } else {
-      // Fallback if the mobile browser blocked the tab.
-      window.location.assign(url);
-    }
-  } catch (error) {
-    console.error(
-      "Unable to open Vault document:",
-      error
-    );
+      documentTab.opener = null;
 
-    if (documentTab && !documentTab.closed) {
-      documentTab.close();
+      try {
+        documentTab.document.title =
+          "Opening document...";
+
+        documentTab.document.body.textContent =
+          "Opening your document...";
+      } catch {
+        // Some browsers restrict new-tab access.
+      }
     }
 
-    setDocumentError(
-      "We couldn't open this document. Please try again."
-    );
+    let url = "";
+
+    try {
+      url =
+        await getVaultDocumentDownloadUrl(
+          document
+        );
+
+      if (
+        !isCurrentDocumentSession(
+          ownerUid,
+          session
+        )
+      ) {
+        releaseTemporaryUrl(url);
+
+        if (
+          documentTab &&
+          !documentTab.closed
+        ) {
+          documentTab.close();
+        }
+
+        return;
+      }
+
+      if (
+        documentTab &&
+        documentTab.closed
+      ) {
+        releaseTemporaryUrl(url);
+        return;
+      }
+
+      trackTemporaryUrl(
+        url,
+        VIEW_URL_LIFETIME_MS,
+        documentTab
+      );
+
+      if (documentTab) {
+        documentTab.location.replace(url);
+      } else {
+        /*
+         * Fallback for browsers that block
+         * the new document tab.
+         */
+
+        const anchor =
+          window.document.createElement("a");
+
+        anchor.href = url;
+        anchor.download =
+          document.fileName ||
+          document.title ||
+          "document";
+
+        anchor.rel = "noopener noreferrer";
+
+        window.document.body.appendChild(
+          anchor
+        );
+
+        anchor.click();
+        anchor.remove();
+      }
+    } catch (error) {
+      if (url) {
+        releaseTemporaryUrl(url);
+      }
+
+      console.error(
+        "Unable to open Vault document:",
+        error
+      );
+
+      if (
+        documentTab &&
+        !documentTab.closed
+      ) {
+        documentTab.close();
+      }
+
+      if (
+        isCurrentDocumentSession(
+          ownerUid,
+          session
+        )
+      ) {
+        setDocumentError(
+          "We couldn't open this document. Please try again."
+        );
+      }
+    } finally {
+      if (documentTab) {
+        pendingDocumentTabsRef.current.delete(
+          documentTab
+        );
+      }
+    }
   }
-}
 
+  /*
+   * DOCUMENT DETAILS
+   */
 
   function handleDocumentDetails(
     document: VaultDocument
   ) {
-    if (!isPremium) return;
+    if (!canAccessDocument(document)) {
+      return;
+    }
 
     setDocumentError("");
     setSelectedDocument(document);
   }
 
+  /*
+   * DOWNLOAD DOCUMENT
+   */
+
   async function handleDownloadDocument(
     document: VaultDocument
   ) {
-    if (!isPremium) return;
+    if (
+      !user ||
+      !canAccessDocument(document)
+    ) {
+      return;
+    }
+
+    const ownerUid = user.uid;
+
+    const session =
+      documentSessionRef.current;
 
     setDocumentError("");
 
+    let url = "";
+
     try {
-      const url =
+      url =
         await getVaultDocumentDownloadUrl(
           document
         );
+
+      if (
+        !isCurrentDocumentSession(
+          ownerUid,
+          session
+        )
+      ) {
+        releaseTemporaryUrl(url);
+        return;
+      }
+
+      trackTemporaryUrl(
+        url,
+        DOWNLOAD_URL_LIFETIME_MS
+      );
 
       const anchor =
         window.document.createElement("a");
 
       anchor.href = url;
+
       anchor.download =
         document.fileName ||
         document.title ||
@@ -682,16 +1121,31 @@ async function handleViewDocument(
       anchor.click();
       anchor.remove();
     } catch (error) {
+      if (url) {
+        releaseTemporaryUrl(url);
+      }
+
       console.error(
         "Unable to download Vault document:",
         error
       );
 
-      setDocumentError(
-        "We couldn't download this document. Please try again."
-      );
+      if (
+        isCurrentDocumentSession(
+          ownerUid,
+          session
+        )
+      ) {
+        setDocumentError(
+          "We couldn't download this document. Please try again."
+        );
+      }
     }
   }
+
+  /*
+   * SAVE DOCUMENT DETAILS
+   */
 
   async function handleSaveDocumentDetails(
     document: VaultDocument,
@@ -701,7 +1155,17 @@ async function handleViewDocument(
       notes: string;
     }
   ) {
-    if (!isPremium) return;
+    if (
+      !user ||
+      !canAccessDocument(document)
+    ) {
+      return;
+    }
+
+    const ownerUid = user.uid;
+
+    const session =
+      documentSessionRef.current;
 
     setDocumentError("");
 
@@ -711,35 +1175,82 @@ async function handleViewDocument(
         updates
       );
 
+    if (
+      !isCurrentDocumentSession(
+        ownerUid,
+        session
+      )
+    ) {
+      return;
+    }
+
     setDocuments((current) =>
       current.map((item) =>
-        item.id === updatedDocument.id
+        item.id === updatedDocument.id &&
+        item.userId === updatedDocument.userId &&
+        item.childId === updatedDocument.childId
           ? updatedDocument
           : item
       )
     );
 
-    setSelectedDocument(updatedDocument);
+    setSelectedDocument((current) =>
+      current?.id === updatedDocument.id &&
+      current.userId === updatedDocument.userId &&
+      current.childId === updatedDocument.childId
+        ? updatedDocument
+        : current
+    );
   }
+
+  /*
+   * DELETE DOCUMENT
+   */
 
   async function handleDeleteDocument(
     document: VaultDocument
   ) {
-    if (!isPremium) return;
+    if (
+      !user ||
+      !canAccessDocument(document)
+    ) {
+      return;
+    }
+
+    const ownerUid = user.uid;
+
+    const session =
+      documentSessionRef.current;
 
     setDocumentError("");
 
     try {
       await deleteVaultDocument(document);
 
+      if (
+        !isCurrentDocumentSession(
+          ownerUid,
+          session
+        )
+      ) {
+        return;
+      }
+
       setDocuments((current) =>
         current.filter(
-          (item) => item.id !== document.id
+          (item) =>
+            !(
+              item.id === document.id &&
+              item.userId === document.userId &&
+              item.childId === document.childId
+            )
         )
       );
 
       setSelectedDocument((current) =>
-        current?.id === document.id
+        current?.id === document.id &&
+        current.userId === document.userId &&
+        current.childId === document.childId
           ? null
           : current
       );
@@ -749,24 +1260,42 @@ async function handleViewDocument(
         error
       );
 
-      setDocumentError(
-        "We couldn't delete this document. Please try again."
-      );
+      if (
+        isCurrentDocumentSession(
+          ownerUid,
+          session
+        )
+      ) {
+        setDocumentError(
+          "We couldn't delete this document. Please try again."
+        );
+      }
 
       throw error;
     }
   }
 
+  /*
+   * HANDLE COMPLETED UPLOAD
+   */
+
   async function handleUploaded(
     document: VaultDocument
   ) {
-    if (!isPremium) return;
+    if (!canAccessDocument(document)) {
+      return;
+    }
 
     setDocuments((current) =>
       sortVaultDocumentsNewestFirst([
         document,
         ...current.filter(
-          (item) => item.id !== document.id
+          (item) =>
+            !(
+              item.id === document.id &&
+              item.userId === document.userId &&
+              item.childId === document.childId
+            )
         ),
       ])
     );
@@ -775,7 +1304,9 @@ async function handleViewDocument(
     setCategoryFilter("all");
   }
 
-  // Loading view.
+  /*
+   * LOADING VIEW
+   */
 
   if (authLoading || entitlementLoading) {
     return (
@@ -794,7 +1325,9 @@ async function handleViewDocument(
     );
   }
 
-  // Guest view.
+  /*
+   * GUEST VIEW
+   */
 
   if (!isAuthenticated || !user) {
     return (
@@ -847,7 +1380,9 @@ async function handleViewDocument(
     );
   }
 
-  // Entitlement error.
+  /*
+   * ENTITLEMENT ERROR
+   */
 
   if (entitlementError) {
     return (
@@ -882,7 +1417,9 @@ async function handleViewDocument(
     );
   }
 
-  // Free account view.
+  /*
+   * FREE ACCOUNT VIEW
+   */
 
   if (isFree || !isPremium) {
     return (
@@ -944,7 +1481,24 @@ async function handleViewDocument(
     );
   }
 
-  // Premium Document Vault.
+  if (!canAccessVault) {
+    return (
+      <main style={pageStyle}>
+        <div
+          style={{
+            maxWidth: 1120,
+            margin: "0 auto",
+            color: BRAND.muted,
+            fontSize: 14,
+          }}
+        >
+          Verifying Document Vault access...
+        </div>
+      </main>
+    );
+  }
+
+  // PREMIUM DOCUMENT VAULT
 
   return (
     <main style={pageStyle}>
