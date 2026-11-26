@@ -7,6 +7,18 @@ import {
   requirePremium,
 } from "../../../lib/serverSubscriptionAuth";
 
+import {
+  OPENAI_API_URL,
+  OPENAI_MODEL,
+} from "../../../lib/ai/openAIConfig";
+
+import {
+  searchNavigatorWeb,
+} from "../../../lib/ai/navigatorWebSearch";
+
+import {
+  routeNavigatorSearch,
+} from "../../../lib/ai/navigatorSearchRouter";
 
 /*
  * ============================================================
@@ -30,17 +42,7 @@ import {
  */
 
 
-const OPENAI_API_URL =
-  "https://api.openai.com/v1/responses";
 
-
-/*
- * Keep this aligned with the model strategy used by the rest
- * of the application.
- */
-
-const OPENAI_MODEL =
-  "gpt-5-mini";
 
 
 /*
@@ -428,25 +430,13 @@ function decodeFirestoreDocument(
  */
 
 async function loadChild(
-  uid:
-    string,
-
-  childId:
-    string,
-
-  idToken:
-    string
+  uid: string,
+  childId: string,
+  idToken: string
 ): Promise<Record<string, any> | null> {
-
-  const document =
-    await getAuthenticatedFirestoreDocument(
-      `users/${uid}/children/${childId}`,
-      idToken
-    );
-
-
-  return decodeFirestoreDocument(
-    document
+  return getAuthenticatedFirestoreDocument(
+    `users/${uid}/children/${childId}`,
+    idToken
   );
 }
 
@@ -458,26 +448,60 @@ async function loadChild(
  */
 
 async function loadCurrentJourney(
-  uid:
-    string,
-
-  childId:
-    string,
-
-  idToken:
-    string
+  uid: string,
+  childId: string,
+  idToken: string
 ): Promise<Record<string, any> | null> {
+  const basePath =
+    `users/${uid}/children/${childId}`;
 
-  const document =
+  const savedJourney =
     await getAuthenticatedFirestoreDocument(
-      `users/${uid}/children/${childId}/journeys/current`,
+      `${basePath}/journeys/current`,
       idToken
     );
 
+  if (!savedJourney) {
+    return null;
+  }
 
-  return decodeFirestoreDocument(
-    document
-  );
+  const journey = savedJourney.journey as
+    Record<string, any> | undefined;
+
+  if (!journey || !savedJourney.familyProfile) {
+    return null;
+  }
+
+  const progress =
+    await getAuthenticatedFirestoreDocument(
+      `${basePath}/taskProgress/current`,
+      idToken
+    );
+
+  const statuses =
+    typeof savedJourney.journeyId === "string" &&
+    progress?.journeyId === savedJourney.journeyId &&
+    progress?.completedByTaskId &&
+    typeof progress.completedByTaskId === "object" &&
+    !Array.isArray(progress.completedByTaskId)
+      ? progress.completedByTaskId as Record<string, unknown>
+      : {};
+
+  return {
+    ...savedJourney,
+    journey: {
+      ...journey,
+      tasks: Array.isArray(journey.tasks)
+        ? journey.tasks.map((task: any) => ({
+            ...task,
+            completed:
+              typeof statuses[task.id] === "boolean"
+                ? statuses[task.id]
+                : task.completed === true,
+          }))
+        : [],
+    },
+  };
 }
 
 
@@ -648,8 +672,7 @@ function buildFamilyContext(
 function buildSystemPrompt() {
 
   return `
-You are the AI Navigator for Myriad Autism Journey.
-
+  You are the AI Navigator for Autivoya.
 Your role is to help parents and caregivers understand information,
 prepare for next steps, and navigate their family's autism journey.
 
@@ -1548,7 +1571,74 @@ export async function POST(
         savedJourney
       );
 
-
+      const searchDecision = routeNavigatorSearch({
+        question,
+        state: familyContext.state,
+      });
+      
+      if (searchDecision.needsClarification) {
+        return NextResponse.json({
+          answer:
+            "I can search for public resources. Could you clarify the specific program, service, or information you would like me to find?",
+          sources: [],
+          metadata: {
+            generatedAt: Date.now(),
+            plan: account.plan,
+            webSearchUsed: false,
+          },
+        });
+      }
+      
+      if (
+        searchDecision.shouldSearch &&
+        searchDecision.publicQuery
+      ) {
+        try {
+          const searchResult =
+            await searchNavigatorWeb({
+              publicQuery: searchDecision.publicQuery,
+            });
+      
+          return NextResponse.json({
+            answer: searchResult.answer,
+      
+            sources: searchResult.sources,
+      
+            citations: searchResult.citations,
+      
+            context: {
+              childId: childId || null,
+              journeyId:
+                savedJourney?.journeyId ?? null,
+              stageNumber:
+                savedJourney?.stageNumber ?? null,
+            },
+      
+            metadata: {
+              generatedAt: Date.now(),
+              plan: account.plan,
+              webSearchUsed: true,
+              searchedAt: searchResult.searchedAt,
+            },
+          });
+        } catch {
+          console.error(
+            "Navigator public web search failed."
+          );
+      
+          return NextResponse.json({
+            answer:
+              "I couldn't complete a live internet search right now. Please try again shortly.",
+            sources: [],
+            metadata: {
+              generatedAt: Date.now(),
+              plan: account.plan,
+              webSearchUsed: false,
+              webSearchFailed: true,
+            },
+          });
+        }
+      }
     /*
      * --------------------------------------------------------
      * PRIOR CONVERSATION

@@ -26,6 +26,7 @@ import {
   saveNavigatorMessage,
 } from "../../lib/navigatorConversationRepository";
 
+import NavigatorMessageContent from "../../components/navigator/NavigatorMessageContent";
 
 type NavigatorMessage = {
   id:
@@ -2783,7 +2784,11 @@ Autivoya Premium                  </div>
                                   "pre-wrap",
                               }}
                             >
-                              {message.text}
+                              {message.role === "navigator" ? (
+  <NavigatorMessageContent text={message.text} />
+) : (
+  message.text
+)}
                             </div>
 
                           </div>

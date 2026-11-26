@@ -12,12 +12,11 @@ import {
   validateJourney,
 } from "../engine/journeyValidation";
 
+import {
+  OPENAI_API_URL,
+  OPENAI_MODEL,
+} from "../../../../lib/ai/openAIConfig";
 
-const OPENAI_API_URL =
-  "https://api.openai.com/v1/responses";
-
-const OPENAI_MODEL =
-  "gpt-5-mini";
 
 
 /*
