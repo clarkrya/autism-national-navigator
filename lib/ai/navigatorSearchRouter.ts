@@ -1,16 +1,64 @@
 import "server-only";
 
+import {
+  classifyNavigatorIntent,
+  type NavigatorIntent,
+  type NavigatorIntentResult,
+  type NavigatorTopic,
+} from "./navigatorIntentEngine";
+
+import type {
+  NavigatorResearchType,
+} from "./navigatorWebSearch";
+
+/*
+ * ============================================================
+ * TYPES
+ * ============================================================
+ */
+
 export type NavigatorSearchDecision = {
   shouldSearch: boolean;
+
   publicQuery: string | null;
+
   needsClarification: boolean;
+
   reason: string;
+
+  researchType?: NavigatorResearchType;
+
+  useJourneyContext?: boolean;
+
+  requiresCurrentInformation?: boolean;
+
+  geographicScope?:
+    NavigatorIntentResult["geographicScope"];
+
+  requestedState?: string | null;
+
+  topics?: NavigatorTopic[];
+};
+
+type NavigatorConversationMessage = {
+  role: "user" | "navigator";
+
+  text: string;
 };
 
 type NavigatorSearchInput = {
   question: string;
+
   state?: unknown;
+
+  messages?: NavigatorConversationMessage[];
 };
+
+/*
+ * ============================================================
+ * APPROVED UNITED STATES GEOGRAPHY
+ * ============================================================
+ */
 
 const US_STATES = [
   "Alabama",
@@ -80,6 +128,37 @@ const STATE_CODES = [
   "DC",
 ];
 
+/*
+ * ============================================================
+ * TEXT HELPERS
+ * ============================================================
+ */
+
+function normalizeQuestion(
+  value: string
+): string {
+  return value
+    .replace(/[’‘]/g, "'")
+    .replace(/[–—]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function escapeRegExp(
+  value: string
+): string {
+  return value.replace(
+    /[.*+?^${}()|[\]\\]/g,
+    "\\$&"
+  );
+}
+
+/*
+ * ============================================================
+ * STATE VALIDATION
+ * ============================================================
+ */
+
 function normalizeState(
   value: unknown
 ): string | null {
@@ -90,6 +169,7 @@ function normalizeState(
   const normalized = value
     .trim()
     .replace(/[_-]/g, " ")
+    .replace(/\s+/g, " ")
     .toLowerCase();
 
   const state = US_STATES.find(
@@ -101,416 +181,1058 @@ function normalizeState(
     return state;
   }
 
-  const codeIndex =
-    STATE_CODES.indexOf(
-      normalized.toUpperCase()
-    );
+  const codeIndex = STATE_CODES.indexOf(
+    normalized.toUpperCase()
+  );
 
   return codeIndex >= 0
     ? US_STATES[codeIndex]
     : null;
 }
 
+/*
+ * ============================================================
+ * EXPLICIT STATE DETECTION
+ * ============================================================
+ */
+
 function detectRequestedState(
   question: string
 ): string | null {
+  const normalized =
+    normalizeQuestion(question);
+
+  const standaloneState =
+    normalizeState(
+      normalized.replace(/[.!?]+$/, "")
+    );
+
+  if (standaloneState) {
+    return standaloneState;
+  }
+
   const states = [...US_STATES].sort(
     (a, b) => b.length - a.length
   );
 
   for (const state of states) {
-    const pattern = new RegExp(
-      `\\b(?:in|near|within|for|across)\\s+${state}\\b`,
+    const escapedState =
+      escapeRegExp(state);
+
+    const locationPattern = new RegExp(
+      `\\b(?:in|near|within|for|across|around|throughout|from)\\s+${escapedState}\\b`,
       "i"
     );
 
-    if (pattern.test(question)) {
+    const programPattern = new RegExp(
+      `\\b${escapedState}\\s+(?:Medicaid|CHIP|law|laws|waiver|waivers|insurance|providers|programs|schools)\\b`,
+      "i"
+    );
+
+    if (
+      locationPattern.test(normalized) ||
+      programPattern.test(normalized)
+    ) {
       return state;
+    }
+  }
+
+  for (
+    let index = 0;
+    index < STATE_CODES.length;
+    index++
+  ) {
+    const code = STATE_CODES[index];
+
+    const locationPattern = new RegExp(
+      `\\b(?:in|near|within|across|around|throughout)\\s+${code}\\b`
+    );
+
+    const programPattern = new RegExp(
+      `\\b${code}\\s+(?:Medicaid|CHIP)\\b`
+    );
+
+    if (
+      locationPattern.test(normalized) ||
+      programPattern.test(normalized)
+    ) {
+      return US_STATES[index];
     }
   }
 
   return null;
 }
 
-const SEARCH_TOPICS: {
-  pattern: RegExp;
-  query: string;
-  geographic: boolean;
-}[] = [
-  {
-    pattern:
-      /\b(grants?|scholarships?|financial assistance|financial aid|funding|financial support)\b/i,
+/*
+ * ============================================================
+ * CONVERSATION CONTEXT
+ * ============================================================
+ */
 
-    query:
-      "Autism family grants and financial assistance programs, current application status, eligibility and official application links",
-
-    geographic: true,
-  },
-
-  {
-    pattern:
-      /\b(food|foods|groceries|nutrition assistance|food assistance|food banks?|food pantr(?:y|ies)|snap|wic)\b/i,
-
-    query:
-      "Family food assistance programs, SNAP, WIC, food banks and nutrition assistance eligibility and official application resources",
-
-    geographic: true,
-  },
-
-  {
-    pattern:
-      /\b(medicaid|medicaid waiver|waivers?|chip)\b/i,
-
-    query:
-      "Medicaid and disability assistance programs for autistic children, eligibility, waivers and official enrollment information",
-
-    geographic: true,
-  },
-
-  {
-    pattern:
-      /\b(ssi|social security|disability benefits)\b/i,
-
-    query:
-      "Social Security disability benefits and Supplemental Security Income for children with disabilities, official eligibility and application information",
-
-    geographic: false,
-  },
-
-  {
-    pattern:
-      /\b(iep|504 plan|special education|school rights|idea)\b/i,
-
-    query:
-      "Official special education resources, IDEA, IEP and Section 504 requirements and family rights",
-
-    geographic: true,
-  },
-
-  {
-    pattern:
-      /\b(early intervention|child find|ifsp)\b/i,
-
-    query:
-      "Official early intervention and Child Find programs, eligibility and referral resources",
-
-    geographic: true,
-  },
-
-  {
-    pattern:
-      /\b(respite|respite care|caregiver support)\b/i,
-
-    query:
-      "Autism family respite care and caregiver support programs, eligibility and official access information",
-
-    geographic: true,
-  },
-
-  {
-    pattern:
-      /\b(support groups?|parent groups?|community resources)\b/i,
-
-    query:
-      "Established autism family support organizations, parent support groups and community resources",
-
-    geographic: true,
-  },
-
-  {
-    pattern:
-      /\b(speech therapy|speech therapist|speech therapists)\b/i,
-
-    query:
-      "Speech language therapy public provider directories and family access resources",
-
-    geographic: true,
-  },
-
-  {
-    pattern:
-      /\b(occupational therapy|occupational therapist)\b/i,
-
-    query:
-      "Occupational therapy public provider directories and family access resources",
-
-    geographic: true,
-  },
-
-  {
-    pattern:
-      /\b(aba|applied behavior analysis)\b/i,
-
-    query:
-      "Applied behavior analysis public provider directories and family access resources",
-
-    geographic: true,
-  },
-
-  {
-    pattern:
-      /\b(evaluations?|diagnostic services|autism testing|autism diagnosis)\b/i,
-
-    query:
-      "Autism evaluation and diagnostic service directories and official family referral resources",
-
-    geographic: true,
-  },
-
-  {
-    pattern:
-      /\b(insurance|insurance coverage|insurance benefits)\b/i,
-
-    query:
-      "Official autism insurance coverage information, applicable requirements and consumer assistance resources",
-
-    geographic: true,
-  },
-
-  {
-    pattern:
-      /\b(assistive technology|aac|communication devices)\b/i,
-
-    query:
-      "Assistive technology and augmentative alternative communication funding programs and family resources",
-
-    geographic: true,
-  },
-
-  {
-    pattern:
-      /\b(research|studies|clinical trials|scientific evidence)\b/i,
-
-    query:
-      "Recent peer-reviewed autism research and official scientific research updates",
-
-    geographic: false,
-  },
-
-  {
-    pattern:
-      /\b(autism resources|autism services|autism programs|autism organizations)\b/i,
-
-    query:
-      "Established autism family resource organizations, public assistance programs and official service directories",
-
-    geographic: true,
-  },
-];
-
-function isExplicitSearchRequest(
+function getRecentConversation(
+  messages: NavigatorSearchInput["messages"],
   question: string
-): boolean {
-  return (
-    /\b(search|browse|look up|research)\b/i
-      .test(question) ||
+): NavigatorConversationMessage[] {
+  const recentMessages = (
+    Array.isArray(messages)
+      ? messages
+      : []
+  )
+    .filter(
+      message =>
+        message &&
+        (
+          message.role === "user" ||
+          message.role === "navigator"
+        ) &&
+        typeof message.text === "string" &&
+        message.text.trim()
+    )
+    .slice(-7);
 
-    /\b(find|check)\b.{0,40}\b(online|internet|web|website|sources?)\b/i
-      .test(question)
+  const lastMessage =
+    recentMessages[
+      recentMessages.length - 1
+    ];
+
+  if (
+    lastMessage?.role === "user" &&
+    normalizeQuestion(lastMessage.text) ===
+      normalizeQuestion(question)
+  ) {
+    recentMessages.pop();
+  }
+
+  return recentMessages
+    .slice(-6)
+    .map(message => ({
+      role: message.role,
+
+      text: message.text
+        .trim()
+        .slice(0, 1500),
+    }));
+}
+
+/*
+ * ============================================================
+ * GEOGRAPHIC GROUNDING
+ * ============================================================
+ *
+ * A classified state must be supported by
+ * user-provided conversation text.
+ *
+ * Assistant-generated location assumptions
+ * are not sufficient geographic evidence.
+ */
+
+function containsStateReference(
+  text: string,
+  state: string
+): boolean {
+  const normalized =
+    normalizeQuestion(text);
+
+  const detected =
+    detectRequestedState(normalized);
+
+  if (detected === state) {
+    return true;
+  }
+
+  const escapedState =
+    escapeRegExp(state);
+
+  const statePattern = new RegExp(
+    `\\b${escapedState}\\b`,
+    "i"
+  );
+
+  if (statePattern.test(normalized)) {
+    return true;
+  }
+
+  const stateIndex =
+    US_STATES.findIndex(
+      item => item === state
+    );
+
+  if (stateIndex < 0) {
+    return false;
+  }
+
+  const code =
+    STATE_CODES[stateIndex];
+
+  const codePattern = new RegExp(
+    `(?:,\\s*|\\b(?:in|near|within|across)\\s+)${code}\\b`
+  );
+
+  return codePattern.test(normalized);
+}
+
+function isGroundedState(
+  state: string,
+  question: string,
+  messages: NavigatorConversationMessage[]
+): boolean {
+  if (
+    containsStateReference(
+      question,
+      state
+    )
+  ) {
+    return true;
+  }
+
+  return messages.some(
+    message =>
+      message.role === "user" &&
+      containsStateReference(
+        message.text,
+        state
+      )
   );
 }
 
-function requiresCurrentInformation(
+/*
+ * ============================================================
+ * SEARCH PREFERENCE
+ * ============================================================
+ */
+
+function userDeclinesSearch(
   question: string
 ): boolean {
-  return (
-    /\b(latest|current|currently|recent|updated|available|availability|deadline|deadlines|open now|still open|this year|today)\b/i
-      .test(question) ||
-
-    /\b(grants?|scholarships?|financial assistance|food assistance|food banks?|funding opportunities)\b/i
-      .test(question) ||
-
-    /\b(find|locate|list|recommend|where|apply|application|eligibility|qualify)\b/i
-      .test(question)
-  );
-}
-
-function isJourneyOnlyQuestion(
-  question: string
-): boolean {
-  return (
-    /\b(my child'?s journey|my journey|current journey|saved journey|current focus|next step|completed tasks|already completed)\b/i
-      .test(question)
-  );
-}
-
-function isGeneralDefinition(
-  question: string
-): boolean {
-  return (
-    /^(?:what is|what are|define|explain|what does)\b/i
-      .test(question) &&
-
-    !requiresCurrentInformation(question)
+  return /\b(?:do not search|don't search|without searching|no web search|no internet search|do not browse|don't browse)\b/i.test(
+    question
   );
 }
 
 function isIndividualTreatmentQuestion(
   question: string
 ): boolean {
-  return (
-    /\b(should i give|should my child take|what medication|what medicine|what dosage|what dose|how much should|which medication|which treatment|should i stop|should i start)\b/i
-      .test(question)
+  return /\b(?:should i give|should my child take|should my child start|should my child stop|what medication should|what medicine should|what dosage|what dose|how much should i give|which medication should|which treatment should|should i stop taking|should i start taking|should i increase the dose|should i decrease the dose)\b/i.test(
+    question
   );
 }
 
+/*
+ * ============================================================
+ * GEOGRAPHIC PREFERENCES
+ * ============================================================
+ */
+
+function isNationalSearch(
+  question: string
+): boolean {
+  return /\b(?:nationwide|nationally|across the country|all states|across the united states|national programs?)\b/i.test(
+    question
+  );
+}
+
+function explicitlyRequestsSavedState(
+  question: string
+): boolean {
+  return /\b(?:my state|our state|my home state|our home state|the state i live in|the state we live in|my journey state|state in my journey)\b/i.test(
+    question
+  );
+}
+
+function explicitlyRequestsLocalSearch(
+  question: string
+): boolean {
+  return /\b(?:near me|nearby|local|in my area|in my city|in my county|closest to me|within driving distance|zip code)\b/i.test(
+    question
+  );
+}
+
+/*
+ * ============================================================
+ * SEARCH DECISION HELPERS
+ * ============================================================
+ */
+
+function intentMetadata(
+  intent?: NavigatorIntentResult
+): Partial<NavigatorSearchDecision> {
+  if (!intent) {
+    return {};
+  }
+
+  return {
+    useJourneyContext:
+      intent.useJourneyContext,
+
+    requiresCurrentInformation:
+      intent.requiresCurrentInformation,
+
+    geographicScope:
+      intent.geographicScope,
+
+    requestedState:
+      intent.requestedState,
+
+    topics:
+      intent.topics,
+  };
+}
+
 function noSearch(
-  reason: string
+  reason: string,
+  intent?: NavigatorIntentResult
 ): NavigatorSearchDecision {
   return {
+    ...intentMetadata(intent),
+
     shouldSearch: false,
+
     publicQuery: null,
+
     needsClarification: false,
+
     reason,
   };
 }
 
 function clarification(
-  reason: string
+  reason: string,
+  intent?: NavigatorIntentResult
 ): NavigatorSearchDecision {
   return {
+    ...intentMetadata(intent),
+
     shouldSearch: false,
+
     publicQuery: null,
+
     needsClarification: true,
+
     reason,
   };
 }
 
-export function routeNavigatorSearch(
-  input: NavigatorSearchInput
-): NavigatorSearchDecision {
-  const question =
-    typeof input.question === "string"
-      ? input.question.trim()
-      : "";
+/*
+ * ============================================================
+ * STRUCTURED RESEARCH CATEGORY
+ * ============================================================
+ *
+ * Research categories are determined from
+ * classified intent and approved topics.
+ *
+ * Never determine the research category
+ * by scanning generated search instructions.
+ */
 
-  if (!question) {
-    return noSearch("EMPTY_QUESTION");
+function resolveResearchType(
+  intent: NavigatorIntentResult
+): NavigatorResearchType {
+  switch (intent.intent) {
+    case "provider_search":
+      return "providers";
+
+    case "resource_search":
+      return "community_resources";
+
+    case "financial_assistance":
+      return intent.topics.includes("grants")
+        ? "grants"
+        : "financial_assistance";
+
+    case "insurance_coverage":
+      return "insurance";
+
+    case "education_rights":
+      return "education";
+
+    case "research_evidence":
+      return "medical_research";
+
+    case "journey_guidance":
+      return "community_resources";
+
+    case "application_guidance":
+      if (
+        intent.topics.includes("grants")
+      ) {
+        return "grants";
+      }
+
+      if (
+        intent.topics.includes("medicaid") ||
+        intent.topics.includes("medicaid_waivers") ||
+        intent.topics.includes("chip") ||
+        intent.topics.includes("private_insurance")
+      ) {
+        return "insurance";
+      }
+
+      if (
+        intent.topics.includes("financial_assistance") ||
+        intent.topics.includes("scholarships")
+      ) {
+        return "financial_assistance";
+      }
+
+      return "general";
+
+    case "current_information":
+      if (
+        intent.topics.includes("grants")
+      ) {
+        return "grants";
+      }
+
+      return "general";
+
+    default:
+      return "general";
   }
+}
 
-  if (question.length > 2000) {
-    return noSearch("QUESTION_TOO_LONG");
-  }
+/*
+ * ============================================================
+ * APPROVED RESEARCH INSTRUCTIONS
+ * ============================================================
+ */
 
-  const explicitSearch =
-    isExplicitSearchRequest(question);
+const INTENT_SEARCH_INSTRUCTIONS: Partial<
+  Record<NavigatorIntent, string>
+> = {
+  general_information:
+    "Provide a direct educational explanation supported by authoritative sources.",
 
-  /*
-   * Individualized treatment decisions remain
-   * within the Navigator's medical safety flow.
-   */
+  journey_guidance:
+    "Find public resources relevant to the requested subject.",
 
+  provider_search:
+    "Find actual service providers offering the requested service. Include provider names, service locations, official websites, and publicly listed contact information. Prioritize actual providers over general insurance information. Include provider directories when useful. Do not claim availability or insurance acceptance unless confirmed.",
+
+  resource_search:
+    "Find relevant organizations, programs, and services. Include essential eligibility information and direct access links.",
+
+  financial_assistance:
+    "Find financial assistance relevant to the requested need. Include eligibility, funding amounts, restrictions, application requirements, and official application links when confirmed. Distinguish different forms of assistance.",
+
+  insurance_coverage:
+    "Answer whether the requested insurance program covers the specific requested service. Explain coverage requirements, restrictions, prior authorization, and relevant exceptions. Do not introduce unrelated insurance programs. Prioritize official coverage policies.",
+
+  education_rights:
+    "Research the specific educational right, requirement, or procedure. Prioritize official federal and state education authorities. Distinguish legal requirements from general recommendations.",
+
+  research_evidence:
+    "Research the specific requested subject. Prioritize peer-reviewed studies, systematic reviews, current clinical guidance, and authoritative medical organizations. Include publication dates, major findings, evidence limitations, and relevant safety considerations.",
+
+  current_information:
+    "Find the most current authoritative information about the requested subject. Verify dates and distinguish confirmed information from uncertainty.",
+
+  application_guidance:
+    "Explain how to apply for the requested program or service. Include essential eligibility requirements, application steps, and official application links.",
+};
+
+/*
+ * ============================================================
+ * GRANT RESEARCH INSTRUCTIONS
+ * ============================================================
+ */
+
+function buildGrantInstructions(
+  intent: NavigatorIntentResult
+): string {
   if (
-    isIndividualTreatmentQuestion(question)
+    intent.requiresCurrentInformation &&
+    intent.intent === "financial_assistance"
   ) {
-    return noSearch(
-      "INDIVIDUAL_MEDICAL_GUIDANCE"
-    );
+    return [
+      "Find grants relevant to the requested need.",
+      "Include only confirmed open or rolling application opportunities.",
+      "Exclude closed, upcoming, and unconfirmed opportunities.",
+      "Include award amounts, eligibility, deadlines, and official application links when confirmed.",
+      "Distinguish monetary awards from in-kind assistance.",
+      "Do not substitute insurance, loans, or public benefits for grants.",
+      "If no matching open grants can be confirmed, say so clearly.",
+    ].join(" ");
   }
 
-  /*
-   * Saved Journey questions normally do not
-   * require public internet research.
-   */
+  return [
+    "Find relevant grant opportunities.",
+    "Verify eligibility, application requirements, and application status.",
+    "Clearly distinguish confirmed open, closed, and unconfirmed opportunities.",
+    "Do not substitute insurance, loans, or public benefits for grants.",
+  ].join(" ");
+}
 
-  if (
-    !explicitSearch &&
-    isJourneyOnlyQuestion(question)
-  ) {
-    return noSearch(
-      "SAVED_JOURNEY_QUESTION"
-    );
-  }
+/*
+ * ============================================================
+ * GEOGRAPHIC RESOLUTION
+ * ============================================================
+ */
 
-  if (
-    !explicitSearch &&
-    isGeneralDefinition(question)
-  ) {
-    return noSearch(
-      "GENERAL_INFORMATION"
-    );
-  }
+type GeographicResolution = {
+  geography: string;
 
-  if (
-    !explicitSearch &&
-    !requiresCurrentInformation(question)
-  ) {
-    return noSearch(
-      "LIVE_SEARCH_NOT_REQUIRED"
-    );
-  }
+  requestedState: string | null;
 
-  /*
-   * Construct queries using approved public
-   * topic descriptions only.
-   *
-   * Never forward the original question,
-   * child name, family notes, medical records,
-   * school records, or conversation history.
-   */
+  clarificationReason: string | null;
+};
 
-  const matchedTopics = SEARCH_TOPICS
-    .filter(topic =>
-      topic.pattern.test(question)
-    )
-    .slice(0, 3);
-
-  if (matchedTopics.length === 0) {
-    return explicitSearch
-      ? clarification(
-          "PUBLIC_SEARCH_TOPIC_REQUIRED"
-        )
-      : noSearch(
-          "NO_SUPPORTED_SEARCH_TOPIC"
-        );
-  }
-
-  const requestedState =
-    detectRequestedState(question);
-
+function resolveGeography(
+  input: NavigatorSearchInput,
+  question: string,
+  messages: NavigatorConversationMessage[],
+  intent: NavigatorIntentResult
+): GeographicResolution {
   const savedState =
     normalizeState(input.state);
 
-  const state =
-    requestedState || savedState;
+  const explicitState =
+    detectRequestedState(question);
 
-  const needsLocation =
-    matchedTopics.some(
-      topic => topic.geographic
+  const classifiedState =
+    normalizeState(
+      intent.requestedState
     );
 
-  const nationalSearch =
-    /\b(nationwide|nationally|across the country|all states)\b/i
-      .test(question);
+  const groundedClassifiedState =
+    classifiedState &&
+    isGroundedState(
+      classifiedState,
+      question,
+      messages
+    )
+      ? classifiedState
+      : null;
 
-  const location =
-    needsLocation &&
-    state &&
-    !nationalSearch
+  /*
+   * Explicit nationwide requests override
+   * saved or previous state restrictions.
+   */
 
-      ? ` Geographic focus: ${state}, United States. Include relevant nationwide programs.`
+  if (
+    isNationalSearch(question) &&
+    !explicitState
+  ) {
+    return {
+      geography:
+        "Geographic focus: nationwide United States. Do not restrict results to an individual state.",
 
-      : " Geographic focus: United States.";
+      requestedState: null,
 
-  const topicQuery = matchedTopics
-    .map(topic => topic.query)
-    .join(". ");
+      clarificationReason: null,
+    };
+  }
 
-  const publicQuery =
-    `${topicQuery}.${location} Prioritize current official sources.`;
+  /*
+   * Local searches require validated local
+   * geographic information.
+   *
+   * Do not forward arbitrary city names,
+   * ZIP codes, street addresses, or other
+   * private location information.
+   */
 
-  if (publicQuery.length > 500) {
-    return clarification(
-      "SEARCH_QUERY_TOO_BROAD"
+  if (
+    intent.geographicScope === "local" ||
+    explicitlyRequestsLocalSearch(question)
+  ) {
+    return {
+      geography: "",
+
+      requestedState: null,
+
+      clarificationReason:
+        "LOCAL_SEARCH_LOCATION_REQUIRED",
+    };
+  }
+
+  /*
+   * Explicit current geography takes priority
+   * over relevant conversation geography.
+   */
+
+  if (
+    explicitState ||
+    intent.geographicScope === "requested_state"
+  ) {
+    const requestedState =
+      explicitState ||
+      groundedClassifiedState;
+
+    if (!requestedState) {
+      return {
+        geography: "",
+
+        requestedState: null,
+
+        clarificationReason:
+          "REQUESTED_STATE_REQUIRED",
+      };
+    }
+
+    let geography =
+      `Geographic focus: ${requestedState}, United States.`;
+
+    if (
+      intent.intent === "financial_assistance"
+    ) {
+      geography +=
+        " Include applicable nationwide funding opportunities.";
+    }
+
+    return {
+      geography,
+
+      requestedState,
+
+      clarificationReason: null,
+    };
+  }
+
+  /*
+   * Saved state is optional personalization,
+   * not a default geographic restriction.
+   */
+
+  const useSavedState =
+    explicitlyRequestsSavedState(question) ||
+    (
+      intent.geographicScope === "saved_state" &&
+      intent.useJourneyContext &&
+      intent.intent === "journey_guidance"
+    );
+
+  if (useSavedState) {
+    if (!savedState) {
+      return {
+        geography: "",
+
+        requestedState: null,
+
+        clarificationReason:
+          "STATE_REQUIRED",
+      };
+    }
+
+    let geography =
+      `Geographic focus: ${savedState}, United States.`;
+
+    if (
+      intent.intent === "financial_assistance"
+    ) {
+      geography +=
+        " Include applicable nationwide funding opportunities.";
+    }
+
+    return {
+      geography,
+
+      requestedState: savedState,
+
+      clarificationReason: null,
+    };
+  }
+
+  /*
+   * Insurance and educational rights questions
+   * default to general United States information.
+   */
+
+  if (
+    intent.intent === "insurance_coverage" ||
+    intent.intent === "education_rights"
+  ) {
+    return {
+      geography:
+        "Geographic focus: general United States information. Explain federal requirements and general principles. Acknowledge state-specific differences without selecting an individual state.",
+
+      requestedState: null,
+
+      clarificationReason: null,
+    };
+  }
+
+  /*
+   * Broad financial assistance and community
+   * resource searches default to nationwide.
+   */
+
+  if (
+    intent.intent === "financial_assistance" ||
+    intent.intent === "resource_search"
+  ) {
+    return {
+      geography:
+        "Geographic focus: nationwide United States. Prioritize broadly accessible opportunities without unnecessary state restrictions.",
+
+      requestedState: null,
+
+      clarificationReason: null,
+    };
+  }
+
+  /*
+   * Provider searches normally require
+   * meaningful geographic information.
+   */
+
+  if (
+    intent.intent === "provider_search"
+  ) {
+    if (
+      intent.geographicScope === "nationwide"
+    ) {
+      return {
+        geography:
+          "Geographic focus: nationwide United States. Prioritize national provider directories and clearly identify service areas.",
+
+        requestedState: null,
+
+        clarificationReason: null,
+      };
+    }
+
+    return {
+      geography: "",
+
+      requestedState: null,
+
+      clarificationReason:
+        "PROVIDER_SEARCH_LOCATION_REQUIRED",
+    };
+  }
+
+  if (
+    intent.geographicScope === "nationwide"
+  ) {
+    return {
+      geography:
+        "Geographic focus: nationwide United States.",
+
+      requestedState: null,
+
+      clarificationReason: null,
+    };
+  }
+
+  /*
+   * General educational and scientific
+   * information does not require geography.
+   */
+
+  return {
+    geography: "",
+
+    requestedState: null,
+
+    clarificationReason: null,
+  };
+}
+
+/*
+ * ============================================================
+ * MAIN AI SEARCH ROUTER
+ * ============================================================
+ */
+
+export async function routeNavigatorSearchWithAI(
+  input: NavigatorSearchInput
+): Promise<NavigatorSearchDecision> {
+  const question =
+    typeof input.question === "string"
+      ? normalizeQuestion(input.question)
+      : "";
+
+  if (!question) {
+    return noSearch(
+      "EMPTY_QUESTION"
     );
   }
 
-  return {
-    shouldSearch: true,
-    publicQuery,
-    needsClarification: false,
-    reason: explicitSearch
-      ? "EXPLICIT_SEARCH_REQUEST"
-      : "CURRENT_INFORMATION_REQUIRED",
-  };
+  if (question.length > 2000) {
+    return noSearch(
+      "QUESTION_TOO_LONG"
+    );
+  }
+
+  const recentConversation =
+    getRecentConversation(
+      input.messages,
+      question
+    );
+
+  try {
+    /*
+     * Classify the current question together
+     * with bounded recent conversation context.
+     */
+
+    const intent =
+      await classifyNavigatorIntent({
+        question,
+
+        messages:
+          recentConversation,
+      });
+
+    /*
+     * Urgent safety and individualized
+     * medical guidance always take priority.
+     */
+
+    if (
+      intent.urgentSafetyConcern ||
+      intent.intent === "urgent_safety"
+    ) {
+      return noSearch(
+        "URGENT_SAFETY_CONCERN",
+        intent
+      );
+    }
+
+    if (
+      intent.intent === "medical_guidance" ||
+      isIndividualTreatmentQuestion(question)
+    ) {
+      return noSearch(
+        "INDIVIDUAL_MEDICAL_GUIDANCE",
+        intent
+      );
+    }
+
+    /*
+     * Respect explicit no-search preferences.
+     */
+
+    if (
+      intent.searchPreference === "declined" ||
+      userDeclinesSearch(question)
+    ) {
+      return noSearch(
+        "USER_DECLINED_SEARCH",
+        intent
+      );
+    }
+
+    /*
+     * Handle geographic clarification
+     * separately from topic clarification.
+     */
+
+    if (intent.needsClarification) {
+      if (
+        intent.geographicScope === "local"
+      ) {
+        return clarification(
+          "LOCAL_SEARCH_LOCATION_REQUIRED",
+          intent
+        );
+      }
+
+      if (
+        intent.intent === "provider_search" &&
+        intent.topics.length > 0 &&
+        !intent.topics.includes("other") &&
+        intent.geographicScope === "none"
+      ) {
+        return clarification(
+          "PROVIDER_SEARCH_LOCATION_REQUIRED",
+          intent
+        );
+      }
+
+      if (
+        intent.topics.length === 0 ||
+        intent.topics.includes("other")
+      ) {
+        return clarification(
+          "PUBLIC_SEARCH_TOPIC_REQUIRED",
+          intent
+        );
+      }
+
+      return clarification(
+        "PUBLIC_SEARCH_CLARIFICATION_REQUIRED",
+        intent
+      );
+    }
+
+    /*
+     * Direct educational or Journey answers
+     * do not automatically require live search.
+     */
+
+    if (!intent.shouldSearch) {
+      return noSearch(
+        intent.intent.toUpperCase(),
+        intent
+      );
+    }
+
+    /*
+     * Only approved intent categories and
+     * topics may enter public research.
+     */
+
+    const researchType =
+      resolveResearchType(intent);
+
+    const baseInstructions =
+      INTENT_SEARCH_INSTRUCTIONS[
+        intent.intent
+      ];
+
+    if (!baseInstructions) {
+      return noSearch(
+        "UNSUPPORTED_SEARCH_INTENT",
+        intent
+      );
+    }
+
+    if (
+      intent.topics.length === 0 ||
+      intent.topics.includes("other")
+    ) {
+      return clarification(
+        "PUBLIC_SEARCH_TOPIC_REQUIRED",
+        intent
+      );
+    }
+
+    const topics =
+      intent.topics.map(
+        topic =>
+          topic.replace(/_/g, " ")
+      );
+
+    /*
+     * Resolve geographic scope independently
+     * of Journey personalization.
+     */
+
+    const geographicResolution =
+      resolveGeography(
+        input,
+        question,
+        recentConversation,
+        intent
+      );
+
+    if (
+      geographicResolution.clarificationReason
+    ) {
+      return clarification(
+        geographicResolution.clarificationReason,
+        intent
+      );
+    }
+
+    /*
+     * Grant-specific instructions apply only
+     * to classified grant research.
+     */
+
+    const instructions =
+      researchType === "grants"
+        ? buildGrantInstructions(intent)
+        : baseInstructions;
+
+    const freshness =
+      intent.requiresCurrentInformation
+        ? "Verify current status, dates, and requirements."
+        : "";
+
+    /*
+     * Construct public research queries using
+     * approved topics, server-defined instructions,
+     * and validated state information.
+     *
+     * Never forward the original user question,
+     * raw conversation history, child names,
+     * family profiles, private notes, medical
+     * records, or contact information.
+     */
+
+    const publicQuery = [
+      `Requested subjects: ${topics.join(", ")}.`,
+
+      instructions,
+
+      geographicResolution.geography,
+
+      freshness,
+
+      "Use authoritative sources and direct official links.",
+
+      "Answer the specific requested intent without introducing unrelated subjects.",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    if (publicQuery.length > 1200) {
+      return clarification(
+        "SEARCH_QUERY_TOO_BROAD",
+        intent
+      );
+    }
+
+    /*
+     * Return structured routing information
+     * for the Navigator API.
+     */
+
+    return {
+      ...intentMetadata(intent),
+
+      shouldSearch: true,
+
+      publicQuery,
+
+      needsClarification: false,
+
+      reason:
+        `AI_INTENT_${intent.intent.toUpperCase()}`,
+
+      researchType,
+
+      requestedState:
+        geographicResolution.requestedState,
+    };
+
+  } catch {
+    /*
+     * Fail closed.
+     *
+     * Never forward an unvalidated question
+     * to public web search when classification
+     * or routing fails.
+     */
+
+    console.error(
+      "Navigator AI intent routing failed."
+    );
+
+    return noSearch(
+      "AI_INTENT_CLASSIFICATION_FAILED"
+    );
+  }
+}
+
+/*
+ * ============================================================
+ * LEGACY ROUTER COMPATIBILITY
+ * ============================================================
+ *
+ * Retain the previous synchronous export
+ * temporarily to avoid breaking imports.
+ *
+ * All live research must use the asynchronous
+ * AI intent router.
+ */
+
+export function routeNavigatorSearch(
+  _input: NavigatorSearchInput
+): NavigatorSearchDecision {
+  return noSearch(
+    "AI_INTENT_ROUTER_REQUIRED"
+  );
 }
