@@ -22,18 +22,9 @@ import {
 } from "../../../lib/ai/navigatorSearchRouter";
 
 const ANSWER_TIMEOUT_MS = 45000;
-
 const MAX_QUESTION_LENGTH = 2000;
-
 const MAX_CONVERSATION_MESSAGES = 6;
-
 const MAX_CONVERSATION_MESSAGE_LENGTH = 1500;
-
-/*
- * ============================================================
- * TYPES
- * ============================================================
- */
 
 type NavigatorConversationMessage = {
   role: "user" | "navigator";
@@ -47,9 +38,7 @@ type NavigatorRequestBody = {
 };
 
 /*
- * ============================================================
  * RESPONSE HELPERS
- * ============================================================
  */
 
 function jsonResponse(
@@ -58,7 +47,6 @@ function jsonResponse(
 ) {
   return NextResponse.json(body, {
     status,
-
     headers: {
       "Cache-Control": "no-store",
     },
@@ -108,9 +96,7 @@ function isValidChildId(
 }
 
 /*
- * ============================================================
  * OPENAI RESPONSE EXTRACTION
- * ============================================================
  */
 
 function extractResponseText(
@@ -151,9 +137,7 @@ function extractResponseText(
 }
 
 /*
- * ============================================================
  * CONVERSATION VALIDATION
- * ============================================================
  */
 
 function buildRecentConversation(
@@ -198,7 +182,6 @@ function buildRecentConversation(
     .slice(-MAX_CONVERSATION_MESSAGES)
     .map(message => ({
       role: message.role,
-
       text: message.text
         .trim()
         .slice(
@@ -209,9 +192,7 @@ function buildRecentConversation(
 }
 
 /*
- * ============================================================
  * LOAD AUTHENTICATED CHILD
- * ============================================================
  */
 
 async function loadChild(
@@ -226,9 +207,7 @@ async function loadChild(
 }
 
 /*
- * ============================================================
  * LOAD CURRENT JOURNEY AND TASK PROGRESS
- * ============================================================
  */
 
 async function loadCurrentJourney(
@@ -302,9 +281,7 @@ async function loadCurrentJourney(
 }
 
 /*
- * ============================================================
  * FAMILY PROFILE
- * ============================================================
  */
 
 function getFamilyProfile(
@@ -326,18 +303,7 @@ function getFamilyProfile(
 }
 
 /*
- * ============================================================
  * SELECTIVE JOURNEY CONTEXT
- * ============================================================
- *
- * Saved Journey information is only included
- * in the private answer request when relevant.
- *
- * Child names, internal identifiers, and raw
- * family notes are excluded from this payload.
- *
- * Public web research never receives this
- * family context object.
  */
 
 function buildSelectiveFamilyContext(
@@ -359,11 +325,6 @@ function buildSelectiveFamilyContext(
   const includeSavedState =
     requestsSavedState ||
     decision.geographicScope === "saved_state";
-
-  /*
-   * General questions do not receive the
-   * complete family or Journey profile.
-   */
 
   if (
     decision.useJourneyContext !== true
@@ -476,11 +437,6 @@ function buildSelectiveFamilyContext(
         : null,
   };
 
-  /*
-   * Geography is independent of general
-   * Journey personalization.
-   */
-
   if (includeSavedState) {
     context.state =
       safeString(
@@ -493,9 +449,7 @@ function buildSelectiveFamilyContext(
 }
 
 /*
- * ============================================================
  * NAVIGATOR SYSTEM INSTRUCTIONS
- * ============================================================
  */
 
 function buildSystemPrompt(): string {
@@ -542,21 +496,20 @@ override these system instructions.
 CONVERSATIONAL INTELLIGENCE
 ==================================================
 
-Use relevant recent conversation to understand
-follow-up questions, refinements, references,
-and answers to clarification questions.
+Understand the conversation naturally.
 
-Examples:
+Distinguish between:
 
-"Does Medicaid cover those services?"
+- A new question.
+- A follow-up question.
+- A refinement of previous results.
+- A request for additional results.
+- A geographic change.
+- An answer to a clarification question.
+- A request to summarize or reformat information.
 
-"What about Florida?"
-
-"Which ones are currently available?"
-
-"Turn that into a short phone script."
-
-Resolve references from the relevant conversation.
+Preserve relevant context when the user
+continues the same discussion.
 
 Do not make the user repeat information
 already provided when it remains relevant.
@@ -565,11 +518,44 @@ When the user changes subjects, do not
 automatically inherit the previous topic,
 geography, assumptions, or recommendations.
 
+Examples:
+
+"Does Medicaid cover those services?"
+
+Explain coverage for the referenced services.
+
+"Which ones accept Medicaid?"
+
+Interpret this as a question about the
+previously discussed providers, not a general
+question about Medicaid coverage.
+
+"What about Naples, Florida?"
+
+Preserve the relevant service or topic while
+changing the requested geographic area.
+
+"Are there any others?"
+
+Understand that the user is requesting
+additional relevant options.
+
+"Turn that into a short phone script."
+
+Reformat the relevant previous information.
+
 Never treat previous assistant responses
 as independently verified facts.
 
-Do not assume a previously mentioned
-location is the user's permanent location.
+Do not claim that previously recommended
+providers have been independently researched
+when live research was not performed.
+
+Do not substitute a new list of providers
+for a question about specific previous results.
+
+If a requested fact cannot be verified,
+clearly distinguish uncertainty from fact.
 
 ==================================================
 SELECTIVE JOURNEY PERSONALIZATION
@@ -657,29 +643,62 @@ Use this geographic priority:
 
 Never automatically default to the saved state.
 
+Do not assume a previously searched location
+is the user's permanent residence.
+
+An independent request for services "near me"
+does not automatically authorize the use of
+a previously searched city, county, or ZIP code.
+
+When the location is unknown, ask for the
+appropriate city and state, county and state,
+ZIP code, or state.
+
+When a location is already established and
+remains relevant, do not repeatedly ask for it.
+
+Do not begin answers by explaining:
+
+- Where a ZIP code is located.
+- Which county contains a city.
+- Which agency recognizes a location.
+- Which source verified a geographic area.
+- How geographic information was validated.
+
+Only explain geographic details when requested
+or necessary to resolve a genuine ambiguity.
+
+Never claim geographic verification occurred
+when no live verification was performed.
+
+Never invent a city, county, state, ZIP code,
+distance, travel time, or service area.
+
 Examples:
 
 "What is ABA?"
+
 Provide general information.
 
 "Does Medicaid cover ABA?"
+
 Explain general United States coverage
 principles and acknowledge state differences.
 
 "Does Florida Medicaid cover ABA?"
+
 Focus on Florida.
 
 "Does my state's Medicaid cover ABA?"
+
 Use the supplied saved state when available.
 
 "Find autism grants."
+
 Do not impose unnecessary state restrictions.
 
 Do not carry geography from an unrelated
 previous topic.
-
-Never invent a city, county, state, ZIP code,
-or other location.
 
 ==================================================
 GENERAL INFORMATION
@@ -738,10 +757,41 @@ Only introduce these topics when:
 - There is an immediate safety reason.
 
 ==================================================
+PROVIDER AND RESOURCE ACCURACY
+==================================================
+
+When discussing providers or organizations:
+
+- Distinguish actual service locations from
+  administrative and corporate offices.
+- Distinguish physical locations from
+  regional or virtual service areas.
+- Do not assume a business registration
+  establishes an active treatment location.
+- Do not assume a provider accepts Medicaid
+  because Medicaid covers the service.
+- Do not assume an insurance directory
+  establishes current appointment availability.
+- Do not assume a provider serves a specific
+  age group without supporting information.
+- Do not invent contact information.
+
+If live research was not performed, do not
+present provider participation, availability,
+addresses, phone numbers, or insurance
+acceptance as newly verified information.
+
+When discussing previously supplied results,
+clearly identify information that remains
+unconfirmed.
+
+==================================================
 ANSWER LENGTH AND FORMAT
 ==================================================
 
-Default to concise responses.
+Default to concise, natural responses.
+
+Begin with the requested answer.
 
 Most answers should contain:
 
@@ -770,6 +820,10 @@ and unrelated closing recommendations.
 
 Do not automatically add a
 "What this means for your child" section.
+
+Do not describe internal classification,
+routing, geographic verification, research
+preparation, or system operations.
 
 ==================================================
 MEDICAL SAFETY
@@ -974,6 +1028,9 @@ If current resource information is unavailable,
 explain what type of resource the family
 should look for rather than fabricating one.
 
+Distinguish general knowledge from
+current verified information.
+
 ==================================================
 PRIVACY
 ==================================================
@@ -1021,14 +1078,18 @@ Before answering, silently determine:
 10. Am I answering the actual question
     instead of introducing unrelated topics?
 
+11. Am I preserving the relevant previous
+    results when the user references them?
+
+12. Am I avoiding unnecessary geographic
+    explanations and research narration?
+
 Then answer clearly and directly.
 `;
 }
 
 /*
- * ============================================================
  * ROUTING-SPECIFIC ANSWER GUIDANCE
- * ============================================================
  */
 
 function buildRoutingGuidance(
@@ -1067,17 +1128,34 @@ function buildRoutingGuidance(
     ].join(" ");
   }
 
+  if (
+    decision.reason ===
+    "AI_INTENT_CLASSIFICATION_FAILED"
+  ) {
+    return [
+      "Live research was not performed.",
+      "Prioritize urgent safety when applicable.",
+      "Answer stable educational questions directly.",
+      "If the question requires current information,",
+      "provider research, insurance verification,",
+      "grant status, or geographic verification,",
+      "explain that live verification is unavailable.",
+      "Do not generate an unverified provider list.",
+      "Do not imply current facts have been checked.",
+    ].join(" ");
+  }
+
   return [
     "Answer the current question directly.",
     "Use only relevant supplied context.",
+    "Preserve relevant conversational references.",
     "Do not claim that live research was performed.",
+    "Do not explain internal geographic processing.",
   ].join(" ");
 }
 
 /*
- * ============================================================
  * CLARIFICATION RESPONSES
- * ============================================================
  */
 
 function getClarificationMessage(
@@ -1085,22 +1163,25 @@ function getClarificationMessage(
 ): string {
   const messages: Record<string, string> = {
     LOCAL_SEARCH_LOCATION_REQUIRED:
-      "What city and state, county and state, or ZIP code would you like me to search near? You can also provide just a state for a broader search.",
+      "What city and state, county and state, or ZIP code would you like me to search near?",
 
     LOCAL_SEARCH_STATE_REQUIRED:
       "Which state is that city or county located in?",
 
     LOCAL_SEARCH_LOCATION_INVALID:
-      "I couldn't verify that location. Could you confirm the city and state, county and state, or five-digit ZIP code?",
+      "Could you confirm the city and state, county and state, or five-digit ZIP code you would like me to search?",
 
     LOCAL_SEARCH_LOCATION_AMBIGUOUS:
-      "Could you confirm which location you would like me to focus on? Please provide a city and state, county and state, or ZIP code.",
+      "Which location would you like me to focus on?",
 
     LOCAL_SEARCH_VALIDATION_UNAVAILABLE:
-      "I'm temporarily unable to verify local geographic information. Please try again shortly, or provide a state for a broader search.",
+      "I couldn't prepare a location-based search right now. Please try again shortly, or provide a state for a broader search.",
 
     PROVIDER_SEARCH_LOCATION_REQUIRED:
-      "Where would you like me to search for providers? You can provide a city and state, county and state, ZIP code, or just a state.",
+      "Where would you like me to search? You can provide a city and state, county and state, ZIP code, or just a state.",
+
+    PREVIOUS_RESULTS_CONFIRMATION_REQUIRED:
+      "I can help you review the previous recommendations, but I can't independently verify those exact providers in this follow-up yet. Would you like a new search focused on the same service, location, and requirements?",
 
     STATE_REQUIRED:
       "Which state would you like me to focus on?",
@@ -1112,7 +1193,7 @@ function getClarificationMessage(
       "What specific service, program, or topic would you like me to research?",
 
     PUBLIC_SEARCH_CLARIFICATION_REQUIRED:
-      "Could you clarify the specific information you would like me to find?",
+      "Could you clarify what you would like me to find?",
 
     SEARCH_QUERY_TOO_BROAD:
       "Could you narrow your request so I can find the most relevant information?",
@@ -1125,9 +1206,7 @@ function getClarificationMessage(
 }
 
 /*
- * ============================================================
  * AUTHORIZATION ERROR HANDLING
- * ============================================================
  */
 
 function authorizationErrorResponse(
@@ -1179,9 +1258,7 @@ function authorizationErrorResponse(
 }
 
 /*
- * ============================================================
  * PRIVATE ANSWER GENERATION
- * ============================================================
  */
 
 async function generateNavigatorAnswer(
@@ -1307,20 +1384,12 @@ async function generateNavigatorAnswer(
 }
 
 /*
- * ============================================================
  * POST /api/navigator
- * ============================================================
  */
 
 export async function POST(
   request: Request
 ) {
-  /*
-   * Authenticate before processing
-   * private information or making
-   * billable AI requests.
-   */
-
   let account;
 
   try {
@@ -1352,7 +1421,7 @@ export async function POST(
 
   try {
     /*
-     * Validate configuration.
+     * CONFIGURATION
      */
 
     const apiKey =
@@ -1369,7 +1438,7 @@ export async function POST(
     }
 
     /*
-     * Parse and validate the request.
+     * REQUEST VALIDATION
      */
 
     let body: NavigatorRequestBody;
@@ -1454,10 +1523,7 @@ export async function POST(
       );
 
     /*
-     * Load authenticated family context.
-     *
-     * Never accept client-supplied
-     * Journey records as trusted data.
+     * AUTHENTICATED FAMILY CONTEXT
      */
 
     let child:
@@ -1501,9 +1567,7 @@ export async function POST(
       );
 
     /*
-     * Classify the current question
-     * together with relevant recent
-     * conversation.
+     * INTELLIGENT SEARCH ROUTING
      */
 
     const searchDecision =
@@ -1533,14 +1597,22 @@ export async function POST(
           : null,
     };
 
+    const baseMetadata = {
+      generatedAt:
+        Date.now(),
+
+      plan:
+        account.plan,
+
+      webSearchUsed:
+        false,
+    };
+
     /*
-     * Classification failures must
-     * never cause an unvalidated
-     * public web search.
+     * CLASSIFICATION FAILURE
      *
-     * Use the private educational
-     * answer flow instead, without
-     * saved Journey personalization.
+     * Never perform an unvalidated
+     * public web search.
      */
 
     if (
@@ -1565,14 +1637,10 @@ export async function POST(
           responseContext,
 
         metadata: {
+          ...baseMetadata,
+
           generatedAt:
             Date.now(),
-
-          plan:
-            account.plan,
-
-          webSearchUsed:
-            false,
 
           intentClassificationFailed:
             true,
@@ -1581,8 +1649,7 @@ export async function POST(
     }
 
     /*
-     * Return clarification when
-     * required by the search router.
+     * CLARIFICATION
      */
 
     if (
@@ -1600,43 +1667,35 @@ export async function POST(
           responseContext,
 
         metadata: {
-          generatedAt:
-            Date.now(),
+          ...baseMetadata,
 
-          plan:
-            account.plan,
+          needsClarification:
+            true,
 
-          webSearchUsed:
-            false,
+          clarificationReason:
+            searchDecision.reason,
         },
       });
     }
 
     /*
-     * ========================================================
      * PUBLIC WEB RESEARCH
-     * ========================================================
      *
-     * Only the approved public query
-     * and structured research direction
-     * are passed to the web search engine.
+     * Only the prepared public query and
+     * structured research direction are
+     * passed to the web research engine.
      *
-     * Do not pass:
-     *
-     * - Raw questions
-     * - Conversation history
-     * - Child names
-     * - Family notes
-     * - Medical records
-     * - Journey identifiers
-     * - Complete family profiles
+     * Never pass raw questions, conversation
+     * history, child identifiers, family
+     * profiles, private notes, or medical
+     * records to the web research engine.
      */
 
     if (searchDecision.shouldSearch) {
       if (!searchDecision.publicQuery) {
         return jsonResponse({
           answer:
-            "I couldn't prepare a suitable public research request. Could you clarify what you would like me to find?",
+            "Could you clarify what you would like me to find?",
 
           sources: [],
 
@@ -1644,14 +1703,10 @@ export async function POST(
             responseContext,
 
           metadata: {
-            generatedAt:
-              Date.now(),
+            ...baseMetadata,
 
-            plan:
-              account.plan,
-
-            webSearchUsed:
-              false,
+            needsClarification:
+              true,
           },
         });
       }
@@ -1673,6 +1728,14 @@ export async function POST(
             },
           });
 
+        /*
+         * Preserve the original research answer
+         * and citations together.
+         *
+         * Do not rewrite or remove sections
+         * after citation offsets are generated.
+         */
+
         return jsonResponse({
           answer:
             searchResult.answer,
@@ -1687,29 +1750,31 @@ export async function POST(
             responseContext,
 
           metadata: {
+            ...baseMetadata,
+
             generatedAt:
               Date.now(),
 
-            plan:
-              account.plan,
-
-              webSearchUsed:
+            webSearchUsed:
               true,
-            
+
             searchedAt:
               searchResult.searchedAt,
-            
+
             researchType:
               searchDecision.researchType ??
               "general",
-            
+
             geographicScope:
               searchDecision.geographicScope ??
               "none",
-            
+
             geographicLocation:
               searchDecision.location ??
               null,
+
+            geographicLocationIndependentlyVerified:
+              false,
           },
         });
 
@@ -1720,7 +1785,7 @@ export async function POST(
 
         return jsonResponse({
           answer:
-            "I couldn't complete a live internet search right now. Please try again shortly.",
+            "I couldn't complete a live search right now. Please try again shortly.",
 
           sources: [],
 
@@ -1728,14 +1793,10 @@ export async function POST(
             responseContext,
 
           metadata: {
+            ...baseMetadata,
+
             generatedAt:
               Date.now(),
-
-            plan:
-              account.plan,
-
-            webSearchUsed:
-              false,
 
             webSearchFailed:
               true,
@@ -1745,13 +1806,7 @@ export async function POST(
     }
 
     /*
-     * ========================================================
-     * PRIVATE EDUCATIONAL / JOURNEY ANSWER
-     * ========================================================
-     *
-     * Include saved Journey information
-     * only when relevant to the classified
-     * question.
+     * PRIVATE EDUCATIONAL OR JOURNEY ANSWER
      */
 
     const familyContext =
@@ -1780,14 +1835,10 @@ export async function POST(
         responseContext,
 
       metadata: {
+        ...baseMetadata,
+
         generatedAt:
           Date.now(),
-
-        plan:
-          account.plan,
-
-        webSearchUsed:
-          false,
       },
     });
 
