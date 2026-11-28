@@ -1085,10 +1085,22 @@ function getClarificationMessage(
 ): string {
   const messages: Record<string, string> = {
     LOCAL_SEARCH_LOCATION_REQUIRED:
-      "Local city and ZIP code searches are not available yet. Which state would you like me to search in instead?",
+      "What city and state, county and state, or ZIP code would you like me to search near? You can also provide just a state for a broader search.",
+
+    LOCAL_SEARCH_STATE_REQUIRED:
+      "Which state is that city or county located in?",
+
+    LOCAL_SEARCH_LOCATION_INVALID:
+      "I couldn't verify that location. Could you confirm the city and state, county and state, or five-digit ZIP code?",
+
+    LOCAL_SEARCH_LOCATION_AMBIGUOUS:
+      "Could you confirm which location you would like me to focus on? Please provide a city and state, county and state, or ZIP code.",
+
+    LOCAL_SEARCH_VALIDATION_UNAVAILABLE:
+      "I'm temporarily unable to verify local geographic information. Please try again shortly, or provide a state for a broader search.",
 
     PROVIDER_SEARCH_LOCATION_REQUIRED:
-      "Which state would you like me to search for providers in?",
+      "Where would you like me to search for providers? You can provide a city and state, county and state, ZIP code, or just a state.",
 
     STATE_REQUIRED:
       "Which state would you like me to focus on?",
@@ -1681,11 +1693,23 @@ export async function POST(
             plan:
               account.plan,
 
-            webSearchUsed:
+              webSearchUsed:
               true,
-
+            
             searchedAt:
               searchResult.searchedAt,
+            
+            researchType:
+              searchDecision.researchType ??
+              "general",
+            
+            geographicScope:
+              searchDecision.geographicScope ??
+              "none",
+            
+            geographicLocation:
+              searchDecision.location ??
+              null,
           },
         });
 

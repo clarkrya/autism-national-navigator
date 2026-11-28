@@ -194,6 +194,11 @@ export type NavigatorIntentResult = {
 
   requestedState: string | null;
 
+  requestedCity: string | null;
+  
+  requestedCounty: string | null;
+  
+  requestedZipCode: string | null;
   searchPreference: NavigatorSearchPreference;
 
   requiresCurrentInformation: boolean;
@@ -262,7 +267,17 @@ const INTENT_SCHEMA = {
         },
       ],
     },
-
+    requestedCity: {
+      type: ["string", "null"],
+    },
+    
+    requestedCounty: {
+      type: ["string", "null"],
+    },
+    
+    requestedZipCode: {
+      type: ["string", "null"],
+    },
     searchPreference: {
       type: "string",
       enum: SEARCH_PREFERENCES,
@@ -288,7 +303,10 @@ const INTENT_SCHEMA = {
     "useJourneyContext",
     "geographicScope",
     "requestedState",
-    "searchPreference",
+    "requestedCity",
+    "requestedCounty",
+    "requestedZipCode",
+        "searchPreference",
     "requiresCurrentInformation",
     "needsClarification",
     "urgentSafetyConcern",
@@ -437,8 +455,74 @@ If the user supplies a city, county,
 or ZIP code for a local search,
 classify geographicScope as local.
 
-Do not return raw local location details
-in the classification output.
+LOCAL GEOGRAPHIC CLASSIFICATION
+
+When the user requests a local search,
+extract only the geographic information
+explicitly supplied by the user.
+
+Use the following structured fields:
+
+- requestedCity: city name only.
+- requestedCounty: county name only.
+- requestedState: full US state name.
+- requestedZipCode: five-digit ZIP code.
+
+Return null for any missing field.
+
+Examples:
+
+"Find ABA providers in 33908."
+
+Geographic scope: local.
+Requested ZIP code: 33908.
+Requested city: null.
+Requested county: null.
+Requested state: null.
+
+"Find speech therapists in Fort Myers, FL."
+
+Geographic scope: local.
+Requested city: Fort Myers.
+Requested state: Florida.
+Requested county: null.
+Requested ZIP code: null.
+
+"Find respite care in Lee County, Florida."
+
+Geographic scope: local.
+Requested county: Lee County.
+Requested state: Florida.
+Requested city: null.
+Requested ZIP code: null.
+
+"Find autism resources near me."
+
+Geographic scope: local.
+All requested location fields: null.
+Needs clarification: true.
+
+If the user supplies a location in response
+to a clarification question, preserve the
+original service intent and topics.
+
+When a complete local location is supplied,
+set shouldSearch to true and needsClarification
+to false for an otherwise clear research request.
+
+Retain relevant user-supplied geography
+during genuine follow-up questions.
+
+Do not invent or infer missing locations.
+Do not extract unrelated numbers as ZIP codes.
+
+Never extract street addresses, apartment
+numbers, coordinates, school names, personal
+names, or contact information.
+
+Local geographic fields are unverified
+candidates requiring server-side validation
+before public research.
 
 CONVERSATIONAL PRIVACY
 
@@ -1080,8 +1164,18 @@ assumption.
 Never infer a state from a child's name,
 identity, or personal history.
 
-Do not return cities, addresses, ZIP codes,
-schools, names, or other identifying details.
+Return city, county, and five-digit ZIP code
+candidates only when relevant to the requested
+local geographic search and explicitly supplied
+by the user.
+
+Never return street addresses, coordinates,
+school names, personal names, contact details,
+or unrelated identifying information.
+
+When geographicScope is not local, return
+requestedCity, requestedCounty, and
+requestedZipCode as null.
 
 When geographicScope is none, saved_state,
 or nationwide, return requestedState as null.
@@ -1217,7 +1311,39 @@ function isAllowedValue(
     values.includes(value)
   );
 }
+function validateLocalPlace(
+  value: unknown
+): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
 
+  const normalized = value.trim();
+
+  if (
+    normalized.length < 2 ||
+    normalized.length > 100 ||
+    !/^[\p{L}\p{M} .'-]+$/u.test(normalized)
+  ) {
+    return null;
+  }
+
+  return normalized;
+}
+
+function validateLocalZipCode(
+  value: unknown
+): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim();
+
+  return /^\d{5}$/.test(normalized)
+    ? normalized
+    : null;
+}
 function validateIntentResult(
   value: unknown
 ): NavigatorIntentResult {
@@ -1305,8 +1431,23 @@ function validateIntentResult(
     geographicScope:
       result.geographicScope as NavigatorGeographicScope,
 
-    requestedState:
+      requestedState:
       result.requestedState as string | null,
+    
+    requestedCity:
+      result.geographicScope === "local"
+        ? validateLocalPlace(result.requestedCity)
+        : null,
+    
+    requestedCounty:
+      result.geographicScope === "local"
+        ? validateLocalPlace(result.requestedCounty)
+        : null,
+    
+    requestedZipCode:
+      result.geographicScope === "local"
+        ? validateLocalZipCode(result.requestedZipCode)
+        : null,
 
     searchPreference:
       result.searchPreference as NavigatorSearchPreference,
